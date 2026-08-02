@@ -20,8 +20,10 @@ import base64
 import json
 import os
 import re
+import socket
 import subprocess
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -57,10 +59,28 @@ def _sessions_dir():
 SESS_DIR = _sessions_dir()
 os.makedirs(SESS_DIR, exist_ok=True)
 
-# NOTE: bind to "localhost", not "127.0.0.1". YouTube's embedded player rejects
-# embeds whose origin is a raw IP (Error 153 / "Video unavailable") but accepts
-# "localhost". Same machine-only binding, but the video actually loads.
+# NOTE: "localhost" is what the DESKTOP browser opens (YouTube's embedded
+# player rejects a raw-IP origin — Error 153 / "Video unavailable" — but
+# accepts "localhost"). The server SOCKET binds to 0.0.0.0 below so a phone
+# on the same WiFi can also reach it for the phone-camera-sync feature;
+# binding 0.0.0.0 still happily accepts localhost/127.0.0.1 connections too,
+# so the desktop flow above is unaffected.
 HOST, PORT = "localhost", 8770
+BIND_HOST = "0.0.0.0"
+
+
+def _lan_ip():
+    """Best-effort local-network IP, for showing the phone a URL it can reach.
+    Opens a UDP socket to a public IP purely to see which local interface the
+    OS would route through — no packet is actually sent."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
 
 JOBS = {}
 LOCK = threading.Lock()
@@ -283,6 +303,28 @@ def do_render(jid, vocal_path, fx, mix_opts):
             display_name=f"{safe} (karaoke).{out_fmt}")
 
 
+def do_combine_video(jid):
+    """Align the paired phone's video to the finished audio mix (via the sync
+    chirp) and mux them into one final video file."""
+    sdir = os.path.join(SESS_DIR, jid)
+    j = get_job(jid)
+    phone_video = os.path.join(sdir, j["phone_video_file"])
+    final_mix = os.path.join(sdir, j["final_file"])
+    out_video = os.path.join(sdir, "final_video.mp4")
+    tmp = os.path.join(sdir, "tmp")
+    os.makedirs(tmp, exist_ok=True)
+    try:
+        audio_fx.align_and_mux_video(
+            phone_video, final_mix, out_video,
+            chirp_music_pos_sec=float(j.get("chirp_music_pos_sec", 0.0)),
+            tmp_dir=tmp,
+        )
+    except Exception as e:
+        set_job(jid, video_status="error", video_error=str(e)[:400])
+        return
+    set_job(jid, video_status="done", final_video_file="final_video.mp4")
+
+
 # ---- HTTP -------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -356,6 +398,52 @@ class Handler(BaseHTTPRequestHandler):
             f = os.path.join(SESS_DIR, jid, j["final_file"])
             self._send_file(f, "application/octet-stream",
                             j.get("display_name"))
+            return
+
+        if p.path == "/final_video":
+            jid = (parse_qs(p.query).get("id") or [""])[0]
+            j = get_job(jid)
+            if not j or j.get("video_status") != "done":
+                self._json(404, {"error": "not ready"})
+                return
+            f = os.path.join(SESS_DIR, jid, j["final_video_file"])
+            name = (j.get("display_name") or "karaoke").rsplit(".", 1)[0] + ".mp4"
+            self._send_file(f, "video/mp4", name)
+            return
+
+        if p.path == "/phone":
+            b = PHONE_HTML.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+            return
+
+        if p.path == "/phone_sync_info":
+            jid = (parse_qs(p.query).get("id") or [""])[0]
+            lan = _lan_ip()
+            self._json(200, {
+                "lan_ip": lan,
+                "port": PORT,
+                "phone_url": f"http://{lan}:{PORT}/phone?id={jid}" if lan else None,
+                "chirp": {
+                    "f0": audio_fx.CHIRP_F0,
+                    "f1": audio_fx.CHIRP_F1,
+                    "dur_ms": int(audio_fx.CHIRP_DUR * 1000),
+                },
+            })
+            return
+
+        if p.path == "/phone/poll":
+            q = parse_qs(p.query)
+            jid = (q.get("id") or [""])[0]
+            j = get_job(jid)
+            if not j or not j.get("phone_paired"):
+                self._json(404, {"error": "not paired"})
+                return
+            set_job(jid, phone_last_seen=time.time())
+            self._json(200, {"cmd": j.get("phone_cmd"), "seq": j.get("phone_cmd_seq", 0)})
             return
 
         self._json(404, {"error": "not found"})
@@ -460,14 +548,252 @@ class Handler(BaseHTTPRequestHandler):
                 return
             fx = body.get("fx", {})
             mix_opts = body.get("mix", {})
-            set_job(jid, status="rendering")
+            chirp_pos = body.get("chirp_music_pos_sec")
+            set_job(jid, status="rendering",
+                    chirp_music_pos_sec=float(chirp_pos) if chirp_pos is not None else 0.0)
             threading.Thread(target=do_render,
                              args=(jid, vocal_path, fx, mix_opts),
                              daemon=True).start()
             self._json(200, {"ok": True})
             return
 
+        if p.path == "/phone/register":
+            body = self._read_body()
+            jid = body.get("id")
+            if not job_or_disk(jid):
+                self._json(404, {"error": "unknown session"})
+                return
+            set_job(jid, phone_paired=True, phone_status="paired",
+                    phone_cmd=None, phone_cmd_seq=0, phone_last_seen=time.time())
+            self._json(200, {"ok": True})
+            return
+
+        if p.path == "/phone/cmd":
+            body = self._read_body()
+            jid = body.get("id")
+            cmd = body.get("cmd")
+            if cmd not in ("start", "stop"):
+                self._json(400, {"error": "bad cmd"})
+                return
+            j = get_job(jid)
+            if not j or not j.get("phone_paired"):
+                self._json(409, {"error": "phone not paired"})
+                return
+            seq = j.get("phone_cmd_seq", 0) + 1
+            set_job(jid, phone_cmd=cmd, phone_cmd_seq=seq,
+                    phone_status="recording" if cmd == "start" else "stopping")
+            self._json(200, {"ok": True, "seq": seq})
+            return
+
+        if p.path == "/phone/upload":
+            body = self._read_body()
+            jid = body.get("id")
+            j = job_or_disk(jid)
+            if not j:
+                self._json(404, {"error": "unknown session"})
+                return
+            b64 = body.get("video_b64", "")
+            if not b64:
+                self._json(400, {"error": "No video received."})
+                return
+            mime = body.get("mime", "video/webm")
+            ext = ".mp4" if "mp4" in mime else ".webm"
+            sdir = os.path.join(SESS_DIR, jid)
+            os.makedirs(sdir, exist_ok=True)
+            video_path = os.path.join(sdir, f"phone_raw{ext}")
+            try:
+                with open(video_path, "wb") as fh:
+                    fh.write(base64.b64decode(b64))
+            except Exception:
+                self._json(400, {"error": "Could not decode video."})
+                return
+            set_job(jid, phone_status="uploaded",
+                    phone_video_file=os.path.basename(video_path))
+            self._json(200, {"ok": True})
+            return
+
+        if p.path == "/combine_video":
+            body = self._read_body()
+            jid = body.get("id")
+            j = get_job(jid)
+            if not j or j.get("status") != "done" or j.get("phone_status") != "uploaded":
+                self._json(409, {"error": "not ready"})
+                return
+            if j.get("video_status") in ("aligning", "done"):
+                self._json(200, {"ok": True})  # already running / done, avoid double-combine
+                return
+            set_job(jid, video_status="aligning", video_error=None)
+            threading.Thread(target=do_combine_video, args=(jid,), daemon=True).start()
+            self._json(200, {"ok": True})
+            return
+
         self._json(404, {"error": "not found"})
+
+
+PHONE_HTML = r"""<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Karaoke Studio — Phone Camera</title>
+<style>
+  html,body{height:100%;margin:0;background:#0b0b10;color:#eee;
+    font:15px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;}
+  #wrap{display:flex;flex-direction:column;height:100%;}
+  #preview{flex:1;width:100%;object-fit:cover;background:#000;}
+  #bar{padding:14px 16px calc(14px + env(safe-area-inset-bottom));
+    background:#14141c;display:flex;flex-direction:column;gap:8px;}
+  #status{font-weight:600;font-size:16px;}
+  #hint{opacity:.7;font-size:13px;}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;
+    background:#555;margin-right:8px;vertical-align:middle;}
+  .dot.rec{background:#ff4d4f;box-shadow:0 0 8px #ff4d4f;}
+  .dot.ok{background:#4ade80;}
+  .dot.warn{background:#f5a623;}
+  #flip{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;
+    background:rgba(0,0,0,.5);color:#fff;border:1px solid #444;border-radius:20px;
+    padding:8px 14px;font-size:14px;}
+  #err{color:#ff8080;font-size:13px;}
+</style>
+<div id="wrap">
+  <div style="position:relative;flex:1;">
+    <video id="preview" autoplay muted playsinline></video>
+    <button id="flip" onclick="flipCamera()">🔄 flip</button>
+  </div>
+  <div id="bar">
+    <div id="status"><span class="dot" id="dot"></span><span id="statusText">Starting camera…</span></div>
+    <div id="hint">Keep this tab open and the phone plugged in / screen on while you record.</div>
+    <div id="err"></div>
+  </div>
+</div>
+<script>
+const params = new URLSearchParams(location.search);
+const id = params.get('id');
+const statusText = document.getElementById('statusText');
+const dot = document.getElementById('dot');
+const errEl = document.getElementById('err');
+const video = document.getElementById('preview');
+let stream = null, recorder = null, chunks = [], facing = 'environment';
+let lastSeq = 0, wakeLock = null;
+
+function setStatus(text, cls){
+  statusText.textContent = text;
+  dot.className = 'dot' + (cls ? ' ' + cls : '');
+}
+
+function showErr(msg){ errEl.textContent = msg || ''; }
+
+if(!id){
+  setStatus('No session id in link.', 'warn');
+  showErr('Open this link from the pairing panel in the desktop app.');
+} else {
+  startCamera();
+}
+
+async function startCamera(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width: {ideal:1280}, height: {ideal:720} },
+      audio: true,   // kept ON purely as a sync reference (picks up the chirp);
+                     // discarded later — final output uses the app's own mix.
+    });
+    video.srcObject = stream;
+    await register();
+    requestWakeLock();
+    setStatus('Connected — waiting for Record on desktop', 'ok');
+    pollLoop();
+  }catch(e){
+    setStatus('Camera access failed', 'warn');
+    showErr((e && e.message) || String(e));
+  }
+}
+
+async function flipCamera(){
+  facing = facing === 'environment' ? 'user' : 'environment';
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  await startCamera();
+}
+
+async function register(){
+  try{
+    await fetch('/phone/register', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id})});
+  }catch(_){}
+}
+
+async function requestWakeLock(){
+  try{
+    if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+  }catch(_){}  // best-effort; not supported on iOS Safari — user keeps screen on manually
+}
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState==='visible') requestWakeLock();
+});
+
+function pickMime(){
+  for(const m of ['video/webm;codecs=vp8,opus','video/webm','video/mp4']){
+    if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+function startPhoneRec(){
+  chunks = [];
+  recorder = new MediaRecorder(stream, {
+    mimeType: pickMime(),
+    videoBitsPerSecond: 2500000,
+    audioBitsPerSecond: 128000,
+  });
+  recorder.ondataavailable = e=>{ if(e.data.size) chunks.push(e.data); };
+  recorder.onstop = uploadPhoneVideo;
+  recorder.start();
+  setStatus('🔴 Recording', 'rec');
+}
+
+function stopPhoneRec(){
+  if(recorder && recorder.state !== 'inactive') recorder.stop();
+}
+
+function blobToB64(blob){
+  return new Promise((res, rej)=>{
+    const fr = new FileReader();
+    fr.onload = ()=>res(fr.result.split(',')[1]);
+    fr.onerror = rej;
+    fr.readAsDataURL(blob);
+  });
+}
+
+async function uploadPhoneVideo(){
+  setStatus('Uploading…', 'warn');
+  try{
+    const blob = new Blob(chunks, {type: recorder.mimeType || 'video/webm'});
+    const b64 = await blobToB64(blob);
+    const r = await fetch('/phone/upload', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id, video_b64: b64, mime: blob.type})});
+    setStatus(r.ok ? 'Uploaded ✓ — you can put the phone down' : 'Upload failed', r.ok ? 'ok' : 'warn');
+  }catch(e){
+    setStatus('Upload failed', 'warn');
+    showErr((e && e.message) || String(e));
+  }
+}
+
+async function pollLoop(){
+  while(true){
+    try{
+      const r = await fetch('/phone/poll?id=' + encodeURIComponent(id) + '&seq=' + lastSeq);
+      if(r.ok){
+        const j = await r.json();
+        if(j.seq > lastSeq){
+          lastSeq = j.seq;
+          if(j.cmd === 'start' && (!recorder || recorder.state === 'inactive')) startPhoneRec();
+          else if(j.cmd === 'stop' && recorder && recorder.state !== 'inactive') stopPhoneRec();
+        }
+      }
+    }catch(_){}
+    await new Promise(r=>setTimeout(r, 300));
+  }
+}
+</script>
+"""
 
 
 INDEX_HTML = r"""<meta charset="utf-8">
@@ -815,6 +1141,19 @@ INDEX_HTML = r"""<meta charset="utf-8">
           records &amp; exports — the sliders above only change what YOU hear.
           <kbd>Space</kbd> record · <kbd>P</kbd> play/pause.
         </div>
+
+        <!-- phone camera pairing: film with your phone, synced to this app's audio -->
+        <div class="hint" id="phonePairPanel" style="margin-top:8px">
+          📱 <span id="phoneStatusText">Loading phone-pairing link…</span>
+          <div id="phoneUrlBox" style="display:none;margin-top:6px">
+            <code id="phoneUrlText" style="user-select:all"></code>
+            <button class="btn" id="phoneCopyBtn" type="button" style="margin-left:8px">Copy link</button>
+            <div style="opacity:.8;margin-top:4px">Open on your phone (same WiFi). Android only for now —
+              camera access over a plain link needs a one-time browser setting; see the
+              <a href="https://github.com/TanSin18/Karaoke-Studio#readme" target="_blank" rel="noopener">README</a>.</div>
+          </div>
+        </div>
+
         <!-- your recorded take: full play/pause/stop/seek, appears after recording -->
         <div class="player" id="takePlayer" style="display:none"></div>
       </div>
@@ -1079,6 +1418,7 @@ function onReady(j){
   $('seek').disabled=false; $('keyup').disabled=false; $('keydn').disabled=false;
   $('keyhint').textContent='original';
   primeMic();
+  loadPhoneSyncInfo();
 }
 function fmt(s){ s=Math.max(0,s|0); return String((s/60)|0).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
 
@@ -1460,6 +1800,68 @@ function wireBacking(a){
   a.addEventListener('ended',()=>{ if(recording) stopRec(); resetMusicBtn(); });
 }
 
+// ---- phone pairing / remote camera sync -------------------------------------
+// Pairs a phone (opened on the same WiFi) so clicking Record also remote-
+// triggers the phone's camera. A synthetic "chirp" tone played through the
+// speakers at the exact moment recording starts lets the server later
+// auto-align the phone's video to this app's finished audio mix — see
+// audio_fx.py's align_and_mux_video for the matched-filter side of this.
+let phonePaired=false, phoneStatus='unpaired';
+let chirpParams={f0:800,f1:3200,durMs:120};
+window._chirpMusicPos=null;      // song-time when the chirp actually played
+window._combineTriggered=false;
+
+async function loadPhoneSyncInfo(){
+  try{
+    const j=await(await fetch('/phone_sync_info?id='+SID)).json();
+    if(j.chirp) chirpParams=j.chirp;
+    const box=$('phoneUrlBox'), txt=$('phoneUrlText'), status=$('phoneStatusText');
+    if(j.phone_url){
+      txt.textContent=j.phone_url;
+      box.style.display='';
+      status.textContent='Pair your phone:';
+    }else{
+      status.textContent="Couldn't detect a LAN address — make sure you're on WiFi.";
+    }
+  }catch(_){
+    $('phoneStatusText').textContent='Phone pairing unavailable.';
+  }
+}
+if($('phoneCopyBtn')) $('phoneCopyBtn').addEventListener('click',()=>{
+  navigator.clipboard?.writeText($('phoneUrlText').textContent).catch(()=>{});
+});
+
+function playSyncChirp(){
+  const {f0,f1,durMs}=chirpParams, dur=durMs/1000, t0=audioCtx.currentTime;
+  const osc=audioCtx.createOscillator(), gain=audioCtx.createGain();
+  osc.type='sine';
+  osc.frequency.setValueAtTime(f0,t0);
+  osc.frequency.linearRampToValueAtTime(f1,t0+dur);
+  gain.gain.setValueAtTime(0,t0);
+  gain.gain.linearRampToValueAtTime(0.6,t0+dur*0.1);
+  gain.gain.setValueAtTime(0.6,t0+dur*0.9);
+  gain.gain.linearRampToValueAtTime(0,t0+dur);
+  osc.connect(gain).connect(audioCtx.destination);   // to speakers, NOT into the mic graph
+  osc.start(t0); osc.stop(t0+dur+0.02);
+}
+
+function checkPhoneStatus(){
+  fetch('/status?id='+SID).then(r=>r.json()).then(j=>{
+    phonePaired=!!j.phone_paired;
+    phoneStatus=j.phone_status||'unpaired';
+    const status=$('phoneStatusText');
+    if(!status) return;
+    if(!phonePaired){
+      if($('phoneUrlBox').style.display!=='none') status.textContent='Pair your phone:';
+    }else{
+      const labels={paired:'📱 Phone connected — ready',recording:'📱 Recording…',
+        stopping:'📱 Stopping…',uploaded:'📱 Video received ✓'};
+      status.textContent=labels[phoneStatus]||('📱 '+phoneStatus);
+    }
+  }).catch(()=>{});
+}
+setInterval(checkPhoneStatus,800);
+
 // ---- record (with optional punch-in) ---------------------------------------
 $('rec').addEventListener('click',startRec);
 $('stop').addEventListener('click',stopRec);
@@ -1497,6 +1899,8 @@ async function startRec(){
   recorder=new MediaRecorder(mediaStream,{mimeType:pickMime(),audioBitsPerSecond:512000});
   recorder.ondataavailable=e=>{ if(e.data.size) recChunks.push(e.data); };
   recorder.onstop=finishRec;
+  window._chirpMusicPos=null;
+  window._combineTriggered=false;
 
   const startAt = punch ? punchAt : 0;
   applyMusicMonitorVol();
@@ -1510,9 +1914,24 @@ async function startRec(){
 
   // Start the recorder, then capture the PRECISE alignment anchors the instant
   // it begins. onstart fires when capture truly starts — best reference we have.
+  const phoneThisTake=phonePaired && phoneStatus!=='recording' && !punch;  // v1: fresh takes only
+  window._phoneThisTake=phoneThisTake;
   recorder.onstart=()=>{
     recStartCtxTime=audioCtx.currentTime;
     musicPosAtRecStart=backingAudio.currentTime||startAt;
+    if(phoneThisTake){
+      fetch('/phone/cmd',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id:SID,cmd:'start'})}).catch(()=>{});
+      // give the phone's MediaRecorder time to actually spin up before the
+      // chirp fires — network trigger timing is sloppy, so this buffer just
+      // needs to make it LIKELY the phone is already capturing; the chirp
+      // itself is what gets matched precisely afterward, not this timing.
+      setTimeout(()=>{
+        if(!recording) return;   // stopped already (very short take) — skip the chirp
+        playSyncChirp();
+        window._chirpMusicPos=backingAudio.currentTime||startAt;
+      },450);
+    }
   };
   recorder.start();
 
@@ -1527,6 +1946,10 @@ function stopRec(){ if(!recording)return;
   window._recEndMusicPos = backingAudio.currentTime || 0;
   recorder.stop(); backingAudio.pause();
   if(ytReady){ try{ ytPlayer.pauseVideo(); }catch(_){} }
+  if(window._phoneThisTake){
+    fetch('/phone/cmd',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID,cmd:'stop'})}).catch(()=>{});
+  }
   recording=false; showRecUI(false); showTuner(false);
   $('play').disabled=false; resetMusicBtn();
 }
@@ -2081,7 +2504,8 @@ async function doRender(){
   const b64=await blobToB64(window._lastVocalWav);
   const body={id:SID, vocal_wav_b64:b64, fx:collectFx(), mix:{
     vocal_gain_db:+$('vgain').value, music_gain_db:+$('mgain').value,
-    music_key:musicKey, format:$('ofmt').value, loudnorm:true }};
+    music_key:musicKey, format:$('ofmt').value, loudnorm:true },
+    chirp_music_pos_sec:window._chirpMusicPos};
   let r; try{ r=await fetch('/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
   catch(e){ return failRender('Could not reach server.'); }
   const d=await r.json(); if(!r.ok) return failRender(d.error||'Render failed.');
@@ -2104,8 +2528,33 @@ async function checkRender(){
     fa.preload='metadata';
     if(window._finalAudio){ try{window._finalAudio.pause();}catch(_){}}
     window._finalAudio=fa;
-    buildPlayer($('finalPlayer'), fa, {label:'Your finished song'}); }
+    buildPlayer($('finalPlayer'), fa, {label:'Your finished song'});
+    if(window._chirpMusicPos!=null) tryCombineVideo(); }
   else if(j.status==='error'){ clearInterval(poll);poll=null; failRender(j.error||'Render failed.'); }
+}
+
+// ---- phone video combine (align phone's video to the finished mix) --------
+function tryCombineVideo(){
+  if(window._combineTriggered) return;
+  fetch('/combine_video',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:SID})}).then(r=>{
+      if(r.ok){ window._combineTriggered=true; videoPoll=setInterval(checkVideoCombine,1000); }
+      // 409 = phone hasn't uploaded yet; retry shortly
+      else setTimeout(tryCombineVideo,2000);
+    }).catch(()=>setTimeout(tryCombineVideo,2000));
+}
+let videoPoll=null;
+async function checkVideoCombine(){
+  let j; try{ j=await(await fetch('/status?id='+SID)).json(); }catch(e){return;}
+  if(j.video_status==='done'){
+    clearInterval(videoPoll); videoPoll=null;
+    $('result').insertAdjacentHTML('beforeend',
+      '<a class="dl" href="/final_video?id='+SID+'" download>⬇ Download video (with phone camera)</a>');
+  }else if(j.video_status==='error'){
+    clearInterval(videoPoll); videoPoll=null;
+    $('result').insertAdjacentHTML('beforeend',
+      '<div class="err">Couldn\'t sync phone video: '+(j.video_error||'unknown error')+'</div>');
+  }
 }
 function blobToB64(blob){ return new Promise(res=>{const fr=new FileReader();
   fr.onload=()=>res(fr.result.split(',')[1]); fr.readAsDataURL(blob);}); }
@@ -2125,8 +2574,11 @@ function blobToB64(blob){ return new Promise(res=>{const fr=new FileReader();
 
 
 def main():
-    srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    srv = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
     print(f"\n  🎤 Karaoke Studio  →  http://{HOST}:{PORT}\n")
+    lan = _lan_ip()
+    if lan:
+        print(f"  Phone-camera pairing (same WiFi): http://{lan}:{PORT}/phone\n")
     print(f"  Sessions saved in: {SESS_DIR}")
     print("  Ctrl+C to stop.\n")
     try:

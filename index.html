@@ -343,6 +343,19 @@
           records &amp; exports — the sliders above only change what YOU hear.
           <kbd>Space</kbd> record · <kbd>P</kbd> play/pause.
         </div>
+
+        <!-- phone camera pairing: film with your phone, synced to this app's audio -->
+        <div class="hint" id="phonePairPanel" style="margin-top:8px">
+          📱 <span id="phoneStatusText">Loading phone-pairing link…</span>
+          <div id="phoneUrlBox" style="display:none;margin-top:6px">
+            <code id="phoneUrlText" style="user-select:all"></code>
+            <button class="btn" id="phoneCopyBtn" type="button" style="margin-left:8px">Copy link</button>
+            <div style="opacity:.8;margin-top:4px">Open on your phone (same WiFi). Android only for now —
+              camera access over a plain link needs a one-time browser setting; see the
+              <a href="https://github.com/TanSin18/Karaoke-Studio#readme" target="_blank" rel="noopener">README</a>.</div>
+          </div>
+        </div>
+
         <!-- your recorded take: full play/pause/stop/seek, appears after recording -->
         <div class="player" id="takePlayer" style="display:none"></div>
       </div>
@@ -607,6 +620,7 @@ function onReady(j){
   $('seek').disabled=false; $('keyup').disabled=false; $('keydn').disabled=false;
   $('keyhint').textContent='original';
   primeMic();
+  loadPhoneSyncInfo();
 }
 function fmt(s){ s=Math.max(0,s|0); return String((s/60)|0).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
 
@@ -988,6 +1002,68 @@ function wireBacking(a){
   a.addEventListener('ended',()=>{ if(recording) stopRec(); resetMusicBtn(); });
 }
 
+// ---- phone pairing / remote camera sync -------------------------------------
+// Pairs a phone (opened on the same WiFi) so clicking Record also remote-
+// triggers the phone's camera. A synthetic "chirp" tone played through the
+// speakers at the exact moment recording starts lets the server later
+// auto-align the phone's video to this app's finished audio mix — see
+// audio_fx.py's align_and_mux_video for the matched-filter side of this.
+let phonePaired=false, phoneStatus='unpaired';
+let chirpParams={f0:800,f1:3200,durMs:120};
+window._chirpMusicPos=null;      // song-time when the chirp actually played
+window._combineTriggered=false;
+
+async function loadPhoneSyncInfo(){
+  try{
+    const j=await(await fetch('/phone_sync_info?id='+SID)).json();
+    if(j.chirp) chirpParams=j.chirp;
+    const box=$('phoneUrlBox'), txt=$('phoneUrlText'), status=$('phoneStatusText');
+    if(j.phone_url){
+      txt.textContent=j.phone_url;
+      box.style.display='';
+      status.textContent='Pair your phone:';
+    }else{
+      status.textContent="Couldn't detect a LAN address — make sure you're on WiFi.";
+    }
+  }catch(_){
+    $('phoneStatusText').textContent='Phone pairing unavailable.';
+  }
+}
+if($('phoneCopyBtn')) $('phoneCopyBtn').addEventListener('click',()=>{
+  navigator.clipboard?.writeText($('phoneUrlText').textContent).catch(()=>{});
+});
+
+function playSyncChirp(){
+  const {f0,f1,durMs}=chirpParams, dur=durMs/1000, t0=audioCtx.currentTime;
+  const osc=audioCtx.createOscillator(), gain=audioCtx.createGain();
+  osc.type='sine';
+  osc.frequency.setValueAtTime(f0,t0);
+  osc.frequency.linearRampToValueAtTime(f1,t0+dur);
+  gain.gain.setValueAtTime(0,t0);
+  gain.gain.linearRampToValueAtTime(0.6,t0+dur*0.1);
+  gain.gain.setValueAtTime(0.6,t0+dur*0.9);
+  gain.gain.linearRampToValueAtTime(0,t0+dur);
+  osc.connect(gain).connect(audioCtx.destination);   // to speakers, NOT into the mic graph
+  osc.start(t0); osc.stop(t0+dur+0.02);
+}
+
+function checkPhoneStatus(){
+  fetch('/status?id='+SID).then(r=>r.json()).then(j=>{
+    phonePaired=!!j.phone_paired;
+    phoneStatus=j.phone_status||'unpaired';
+    const status=$('phoneStatusText');
+    if(!status) return;
+    if(!phonePaired){
+      if($('phoneUrlBox').style.display!=='none') status.textContent='Pair your phone:';
+    }else{
+      const labels={paired:'📱 Phone connected — ready',recording:'📱 Recording…',
+        stopping:'📱 Stopping…',uploaded:'📱 Video received ✓'};
+      status.textContent=labels[phoneStatus]||('📱 '+phoneStatus);
+    }
+  }).catch(()=>{});
+}
+setInterval(checkPhoneStatus,800);
+
 // ---- record (with optional punch-in) ---------------------------------------
 $('rec').addEventListener('click',startRec);
 $('stop').addEventListener('click',stopRec);
@@ -1025,6 +1101,8 @@ async function startRec(){
   recorder=new MediaRecorder(mediaStream,{mimeType:pickMime(),audioBitsPerSecond:512000});
   recorder.ondataavailable=e=>{ if(e.data.size) recChunks.push(e.data); };
   recorder.onstop=finishRec;
+  window._chirpMusicPos=null;
+  window._combineTriggered=false;
 
   const startAt = punch ? punchAt : 0;
   applyMusicMonitorVol();
@@ -1038,9 +1116,24 @@ async function startRec(){
 
   // Start the recorder, then capture the PRECISE alignment anchors the instant
   // it begins. onstart fires when capture truly starts — best reference we have.
+  const phoneThisTake=phonePaired && phoneStatus!=='recording' && !punch;  // v1: fresh takes only
+  window._phoneThisTake=phoneThisTake;
   recorder.onstart=()=>{
     recStartCtxTime=audioCtx.currentTime;
     musicPosAtRecStart=backingAudio.currentTime||startAt;
+    if(phoneThisTake){
+      fetch('/phone/cmd',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id:SID,cmd:'start'})}).catch(()=>{});
+      // give the phone's MediaRecorder time to actually spin up before the
+      // chirp fires — network trigger timing is sloppy, so this buffer just
+      // needs to make it LIKELY the phone is already capturing; the chirp
+      // itself is what gets matched precisely afterward, not this timing.
+      setTimeout(()=>{
+        if(!recording) return;   // stopped already (very short take) — skip the chirp
+        playSyncChirp();
+        window._chirpMusicPos=backingAudio.currentTime||startAt;
+      },450);
+    }
   };
   recorder.start();
 
@@ -1055,6 +1148,10 @@ function stopRec(){ if(!recording)return;
   window._recEndMusicPos = backingAudio.currentTime || 0;
   recorder.stop(); backingAudio.pause();
   if(ytReady){ try{ ytPlayer.pauseVideo(); }catch(_){} }
+  if(window._phoneThisTake){
+    fetch('/phone/cmd',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID,cmd:'stop'})}).catch(()=>{});
+  }
   recording=false; showRecUI(false); showTuner(false);
   $('play').disabled=false; resetMusicBtn();
 }
@@ -1609,7 +1706,8 @@ async function doRender(){
   const b64=await blobToB64(window._lastVocalWav);
   const body={id:SID, vocal_wav_b64:b64, fx:collectFx(), mix:{
     vocal_gain_db:+$('vgain').value, music_gain_db:+$('mgain').value,
-    music_key:musicKey, format:$('ofmt').value, loudnorm:true }};
+    music_key:musicKey, format:$('ofmt').value, loudnorm:true },
+    chirp_music_pos_sec:window._chirpMusicPos};
   let r; try{ r=await fetch('/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
   catch(e){ return failRender('Could not reach server.'); }
   const d=await r.json(); if(!r.ok) return failRender(d.error||'Render failed.');
@@ -1632,8 +1730,33 @@ async function checkRender(){
     fa.preload='metadata';
     if(window._finalAudio){ try{window._finalAudio.pause();}catch(_){}}
     window._finalAudio=fa;
-    buildPlayer($('finalPlayer'), fa, {label:'Your finished song'}); }
+    buildPlayer($('finalPlayer'), fa, {label:'Your finished song'});
+    if(window._chirpMusicPos!=null) tryCombineVideo(); }
   else if(j.status==='error'){ clearInterval(poll);poll=null; failRender(j.error||'Render failed.'); }
+}
+
+// ---- phone video combine (align phone's video to the finished mix) --------
+function tryCombineVideo(){
+  if(window._combineTriggered) return;
+  fetch('/combine_video',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:SID})}).then(r=>{
+      if(r.ok){ window._combineTriggered=true; videoPoll=setInterval(checkVideoCombine,1000); }
+      // 409 = phone hasn't uploaded yet; retry shortly
+      else setTimeout(tryCombineVideo,2000);
+    }).catch(()=>setTimeout(tryCombineVideo,2000));
+}
+let videoPoll=null;
+async function checkVideoCombine(){
+  let j; try{ j=await(await fetch('/status?id='+SID)).json(); }catch(e){return;}
+  if(j.video_status==='done'){
+    clearInterval(videoPoll); videoPoll=null;
+    $('result').insertAdjacentHTML('beforeend',
+      '<a class="dl" href="/final_video?id='+SID+'" download>⬇ Download video (with phone camera)</a>');
+  }else if(j.video_status==='error'){
+    clearInterval(videoPoll); videoPoll=null;
+    $('result').insertAdjacentHTML('beforeend',
+      '<div class="err">Couldn\'t sync phone video: '+(j.video_error||'unknown error')+'</div>');
+  }
 }
 function blobToB64(blob){ return new Promise(res=>{const fr=new FileReader();
   fr.onload=()=>res(fr.result.split(',')[1]); fr.readAsDataURL(blob);}); }
