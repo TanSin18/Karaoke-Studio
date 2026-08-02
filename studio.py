@@ -19,6 +19,8 @@ Run:  python3 studio.py   ->  http://127.0.0.1:8770
 import base64
 import json
 import os
+import queue as pyqueue
+import random
 import re
 import socket
 import subprocess
@@ -463,6 +465,121 @@ def _run_render_locked(jid, vocal_path, fx, mix_opts, lock):
         lock.release()
 
 
+# ---- Party mode: room + queue ------------------------------------------------
+# One party room per running server (a party is one physical event, so there's
+# no need for multi-room isolation). The host's TV screen and every guest phone
+# share this state; ROOM_LOCK guards it, and SUBSCRIBERS holds an SSE queue per
+# connected browser tab so everyone sees queue changes live. Songs themselves
+# still go through the existing JOBS/do_prepare pipeline — a queue entry just
+# points at a jid once that job's status is "ready".
+
+ROOM = {"code": None, "queue": [], "now_playing": None}
+ROOM_LOCK = threading.Lock()
+SUBSCRIBERS = []
+SUB_LOCK = threading.Lock()
+
+
+def room_state():
+    with ROOM_LOCK:
+        return {"code": ROOM["code"], "queue": list(ROOM["queue"]),
+                "now_playing": ROOM["now_playing"]}
+
+
+def broadcast_room():
+    payload = json.dumps(room_state())
+    with SUB_LOCK:
+        subs = list(SUBSCRIBERS)
+    for q in subs:
+        q.put(payload)
+
+
+def start_room():
+    code = "".join(random.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(4))
+    with ROOM_LOCK:
+        ROOM["code"] = code
+        ROOM["queue"] = []
+        ROOM["now_playing"] = None
+    broadcast_room()
+    return code
+
+
+def queue_add(jid, singers, semitones):
+    j = get_job(jid)
+    if not j or j.get("status") != "ready":
+        return None
+    entry = {
+        "entry_id": uuid.uuid4().hex[:10],
+        "jid": jid,
+        "title": j.get("title") or "Karaoke",
+        "singers": singers,
+        "semitones": semitones,
+        "status": "queued",
+    }
+    with ROOM_LOCK:
+        if ROOM["code"] is None:
+            return None
+        ROOM["queue"].append(entry)
+    broadcast_room()
+    return entry
+
+
+def queue_advance():
+    """Mark the current now-playing entry done (if any) and promote the next
+    queued entry."""
+    with ROOM_LOCK:
+        q = ROOM["queue"]
+        for e in q:
+            if e["status"] == "now_playing":
+                e["status"] = "done"
+        nxt = next((e for e in q if e["status"] == "queued"), None)
+        if nxt:
+            nxt["status"] = "now_playing"
+            ROOM["now_playing"] = nxt["entry_id"]
+        else:
+            ROOM["now_playing"] = None
+    broadcast_room()
+
+
+def queue_remove(entry_id):
+    with ROOM_LOCK:
+        ROOM["queue"] = [e for e in ROOM["queue"] if e["entry_id"] != entry_id]
+        if ROOM["now_playing"] == entry_id:
+            ROOM["now_playing"] = None
+    broadcast_room()
+
+
+def queue_move(entry_id, direction):
+    """Swap entry_id with its neighbor among still-queued entries (done /
+    now-playing entries are skipped over, not swapped with)."""
+    with ROOM_LOCK:
+        q = ROOM["queue"]
+        queued_idx = [i for i, e in enumerate(q) if e["status"] == "queued"]
+        pos = next((k for k, i in enumerate(queued_idx) if q[i]["entry_id"] == entry_id), None)
+        if pos is None:
+            return
+        target = pos - 1 if direction == "up" else pos + 1
+        if target < 0 or target >= len(queued_idx):
+            return
+        i, j = queued_idx[pos], queued_idx[target]
+        q[i], q[j] = q[j], q[i]
+    broadcast_room()
+
+
+def make_qr_png(data):
+    """Render `data` as a QR code PNG via the optional `qrencode` CLI (same
+    "optional but recommended" pattern as rubberband/sox). Returns None if
+    qrencode isn't installed or fails — callers should fall back to showing
+    the join URL as plain text."""
+    try:
+        r = subprocess.run(["qrencode", "-o", "-", "-t", "PNG", "-s", "6", "-m", "2", data],
+                            capture_output=True, timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0 or not r.stdout:
+        return None
+    return r.stdout
+
+
 # ---- HTTP -------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -575,6 +692,68 @@ class Handler(BaseHTTPRequestHandler):
                     "dur_ms": int(audio_fx.CHIRP_DUR * 1000),
                 },
             })
+            return
+
+        if p.path == "/party":
+            b = PARTY_HTML.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+            return
+
+        if p.path == "/join":
+            b = JOIN_HTML.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+            return
+
+        if p.path == "/room/state":
+            self._json(200, room_state())
+            return
+
+        if p.path == "/room/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            q = pyqueue.Queue()
+            with SUB_LOCK:
+                SUBSCRIBERS.append(q)
+            try:
+                self.wfile.write(f"data: {json.dumps(room_state())}\n\n".encode())
+                self.wfile.flush()
+                while True:
+                    try:
+                        payload = q.get(timeout=15)
+                        self.wfile.write(f"data: {payload}\n\n".encode())
+                    except pyqueue.Empty:
+                        self.wfile.write(b": keep-alive\n\n")  # comment ping
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                with SUB_LOCK:
+                    if q in SUBSCRIBERS:
+                        SUBSCRIBERS.remove(q)
+            return
+
+        if p.path == "/qr.png":
+            data = (parse_qs(p.query).get("data") or [""])[0]
+            png = make_qr_png(data) if data else None
+            if not png:
+                self._json(404, {"error": "qrencode not available"})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(png)))
+            self.end_headers()
+            self.wfile.write(png)
             return
 
         if p.path == "/phone/poll":
@@ -925,6 +1104,52 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"take": take})
             return
 
+        if p.path == "/room/start":
+            code = start_room()
+            lan = _lan_ip()
+            join_url = f"http://{lan}:{PORT}/join?room={code}" if lan else None
+            self._json(200, {"code": code, "join_url": join_url})
+            return
+
+        if p.path == "/queue/add":
+            body = self._read_body()
+            jid = (body.get("jid") or "").strip()
+            singers = [s.strip() for s in (body.get("singers") or []) if s.strip()][:6]
+            try:
+                semitones = max(-6, min(6, int(body.get("semitones") or 0)))
+            except (TypeError, ValueError):
+                semitones = 0
+            if not jid or not singers:
+                self._json(400, {"error": "Need at least a song and a singer name."})
+                return
+            entry = queue_add(jid, singers, semitones)
+            if not entry:
+                self._json(400, {"error": "No open party room, or song isn't ready yet."})
+                return
+            self._json(200, {"entry": entry})
+            return
+
+        if p.path == "/queue/next":
+            queue_advance()
+            self._json(200, room_state())
+            return
+
+        if p.path == "/queue/remove":
+            body = self._read_body()
+            queue_remove(body.get("entry_id"))
+            self._json(200, room_state())
+            return
+
+        if p.path == "/queue/move":
+            body = self._read_body()
+            direction = body.get("direction")
+            if direction not in ("up", "down"):
+                self._json(400, {"error": "direction must be 'up' or 'down'"})
+                return
+            queue_move(body.get("entry_id"), direction)
+            self._json(200, room_state())
+            return
+
         self._json(404, {"error": "not found"})
 
 
@@ -1090,6 +1315,322 @@ async function pollLoop(){
     await new Promise(r=>setTimeout(r, 300));
   }
 }
+</script>
+"""
+
+
+# ---- Party mode: TV screen ---------------------------------------------------
+# Open this on the host machine as http://localhost:8770/party (must be
+# "localhost", same YouTube-embed-origin rule as personal mode).
+PARTY_HTML = r"""<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Karaoke Party</title>
+<style>
+  :root{
+    --panel:#15171c; --panel2:#1c1f26; --edge:#2a2e38;
+    --ink:#e8ebf0; --muted:#8b93a3; --dim:#5a6172;
+    --amber:#ffb454; --amber2:#ff9b3d; --ok:#39d98a;
+    --mono:'SF Mono',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:#0a0b0e;color:var(--ink);
+    font:16px/1.4 -apple-system,system-ui,sans-serif;padding:24px;}
+  h1{font-size:22px;margin:0 0 4px;color:var(--amber)}
+  .sub{color:var(--muted);margin:0 0 20px}
+  .code{font:700 64px/1 var(--mono);letter-spacing:.08em;color:var(--amber)}
+  .join{color:var(--muted);font-size:14px}
+  button{background:var(--amber);color:#1a1200;border:none;border-radius:10px;
+    padding:12px 20px;font-weight:700;font-size:15px;cursor:pointer}
+  button:hover{background:var(--amber2)}
+  button.ghost{background:transparent;border:1px solid var(--edge);color:var(--ink)}
+  .grid{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-top:20px}
+  .panel{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:20px}
+  #stage{aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden}
+  #stage iframe,#ytplayer{width:100%;height:100%}
+  .nowSingers{font-size:28px;font-weight:700;margin:14px 0 2px}
+  .nowTitle{color:var(--muted)}
+  .upnext li{padding:10px 0;border-bottom:1px solid var(--edge);position:relative}
+  .upnext .who{font-weight:600}
+  .upnext .what{color:var(--muted);font-size:14px}
+  .rowBtns{position:absolute;right:0;top:8px;display:flex;gap:6px}
+  button.small{padding:4px 8px;font-size:13px;border-radius:6px}
+  button.small:disabled{opacity:.25;cursor:default}
+  .empty{color:var(--dim);padding:20px 0}
+  .codeRow{display:flex;align-items:center;gap:20px}
+  #qrImg{width:120px;height:120px;background:#fff;border-radius:8px;padding:6px}
+  .hidden{display:none}
+</style>
+
+<div id="start">
+  <h1>🎤 Karaoke Party</h1>
+  <p class="sub">Start a room, then have guests join from their phones on the same WiFi.</p>
+  <button id="startBtn">Start Party</button>
+</div>
+
+<div id="live" style="display:none">
+  <h1>🎤 Karaoke Party</h1>
+  <div class="codeRow">
+    <div>
+      <div class="code" id="roomCode"></div>
+      <div class="join">Guests: join at <b id="joinUrl"></b></div>
+    </div>
+    <img id="qrImg" class="hidden" alt="Scan to join">
+  </div>
+  <div class="grid">
+    <div class="panel">
+      <div id="stage"><div class="empty">Nobody queued yet — waiting for guests to join and add songs.</div></div>
+      <div class="nowSingers" id="singers"></div>
+      <div class="nowTitle" id="songTitle"></div>
+      <div style="margin-top:14px"><button id="nextBtn">Next ▶</button></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Up next</h3>
+      <ul class="upnext" id="upnext"><li class="empty">Queue is empty.</li></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let state={code:null,queue:[],now_playing:null};
+let currentEntryId=null, ytPlayer=null, ytReady=false, backingAudio=null, syncTimer=null;
+
+$('startBtn').addEventListener('click',async()=>{
+  const r=await fetch('/room/start',{method:'POST'}); const j=await r.json();
+  $('start').style.display='none'; $('live').style.display='block';
+  $('roomCode').textContent=j.code; $('joinUrl').textContent=j.join_url||'(no LAN IP found — check WiFi)';
+  if(j.join_url){
+    const qr=$('qrImg');
+    qr.onload=()=>qr.classList.remove('hidden');
+    qr.onerror=()=>qr.classList.add('hidden');  // qrencode not installed — text URL above still works
+    qr.src='/qr.png?data='+encodeURIComponent(j.join_url);
+  }
+  subscribe();
+});
+
+$('nextBtn').addEventListener('click',()=>{
+  // mount synchronously inside the click so audio.play() rides this user gesture
+  const next=state.queue.find(e=>e.status==='queued');
+  if(next) mountEntry(next);
+  fetch('/queue/next',{method:'POST'});
+});
+
+function subscribe(){
+  const es=new EventSource('/room/events');
+  es.onmessage=(ev)=>{ state=JSON.parse(ev.data); render(); };
+}
+
+function render(){
+  const upcoming=state.queue.filter(e=>e.status==='queued');
+  $('upnext').innerHTML = upcoming.length
+    ? upcoming.map((e,i)=>`<li>
+        <div class="who">${esc(e.singers.join(' & '))}</div>
+        <div class="what">${esc(e.title)}</div>
+        <div class="rowBtns">
+          <button class="ghost small" data-move="up" data-id="${e.entry_id}" ${i===0?'disabled':''}>▲</button>
+          <button class="ghost small" data-move="down" data-id="${e.entry_id}" ${i===upcoming.length-1?'disabled':''}>▼</button>
+          <button class="ghost small" data-remove="${e.entry_id}">✕</button>
+        </div>
+      </li>`).join('')
+    : '<li class="empty">Queue is empty.</li>';
+  const now=state.queue.find(e=>e.entry_id===state.now_playing);
+  if(now){ $('singers').textContent=now.singers.join(' & '); $('songTitle').textContent=now.title; }
+  else { $('singers').textContent=''; $('songTitle').textContent=''; }
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+$('upnext').addEventListener('click',(ev)=>{
+  const b=ev.target.closest('button'); if(!b) return;
+  if(b.dataset.move) fetch('/queue/move',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({entry_id:b.dataset.id, direction:b.dataset.move})});
+  else if(b.dataset.remove) fetch('/queue/remove',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({entry_id:b.dataset.remove})});
+});
+
+function loadYTApi(cb){
+  if(window.YT && window.YT.Player){ cb(); return; }
+  window.onYouTubeIframeAPIReady=cb;
+  if(!document.getElementById('ytapi')){
+    const s=document.createElement('script'); s.id='ytapi';
+    s.src='https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+  }
+}
+
+async function mountEntry(entry){
+  if(!entry || entry.entry_id===currentEntryId) return;
+  currentEntryId=entry.entry_id;
+  $('singers').textContent=entry.singers.join(' & ');
+  $('songTitle').textContent=entry.title;
+  const j=await (await fetch('/status?id='+entry.jid)).json();
+  loadYTApi(()=>{
+    $('stage').innerHTML='<div id="ytplayer"></div>';
+    ytReady=false;
+    ytPlayer=new YT.Player('ytplayer',{
+      videoId:j.video_id, host:'https://www.youtube.com',
+      playerVars:{mute:1,rel:0,modestbranding:1,playsinline:1,iv_load_policy:3,controls:0,origin:window.location.origin},
+      events:{
+        onReady:()=>{ try{ytPlayer.mute();}catch(_){} ytReady=true; ytPlayer.playVideo(); startAudio(entry); },
+        onStateChange:(e)=>{ if(e.data===0){ /* video ended — host taps Next */ } },
+      }
+    });
+  });
+}
+
+function startAudio(entry){
+  if(backingAudio){ try{backingAudio.pause();}catch(_){} }
+  if(syncTimer) clearInterval(syncTimer);
+  backingAudio=new Audio('/backing?id='+entry.jid+'&key='+entry.semitones);
+  backingAudio.play().catch(()=>{});
+  syncTimer=setInterval(()=>{
+    if(!ytReady||!backingAudio) return;
+    const vt=ytPlayer.getCurrentTime();
+    if(Math.abs((backingAudio.currentTime||0)-vt)>0.15){ try{backingAudio.currentTime=vt;}catch(_){} }
+  },500);
+}
+</script>
+"""
+
+
+# ---- Party mode: guest join page ---------------------------------------------
+# Guests open this over the LAN (the host's LAN IP, shown as the join URL) —
+# no YouTube iframe here at all, so the localhost-only embed restriction
+# doesn't apply to this page.
+JOIN_HTML = r"""<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join the Party</title>
+<style>
+  :root{
+    --panel:#15171c; --edge:#2a2e38; --ink:#e8ebf0; --muted:#8b93a3;
+    --amber:#ffb454; --amber2:#ff9b3d; --ok:#39d98a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:#0a0b0e;color:var(--ink);
+    font:16px/1.4 -apple-system,system-ui,sans-serif;padding:18px;max-width:480px;margin:0 auto}
+  h1{font-size:20px;color:var(--amber);margin:8px 0 16px}
+  label{display:block;font-size:13px;color:var(--muted);margin:14px 0 6px}
+  input[type=text]{width:100%;padding:12px;border-radius:10px;border:1px solid var(--edge);
+    background:var(--panel);color:var(--ink);font-size:16px}
+  button{background:var(--amber);color:#1a1200;border:none;border-radius:10px;
+    padding:12px 18px;font-weight:700;font-size:15px;cursor:pointer;margin-top:10px}
+  button:disabled{opacity:.4}
+  .results{margin-top:10px}
+  .result{display:flex;gap:10px;padding:10px;border:1px solid var(--edge);border-radius:10px;
+    margin-bottom:8px;cursor:pointer;background:var(--panel)}
+  .result img{width:72px;height:54px;object-fit:cover;border-radius:6px;flex:none}
+  .result .t{font-size:14px}
+  .result .c{font-size:12px;color:var(--muted)}
+  .panel{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:16px;margin-top:16px}
+  .slider{display:flex;align-items:center;gap:10px}
+  input[type=range]{flex:1}
+  .msg{color:var(--ok);margin-top:10px}
+  .err{color:#ff6b6b;margin-top:10px}
+  .hidden{display:none}
+</style>
+
+<h1>🎤 Join the party</h1>
+
+<label>Room code</label>
+<input type="text" id="room" style="text-transform:uppercase" maxlength="4">
+
+<label>Your name (or names, comma-separated, for a duet)</label>
+<input type="text" id="names" placeholder="Alice, Bob">
+
+<label>Search for a song</label>
+<input type="text" id="q" placeholder="Search YouTube...">
+<button id="searchBtn">Search</button>
+<div class="results" id="results"></div>
+
+<div class="panel hidden" id="preview">
+  <div id="prepStatus" style="color:var(--muted)">Preparing track…</div>
+  <div id="previewControls" class="hidden">
+    <audio id="audio" controls style="width:100%"></audio>
+    <div class="slider" style="margin-top:10px">
+      <span>Key</span>
+      <input type="range" id="key" min="-6" max="6" value="0">
+      <span id="keyVal">0</span>
+    </div>
+    <button id="addBtn">Add to queue ✓</button>
+  </div>
+</div>
+<div id="feedback"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const params=new URLSearchParams(location.search);
+if(params.get('room')) $('room').value=params.get('room').toUpperCase();
+
+let currentJid=null, statusPoll=null;
+
+$('searchBtn').addEventListener('click', doSearch);
+$('q').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
+
+async function doSearch(){
+  const q=$('q').value.trim();
+  if(!q) return;
+  $('results').innerHTML='Searching…';
+  const r=await fetch('/search?q='+encodeURIComponent(q));
+  const j=await r.json();
+  const results=j.results||[];
+  $('results').innerHTML = results.length ? results.map((res,i)=>
+    `<div class="result" data-i="${i}"><img src="${res.thumb}"><div><div class="t">${esc(res.title)}</div><div class="c">${esc(res.channel||'')}</div></div></div>`
+  ).join('') : 'No results.';
+  [...document.querySelectorAll('.result')].forEach((el,i)=>{
+    el.addEventListener('click',()=>pickSong(results[i]));
+  });
+}
+
+async function pickSong(res){
+  currentJid=null;
+  $('preview').classList.remove('hidden');
+  $('previewControls').classList.add('hidden');
+  $('prepStatus').textContent='Downloading & preparing "'+res.title+'"…';
+  $('feedback').innerHTML='';
+  const r=await fetch('/prepare',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url:'https://www.youtube.com/watch?v='+res.id})});
+  const j=await r.json();
+  currentJid=j.id;
+  if(statusPoll) clearInterval(statusPoll);
+  statusPoll=setInterval(async()=>{
+    const s=await (await fetch('/status?id='+currentJid)).json();
+    if(s.status==='ready'){
+      clearInterval(statusPoll);
+      $('prepStatus').textContent='Ready: '+s.title;
+      $('previewControls').classList.remove('hidden');
+      loadPreview(0);
+    } else if(s.status==='error'){
+      clearInterval(statusPoll);
+      $('prepStatus').textContent='Failed: '+(s.error||'unknown error');
+    } else {
+      $('prepStatus').textContent='Preparing… '+Math.round(s.pct||0)+'%';
+    }
+  },1000);
+}
+
+function loadPreview(key){
+  const a=$('audio');
+  const wasPlaying=!a.paused;
+  const t=a.currentTime||0;
+  a.src='/backing?id='+currentJid+'&key='+key;
+  a.onloadedmetadata=()=>{ try{a.currentTime=t;}catch(_){} if(wasPlaying) a.play().catch(()=>{}); };
+}
+
+$('key').addEventListener('input',()=>{ $('keyVal').textContent=$('key').value; });
+$('key').addEventListener('change',()=>{ loadPreview(parseInt($('key').value,10)); });
+
+$('addBtn').addEventListener('click', async()=>{
+  const room=$('room').value.trim().toUpperCase();
+  const singers=$('names').value.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!room){ $('feedback').innerHTML='<div class="err">Enter the room code.</div>'; return; }
+  if(!singers.length){ $('feedback').innerHTML='<div class="err">Enter your name.</div>'; return; }
+  if(!currentJid){ $('feedback').innerHTML='<div class="err">Pick a song first.</div>'; return; }
+  const r=await fetch('/queue/add',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({jid:currentJid,singers,semitones:parseInt($('key').value,10)})});
+  const j=await r.json();
+  if(r.ok){ $('feedback').innerHTML='<div class="msg">You\'re queued! 🎉</div>'; }
+  else { $('feedback').innerHTML='<div class="err">'+esc(j.error||'Could not queue.')+'</div>'; }
+});
+
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 </script>
 """
 
@@ -2950,6 +3491,9 @@ def main():
     lan = _lan_ip()
     if lan:
         print(f"  Phone-camera pairing (same WiFi): http://{lan}:{PORT}/phone\n")
+    print(f"  Party mode: open http://{HOST}:{PORT}/party on this machine (TV screen)")
+    if lan:
+        print(f"              guests join at http://{lan}:{PORT}/join (once you start a room)\n")
     print(f"  Sessions saved in: {SESS_DIR}")
     print("  Ctrl+C to stop.\n")
     try:
