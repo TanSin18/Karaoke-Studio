@@ -1,0 +1,22 @@
+# Session data — downloaded audio, recordings, renders. Never commit (large, per-user).
+sessions/
+downloads/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Logs / temp
+*.log
+/tmp/
+scratch/

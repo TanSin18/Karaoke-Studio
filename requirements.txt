@@ -1,0 +1,10 @@
+# Python packages for Karaoke Studio.
+#   pip3 install -r requirements.txt
+#
+# System tools (NOT pip-installable) are also required — see README:
+#   yt-dlp, ffmpeg   (required)
+#   rubberband, sox  (optional, better pitch/transpose quality)
+numpy
+scipy
+librosa
+soundfile
