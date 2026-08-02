@@ -8,6 +8,15 @@
     --amber:#ffb454; --amber2:#ff9b3d; --rec:#ff3b47; --ok:#39d98a;
     --fader:#3a3f4c; --track:#0a0b0e;
     --mono:'SF Mono',ui-monospace,Menlo,monospace;
+
+    /* jukebox amber-neon: the same accents as above, turned into real glow */
+    --accent: var(--amber);
+    --accent2: var(--amber2);
+    --glow-amber: 0 0 6px rgba(255,180,84,.55), 0 0 16px rgba(255,155,61,.30);
+    --glow-rec:   0 0 8px var(--rec), 0 0 3px #fff;
+    --glow-ok:    0 0 6px rgba(57,217,138,.6), 0 0 14px rgba(57,217,138,.25);
+    --metal: linear-gradient(180deg,#20242e,#15171c);
+    --glass: linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.16));
   }
   *{box-sizing:border-box}
   body{
@@ -22,30 +31,34 @@
   header{display:flex;align-items:baseline;gap:14px;margin-bottom:18px}
   .logo{font-family:var(--mono);font-weight:700;font-size:19px;letter-spacing:.14em;
     text-transform:uppercase;color:var(--ink)}
-  .logo b{color:var(--amber)}
+  .logo b{color:var(--amber);text-shadow:var(--glow-amber)}
   .tag{color:var(--dim);font-size:12px;font-family:var(--mono);letter-spacing:.08em}
 
   .grid{display:grid;grid-template-columns:1.35fr .95fr;gap:16px}
-  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  @media(max-width:1100px){.grid{grid-template-columns:1fr}}
 
-  .card{background:linear-gradient(180deg,var(--panel2),var(--panel));
+  .card{background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
     border:1px solid var(--edge);border-radius:12px;padding:16px;
-    box-shadow:0 10px 30px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.03)}
+    box-shadow:0 10px 30px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04)}
   .card h2{margin:0 0 12px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;
     text-transform:uppercase;color:var(--muted);font-weight:600;
     display:flex;align-items:center;gap:8px}
-  .card h2::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber)}
+  .card h2::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber);
+    box-shadow:var(--glow-amber)}
 
   input[type=text]{width:100%;padding:11px 13px;border-radius:8px;border:1px solid var(--edge);
-    background:#0a0b0e;color:var(--ink);font-size:13px;outline:none;font-family:var(--mono)}
-  input[type=text]:focus{border-color:var(--amber2)}
+    background:#0a0b0e;color:var(--ink);font-size:13px;outline:none;font-family:var(--mono);
+    transition:border-color .15s,box-shadow .15s}
+  input[type=text]:focus{border-color:var(--amber2);box-shadow:var(--glow-amber)}
   .btn{padding:11px 18px;border:none;border-radius:8px;cursor:pointer;font-weight:650;font-size:13px;
-    background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink);
-    border:1px solid var(--edge);transition:filter .12s}
+    background:var(--metal);color:var(--ink);
+    border:1px solid var(--edge);transition:filter .12s,box-shadow .12s}
   .btn:hover{filter:brightness(1.15)}
   .btn:disabled{opacity:.4;cursor:default}
-  .btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#211500;border-color:#a5651f}
+  .btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#211500;border-color:#a5651f;
+    box-shadow:var(--glow-amber)}
   .btn.rec{background:linear-gradient(180deg,#ff4d58,#e0313c);color:#fff;border-color:#a51f27}
+  .btn.rec:not(:disabled){box-shadow:var(--glow-rec)}
   .btn.wide{width:100%}
 
   .row{display:flex;gap:10px;align-items:center}
@@ -94,7 +107,7 @@
   #punchhint{color:var(--amber);font-family:var(--mono);font-size:11px}
   .time{font-family:var(--mono);font-size:13px;color:var(--amber);min-width:104px;letter-spacing:.05em}
   .reclamp{width:11px;height:11px;border-radius:50%;background:#3a2225;box-shadow:inset 0 0 4px #000}
-  .reclamp.on{background:var(--rec);box-shadow:0 0 10px var(--rec),0 0 3px #fff}
+  .reclamp.on{background:var(--rec);box-shadow:var(--glow-rec)}
 
   /* level meter */
   .meter{height:12px;border-radius:6px;background:var(--track);overflow:hidden;border:1px solid #000;position:relative}
@@ -102,23 +115,33 @@
     transition:width .05s linear}
   .metlabel{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.1em;margin-bottom:5px}
 
-  /* fx rack */
-  .rack{background:var(--rack);border:1px solid #000;border-radius:10px;padding:14px;
-    box-shadow:inset 0 2px 10px rgba(0,0,0,.6)}
-  .fxrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed #23262e}
+  /* fx rack — brushed metal + glass panel face */
+  .rack{background:var(--glass),var(--rack);border:1px solid #000;border-radius:10px;padding:14px;
+    box-shadow:inset 0 2px 10px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05)}
+  .fxrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed #23262e;flex-wrap:wrap}
   .fxrow:last-child{border-bottom:none}
-  .fxname{width:118px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
-  .fxname.on{color:var(--amber)}
-  input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;
-    background:#2a2e38;flex:1;outline:none}
-  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
-    background:radial-gradient(circle at 35% 30%,#fff 0%,var(--amber) 40%,var(--amber2) 100%);
-    cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.6),0 0 0 1px #a5651f}
-  input[type=range]:disabled::-webkit-slider-thumb{background:#4a4f5c;box-shadow:none}
+  .fxname{min-width:90px;width:118px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+  .fxname.on{color:var(--amber);text-shadow:var(--glow-amber)}
+
+  /* skeuomorphic fader: recessed track, raised metal cap, amber glow when focused */
+  input[type=range]{-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;
+    background:var(--track);box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000;
+    flex:1;min-width:80px;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:22px;border-radius:4px;
+    background:linear-gradient(180deg,#565c6c,var(--fader) 55%,#2c2f38);
+    border:1px solid #0a0b0e;position:relative;cursor:pointer;
+    box-shadow:0 2px 5px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.15)}
+  input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--track);
+    box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000}
+  input[type=range]::-moz-range-thumb{width:18px;height:22px;border-radius:4px;
+    background:linear-gradient(180deg,#565c6c,var(--fader) 55%,#2c2f38);
+    border:1px solid #0a0b0e;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.6)}
+  input[type=range]:focus::-webkit-slider-thumb{box-shadow:0 2px 5px rgba(0,0,0,.6),var(--glow-amber)}
+  input[type=range]:disabled::-webkit-slider-thumb{background:#3a3d45;box-shadow:none}
   .val{font-family:var(--mono);font-size:11px;color:var(--muted);width:52px;text-align:right}
   .tog{width:34px;height:19px;border-radius:11px;background:#2a2e38;position:relative;cursor:pointer;
-    border:1px solid #000;flex:none;transition:background .15s}
-  .tog.on{background:var(--amber2)}
+    border:1px solid #000;flex:none;transition:background .15s,box-shadow .15s}
+  .tog.on{background:var(--amber2);box-shadow:var(--glow-amber)}
   .tog::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;
     background:#dfe3ea;transition:left .15s}
   .tog.on::after{left:16px}
@@ -127,14 +150,60 @@
     color:var(--ink);font-size:12px;font-family:var(--mono);outline:none}
   select:focus{border-color:var(--amber2)}
 
-  .mixrow{display:flex;align-items:center;gap:12px;padding:8px 0}
-  .mixrow .fxname{width:90px}
+  .mixrow{display:flex;align-items:center;gap:12px;padding:8px 0;flex-wrap:wrap}
+  .mixrow .fxname{min-width:70px;width:90px}
+
+  .rqueue{position:absolute;top:6px;left:6px;background:rgba(10,11,14,.85);color:var(--ink);
+    border:1px solid var(--edge);border-radius:6px;font-family:var(--mono);font-size:10px;
+    padding:3px 6px;cursor:pointer;opacity:0;transition:opacity .12s}
+  .rcard:hover .rqueue{opacity:1}
+  .rqueue:hover{border-color:var(--amber2);color:var(--amber)}
+
+  /* queue */
+  .queuepanel{margin-top:14px;background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
+  .queuelist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .queueitem{display:flex;align-items:center;gap:8px;background:#141821;border:1px solid var(--edge);
+    border-radius:8px;padding:6px 8px}
+  .queueitem img{width:44px;height:25px;object-fit:cover;border-radius:4px;flex:none}
+  .queuetitle{flex:1;font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .queuebtn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:13px;padding:2px 4px}
+  .queuebtn:hover{color:var(--amber)}
+  .queuebtn.rm:hover{color:var(--rec)}
+
+  /* take history strip */
+  .takestrip{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 8px}
+  .takecard{flex:none;width:132px;background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;
+    padding:9px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .takecard.active{border-color:var(--amber2);box-shadow:var(--glow-amber)}
+  .takecard-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .takebadge{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--dim);background:#1a1d24;border-radius:4px;padding:2px 5px}
+  .takebadge.comp{color:var(--ok)}
+  .takebadge.harmony{color:var(--amber)}
+  .takex{color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:2px}
+  .takex:hover{color:var(--rec)}
+  .takedur{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:6px}
+  .takeplay{width:100%;padding:5px;border-radius:6px;border:1px solid var(--edge);
+    background:var(--metal);color:var(--ink);cursor:pointer;font-size:11px}
+  .takeplay:hover{filter:brightness(1.2)}
+  .comprow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;
+    background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px}
+  .comprow select{max-width:150px}
+
+  /* local-file import drop zone */
+  .dropzone{border:2px dashed var(--edge);border-radius:12px;padding:36px 20px;text-align:center;
+    background:#0a0b0e;transition:border-color .15s,box-shadow .15s}
+  .dropzone.drag{border-color:var(--amber2);box-shadow:var(--glow-amber)}
+  .dz-icon{font-size:32px;color:var(--dim);margin-bottom:8px}
+  .dz-text{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px;letter-spacing:.03em}
 
   /* search tabs + results */
-  .tabs{display:flex;gap:6px;margin-bottom:14px}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
   .tab{background:transparent;border:1px solid var(--edge);color:var(--muted);font-family:var(--mono);
-    font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:7px 14px;border-radius:8px;cursor:pointer}
-  .tab.on{background:linear-gradient(180deg,#2b2f39,#232730);color:var(--amber);border-color:var(--amber2)}
+    font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:7px 14px;border-radius:8px;cursor:pointer;
+    transition:box-shadow .15s,color .15s,border-color .15s}
+  .tab.on{background:linear-gradient(180deg,#2b2f39,#232730);color:var(--amber);border-color:var(--amber2);
+    text-shadow:var(--glow-amber)}
   .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:14px}
   .rcard{display:flex;flex-direction:column;background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;
     overflow:hidden;cursor:pointer;transition:border-color .12s,transform .12s}
@@ -150,8 +219,8 @@
   .rcard.loading{opacity:.5;pointer-events:none}
   /* live pitch tuner */
   .tuner{background:#0a0b0e;border:1px solid var(--edge);border-radius:12px;padding:14px;margin-top:12px;text-align:center}
-  .tuner-note{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--dim);line-height:1;letter-spacing:.02em;transition:color .1s}
-  .tuner-note.good{color:var(--ok)} .tuner-note.off{color:var(--amber)}
+  .tuner-note{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--dim);line-height:1;letter-spacing:.02em;transition:color .1s,text-shadow .1s}
+  .tuner-note.good{color:var(--ok);text-shadow:var(--glow-ok)} .tuner-note.off{color:var(--amber);text-shadow:var(--glow-amber)}
   .tuner-scale{position:relative;height:26px;margin:10px auto 4px;max-width:340px;
     background:linear-gradient(90deg,rgba(248,113,113,.18),rgba(74,217,138,.22) 50%,rgba(248,113,113,.18));
     border-radius:6px;border:1px solid #000;overflow:hidden}
@@ -198,7 +267,7 @@
   .err{color:var(--rec);font-size:12.5px;margin-top:10px;font-family:var(--mono)}
   .status{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
   .dl{display:inline-block;margin-top:12px;text-decoration:none;background:linear-gradient(180deg,var(--ok),#28b873);
-    color:#052012;padding:11px 20px;border-radius:8px;font-weight:700;font-size:13px}
+    color:#052012;padding:11px 20px;border-radius:8px;font-weight:700;font-size:13px;box-shadow:var(--glow-ok)}
   /* reusable mini-player control row (used for Play take + final song) */
   .player{background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:12px;margin-top:12px}
   .player .ctrls{display:flex;align-items:center;gap:8px}
@@ -218,7 +287,39 @@
   .bar{height:6px;background:#0a0b0e;border-radius:4px;overflow:hidden;border:1px solid #000;margin-top:8px}
   .bar .fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber2),var(--amber));transition:width .3s}
   kbd{font-family:var(--mono);background:#0a0b0e;border:1px solid var(--edge);border-radius:4px;padding:1px 6px;font-size:11px;color:var(--amber)}
+
+  /* ---- toasts (replaces ad-hoc inline error text for transient messages) --- */
+  .toaststack{position:fixed;top:16px;right:16px;z-index:1000;display:flex;flex-direction:column;
+    gap:8px;max-width:340px}
+  .toast{background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--edge);border-radius:10px;padding:11px 14px;font-family:var(--mono);
+    font-size:12px;color:var(--ink);box-shadow:0 8px 24px rgba(0,0,0,.5);
+    animation:toastin .15s ease-out}
+  .toast.info{border-color:var(--edge)}
+  .toast.ok{border-color:var(--ok);box-shadow:0 8px 24px rgba(0,0,0,.5),var(--glow-ok)}
+  .toast.warn{border-color:var(--amber2);box-shadow:0 8px 24px rgba(0,0,0,.5),var(--glow-amber)}
+  .toast.error{border-color:var(--rec);box-shadow:0 8px 24px rgba(0,0,0,.5),var(--glow-rec)}
+  @keyframes toastin{from{opacity:0;transform:translateX(12px)} to{opacity:1;transform:translateX(0)}}
+
+  /* ---- responsive tiers (the >1100px 2-col rule lives with .grid above) - */
+  @media(max-width:700px){
+    body{padding:12px}
+    .wrap{max-width:100%}
+    .fxname{width:auto;flex:1 0 100%}
+    .mixrow .fxname{width:auto;flex:1 0 100%}
+    .btn,.tab,.ksmall,.pbtn{min-height:44px}
+    .ksmall{min-width:44px}
+    .results{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+    .toaststack{left:12px;right:12px;top:auto;bottom:12px;max-width:none}
+    /* keep record controls reachable while scrolling a tall page on a phone */
+    #stageCard .transport:has(#rec){position:sticky;bottom:0;z-index:20;
+      background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
+      margin:12px -16px -16px;padding:12px 16px;border-top:1px solid var(--edge);
+      border-radius:0 0 12px 12px}
+  }
 </style>
+
+<div id="toasts" class="toaststack"></div>
 
 <div class="wrap">
   <header>
@@ -232,6 +333,7 @@
     <div class="tabs">
       <button class="tab on" id="tabSearch">Search YouTube</button>
       <button class="tab" id="tabUrl">Paste a link</button>
+      <button class="tab" id="tabFile">Upload a file</button>
     </div>
 
     <!-- search mode -->
@@ -252,9 +354,29 @@
       </div>
     </div>
 
+    <!-- file-import mode: sing over a local audio/video file instead of YouTube -->
+    <div id="fileMode" style="display:none">
+      <div class="dropzone" id="dropzone">
+        <div class="dz-icon">♪</div>
+        <div class="dz-text">Drop an audio or video file here, or</div>
+        <button id="filePickBtn" class="btn amber">Choose a file</button>
+        <input type="file" id="filePick" accept="audio/*,video/*" style="display:none">
+      </div>
+    </div>
+
     <div class="bar" id="loadbar" style="display:none"><div class="fill" id="loadfill"></div></div>
     <div class="status mt" id="loadstatus"></div>
     <div class="err" id="loaderr"></div>
+
+    <!-- queue: line up several songs; auto-advance moves through them -->
+    <div class="queuepanel" id="queuePanel" style="display:none">
+      <div class="metlabel" style="display:flex;align-items:center">
+        <span>UP NEXT</span>
+        <label class="tunertog" style="margin-left:auto">
+          <input type="checkbox" id="autoAdvance"> auto-advance</label>
+      </div>
+      <div class="queuelist" id="queueList"></div>
+    </div>
   </div>
 
   <div class="grid">
@@ -324,6 +446,20 @@
           <span class="tunertog" id="delayHint" style="cursor:default">vocals lag → slide right</span>
         </div>
 
+        <!-- metronome: count-in before recording, optional click while singing -->
+        <div class="mons" id="metroRow">
+          <div class="monrow" style="flex:none">
+            <span class="monlbl">Metronome</span>
+            <button id="bpmdn" class="ksmall" title="Slower">−</button>
+            <span class="kval" id="bpmval">100</span>
+            <button id="bpmup" class="ksmall" title="Faster">+</button>
+            <span class="monlbl">bpm</span>
+          </div>
+          <label class="tunertog"><input type="checkbox" id="countInToggle" checked> 4-click count-in</label>
+          <label class="tunertog" title="Click track heard only in your headphones — never recorded (M)">
+            <input type="checkbox" id="clickRecToggle"> click while recording</label>
+        </div>
+
         <!-- record transport -->
         <div class="transport">
           <div class="reclamp" id="lamp"></div>
@@ -360,13 +496,35 @@
 
         <!-- your recorded take: full play/pause/stop/seek, appears after recording -->
         <div class="player" id="takePlayer" style="display:none"></div>
+
+        <!-- take history: every take you've kept, pick one (or a comp) to render -->
+        <div id="takeHistory" style="display:none;margin-top:12px">
+          <div class="metlabel" style="display:flex;align-items:center">
+            <span>YOUR TAKES <span style="color:var(--dim)">— click one to use it for render</span></span>
+            <button id="undoDeleteBtn" class="ksmall" style="width:auto;padding:0 8px;margin-left:auto;display:none" title="Restore the take you just deleted">↺ Undo delete</button>
+          </div>
+          <div class="takestrip" id="takeStrip"></div>
+          <div class="comprow" id="compRow" style="display:none">
+            <select id="compHead"></select>
+            <span class="klabel">JOIN AT</span>
+            <input type="text" id="compPunch" value="0" style="width:56px;padding:6px 8px" title="Seconds into the head take where the tail take should take over">
+            <span class="klabel">s WITH</span>
+            <select id="compTail"></select>
+            <button class="btn" id="compBtn">↳ Join takes</button>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- RIGHT: fx rack + mixer + export -->
     <div>
       <div class="card step" id="fxCard">
-        <h2>3 · Voice FX rack</h2>
+        <h2>3 · Voice FX rack
+          <span style="margin-left:auto;display:flex;gap:6px">
+            <button id="fxUndoBtn" class="ksmall" style="width:auto;padding:0 8px" title="Undo last FX change (Ctrl/Cmd+Z)" disabled>↺ Undo</button>
+            <button id="fxRedoBtn" class="ksmall" style="width:auto;padding:0 8px" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↻ Redo</button>
+          </span>
+        </h2>
         <div class="rack" id="rack">
           <!-- pitch -->
           <div class="fxrow">
@@ -444,8 +602,19 @@
         </div>
       </div>
 
+      <div class="card step mt" id="duetCard" style="margin-top:16px">
+        <h2>4 · Duet / harmony</h2>
+        <div class="status" id="duetHint">Keep at least one take (Step 2) to sing a harmony against it.</div>
+        <div class="row mt" id="duetPicker" style="display:none">
+          <select id="duetLead" style="flex:1"></select>
+          <button id="duetRecBtn" class="btn rec">● Record harmony</button>
+          <button id="duetStopBtn" class="btn" style="display:none">■ Stop</button>
+        </div>
+        <div class="status mt" id="duetStatus"></div>
+      </div>
+
       <div class="card step mt" id="mixCard" style="margin-top:16px">
-        <h2>4 · Mix &amp; export</h2>
+        <h2>5 · Mix &amp; export</h2>
         <div class="mixrow">
           <div class="fxname">Vocal</div>
           <input type="range" id="vgain" min="-12" max="12" value="0">
@@ -455,6 +624,11 @@
           <div class="fxname">Music</div>
           <input type="range" id="mgain" min="-18" max="6" value="-3">
           <div class="val" id="mgainv">-3 dB</div>
+        </div>
+        <div class="mixrow" id="harmonyRow" style="display:none">
+          <div class="fxname">Harmony</div>
+          <input type="range" id="hgain" min="-18" max="6" value="-3">
+          <div class="val" id="hgainv">-3 dB</div>
         </div>
         <div class="row mt">
           <select id="ofmt">
@@ -475,6 +649,26 @@
 
 <script>
 const $=id=>document.getElementById(id);
+
+// ---- toasts: small reusable status/error popups (replaces scattered inline
+// error text for anything transient) ----
+function toast(msg, kind='info', ms=4000){
+  const stack=$('toasts'); if(!stack) return {update(){},dismiss(){}};
+  const el=document.createElement('div');
+  el.className='toast '+kind;
+  el.textContent=msg;
+  stack.appendChild(el);
+  let timer = ms>0 ? setTimeout(()=>dismiss(), ms) : null;
+  function dismiss(){ if(timer) clearTimeout(timer); el.remove(); }
+  function update(newMsg, newKind){
+    el.textContent=newMsg;
+    if(newKind){ el.className='toast '+newKind; kind=newKind; }
+    if(timer) clearTimeout(timer);
+    timer = ms>0 ? setTimeout(()=>dismiss(), ms) : null;
+  }
+  return {update, dismiss};
+}
+
 let SID=null, poll=null;
 let mediaStream=null, recorder=null, recChunks=[], audioCtx=null;
 let backingAudio=null, recording=false, startT=0, dur=0, rafMeter=null;
@@ -500,7 +694,42 @@ function setEnabled(fx, ids){ ids.forEach(i=>{const el=$(i); if(el) el.disabled=
 document.querySelectorAll('.tog').forEach(t=>t.addEventListener('click',()=>{
   const k=t.dataset.fx; fxOn[k]=!fxOn[k]; refreshTogs();
   liveFxIfPlaying();
+  pushFxHistory();
 }));
+
+// ---- undo/redo for the FX rack ----------------------------------------------
+function makeHistory(){
+  return {
+    past:[], future:[],
+    push(state){ this.past.push(state); this.future=[]; refreshHistoryBtns(); },
+    undo(){ if(this.past.length<2) return null; this.future.push(this.past.pop());
+      refreshHistoryBtns(); return this.past[this.past.length-1]; },
+    redo(){ if(!this.future.length) return null; const s=this.future.pop();
+      this.past.push(s); refreshHistoryBtns(); return s; },
+  };
+}
+const fxHistory=makeHistory();
+const FX_SNAPSHOT_IDS=['pkey','pscale','pstr','reverb','echo','eqlow','eqmid','eqhigh','compress','denoise'];
+function snapshotFxUI(){
+  const s={fxOn:{...fxOn}};
+  FX_SNAPSHOT_IDS.forEach(id=>{ s[id]=$(id).value; });
+  return s;
+}
+function applyFxUI(s){
+  Object.assign(fxOn, s.fxOn);
+  FX_SNAPSHOT_IDS.forEach(id=>{ if(id in s) $(id).value=s[id]; });
+  refreshTogs();
+  FX_SNAPSHOT_IDS.forEach(id=>$(id).dispatchEvent(new Event('input')));  // refresh .val labels
+  liveFxIfPlaying();
+}
+function pushFxHistory(){ fxHistory.push(snapshotFxUI()); }
+function refreshHistoryBtns(){
+  $('fxUndoBtn').disabled = fxHistory.past.length<2;
+  $('fxRedoBtn').disabled = !fxHistory.future.length;
+}
+$('fxUndoBtn').addEventListener('click',()=>{ const s=fxHistory.undo(); if(s) applyFxUI(s); });
+$('fxRedoBtn').addEventListener('click',()=>{ const s=fxHistory.redo(); if(s) applyFxUI(s); });
+FX_SNAPSHOT_IDS.forEach(id=>$(id).addEventListener('change',pushFxHistory));
 
 // live-apply FX to the take while it's playing back (safe no-op otherwise)
 function liveFxIfPlaying(){ if(typeof applyLiveFx==='function') applyLiveFx(); }
@@ -514,7 +743,9 @@ bindVal('compress',v=>v+'%'); bindVal('denoise',v=>v+'%');
 bindVal('eqlow',v=>(v>=0?'+':'')+v+' dB'); bindVal('eqmid',v=>(v>=0?'+':'')+v+' dB');
 bindVal('eqhigh',v=>(v>=0?'+':'')+v+' dB');
 bindVal('vgain',v=>(v>=0?'+':'')+v+' dB'); bindVal('mgain',v=>(v>=0?'+':'')+v+' dB');
+bindVal('hgain',v=>(v>=0?'+':'')+v+' dB');
 refreshTogs();
+fxHistory.push(snapshotFxUI());   // seed undo history with the starting FX state
 
 // ---- STEP 1: search / load track ----
 $('load').addEventListener('click', ()=>loadTrack());
@@ -523,10 +754,14 @@ $('url').addEventListener('keydown',e=>{if(e.key==='Enter')loadTrack();});
 // tab switching (search <-> paste link)
 $('tabSearch').addEventListener('click',()=>switchTab('search'));
 $('tabUrl').addEventListener('click',()=>switchTab('url'));
+$('tabFile').addEventListener('click',()=>switchTab('file'));
 function switchTab(mode){
-  const s=mode==='search';
-  $('tabSearch').classList.toggle('on',s); $('tabUrl').classList.toggle('on',!s);
-  $('searchMode').style.display=s?'':'none'; $('urlMode').style.display=s?'none':'';
+  $('tabSearch').classList.toggle('on',mode==='search');
+  $('tabUrl').classList.toggle('on',mode==='url');
+  $('tabFile').classList.toggle('on',mode==='file');
+  $('searchMode').style.display=mode==='search'?'':'none';
+  $('urlMode').style.display=mode==='url'?'':'none';
+  $('fileMode').style.display=mode==='file'?'':'none';
 }
 
 // ---- search ----
@@ -539,10 +774,11 @@ async function doSearch(){
   $('results').innerHTML=''; $('searchBtn').disabled=true;
   let r;
   try{ r=await fetch('/search?q='+encodeURIComponent(q)); }
-  catch(e){ $('searchBtn').disabled=false; $('searchStatus').textContent='Could not reach the server.'; return; }
+  catch(e){ $('searchBtn').disabled=false; $('searchStatus').textContent='Could not reach the server.';
+    toast('Could not reach the server.','error'); return; }
   $('searchBtn').disabled=false;
   const d=await r.json();
-  if(!r.ok){ $('searchStatus').textContent=d.error||'Search failed.'; return; }
+  if(!r.ok){ $('searchStatus').textContent=d.error||'Search failed.'; toast(d.error||'Search failed.','error'); return; }
   const res=d.results||[];
   if(!res.length){ $('searchStatus').textContent='No results. Try different words.'; return; }
   $('searchStatus').textContent=res.length+' results — click one to load it.';
@@ -557,6 +793,7 @@ function renderResults(res){
       '<div style="position:relative">'+
         '<img class="rthumb" loading="lazy" src="'+v.thumb+'" alt="">'+
         (dur?'<span class="rdur">'+dur+'</span>':'')+
+        '<button class="rqueue" title="Add to queue">+ Queue</button>'+
       '</div>'+
       '<div class="rmeta">'+
         '<div class="rtitle">'+escapeHtml(v.title)+'</div>'+
@@ -567,10 +804,74 @@ function renderResults(res){
       card.classList.add('loading');
       loadTrack('https://www.youtube.com/watch?v='+v.id);
     });
+    card.querySelector('.rqueue').addEventListener('click',e=>{
+      e.stopPropagation();
+      addToQueue({url:'https://www.youtube.com/watch?v='+v.id, title:v.title, thumb:v.thumb});
+    });
     box.appendChild(card);
   });
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---- playlist / queue: line up several YouTube songs, auto-advance between
+// them. Persisted to localStorage (URLs only — an imported local File object
+// can't be serialized, so file-import sessions aren't queueable). ----------
+const QUEUE_KEY='kstudio.queue';
+let queue=[];
+function loadQueueFromStorage(){
+  try{ queue=JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]'); }catch(e){ queue=[]; }
+  renderQueue();
+}
+function saveQueueToStorage(){ try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(queue)); }catch(e){} }
+function addToQueue(item){
+  queue.push(item); saveQueueToStorage(); renderQueue();
+  toast('Added to queue.','ok',1500);
+}
+function removeFromQueue(i){ queue.splice(i,1); saveQueueToStorage(); renderQueue(); }
+function moveQueueItem(i,dir){
+  const j=i+dir; if(j<0||j>=queue.length) return;
+  [queue[i],queue[j]]=[queue[j],queue[i]]; saveQueueToStorage(); renderQueue();
+}
+function renderQueue(){
+  $('queuePanel').style.display = queue.length? 'block':'none';
+  const box=$('queueList'); box.innerHTML='';
+  queue.forEach((item,i)=>{
+    const row=document.createElement('div'); row.className='queueitem';
+    row.innerHTML=
+      (item.thumb?'<img src="'+item.thumb+'" alt="">':'')+
+      '<span class="queuetitle">'+escapeHtml(item.title||item.url)+'</span>'+
+      '<button class="queuebtn up" title="Move up">▲</button>'+
+      '<button class="queuebtn dn" title="Move down">▼</button>'+
+      '<button class="queuebtn rm" title="Remove">✕</button>';
+    row.querySelector('.up').addEventListener('click',()=>moveQueueItem(i,-1));
+    row.querySelector('.dn').addEventListener('click',()=>moveQueueItem(i,1));
+    row.querySelector('.rm').addEventListener('click',()=>removeFromQueue(i));
+    box.appendChild(row);
+  });
+}
+let autoAdvanceOn=false;
+$('autoAdvance').addEventListener('change',e=>{ autoAdvanceOn=e.target.checked; });
+
+// clears everything specific to the SONG you were just working on (takes,
+// vocal buffers, FX-rack settings are deliberately left alone — a singer's
+// preferred reverb/EQ carries over to the next song).
+function resetForNewSong(){
+  takes=[]; activeTakeId=null; activeHarmonyTakeId=null; lastDeletedTakeId=null;
+  keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
+  $('undoDeleteBtn').style.display='none';
+  $('takePlayer').innerHTML=''; $('takePlayer').style.display='none';
+  $('playtake').disabled=true; $('playtake').style.display='';
+  $('takeHistory').style.display='none';
+  $('result').innerHTML=''; $('rendererr').textContent='';
+}
+function playNext(){
+  if(!queue.length) return;
+  const item=queue.shift(); saveQueueToStorage(); renderQueue();
+  resetForNewSong();
+  switchTab('url');
+  loadTrack(item.url);
+}
+loadQueueFromStorage();
 
 async function loadTrack(explicitUrl){
   const url=(explicitUrl||$('url').value).trim();
@@ -587,7 +888,33 @@ async function loadTrack(explicitUrl){
 }
 function failLoad(m){ $('load').disabled=false; $('searchBtn').disabled=false;
   $('loaderr').textContent=m; $('loadbar').style.display='none';
-  document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading')); }
+  document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
+  toast(m,'error'); }
+
+// ---- local file import: sing over a file instead of a YouTube link --------
+$('filePickBtn').addEventListener('click',()=>$('filePick').click());
+$('filePick').addEventListener('change',e=>{ if(e.target.files[0]) importFile(e.target.files[0]); });
+const dz=$('dropzone');
+['dragenter','dragover'].forEach(evt=>dz.addEventListener(evt,e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+['dragleave','drop'].forEach(evt=>dz.addEventListener(evt,e=>{ e.preventDefault(); dz.classList.remove('drag'); }));
+dz.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) importFile(f); });
+
+async function importFile(file){
+  $('loaderr').textContent=''; $('load').disabled=true; $('searchBtn').disabled=true;
+  $('loadbar').style.display='block'; $('loadfill').style.width='10%';
+  $('loadstatus').textContent='Uploading '+file.name+'…';
+  let r;
+  try{
+    r=await fetch('/import',{method:'POST',
+      headers:{'X-Filename':encodeURIComponent(file.name)},
+      body:file});
+  }catch(e){ return failLoad('Could not reach the local server.'); }
+  const d=await r.json();
+  if(!r.ok) return failLoad(d.error||'Import failed.');
+  SID=d.id;
+  $('loadfill').style.width='60%';
+  poll=setInterval(checkLoad,700);
+}
 
 async function checkLoad(){
   let j; try{ j=await(await fetch('/status?id='+SID)).json(); }catch(e){return;}
@@ -615,7 +942,7 @@ function onReady(j){
   backingAudio.preload='auto';
   wireBacking(backingAudio);
   decodeBackingBuffer(0);   // decode to an AudioBuffer for sample-accurate take playback
-  ['stageCard','fxCard','mixCard'].forEach(c=>$(c).classList.add('active'));
+  ['stageCard','fxCard','duetCard','mixCard'].forEach(c=>$(c).classList.add('active'));
   // enable transport controls
   $('rec').disabled=false; $('render').disabled=false; $('play').disabled=false;
   $('stopmusic').disabled=false;
@@ -623,6 +950,8 @@ function onReady(j){
   $('keyhint').textContent='original';
   primeMic();
   loadPhoneSyncInfo();
+  resetForNewSong();
+  loadTakes();
 }
 function fmt(s){ s=Math.max(0,s|0); return String((s/60)|0).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
 
@@ -779,6 +1108,56 @@ async function primeMic(){
 }
 function applyMusicMonitorVol(){ if(backingAudio) backingAudio.volume=Math.max(0,Math.min(1,musicMonitorVol)); }
 
+// ---- metronome: count-in + optional click while recording -----------------
+// The click plays only through audioCtx.destination (headphone monitor bus),
+// same as monitorGain above — it is never connected to `mediaStream`/the
+// MediaRecorder, so it can't end up inside the recorded take.
+const metro = {bpm:100, countIn:true, clickOn:false, gain:null, timer:null,
+  nextClickTime:0, beatCount:0, running:false};
+function ensureMetroGain(){
+  if(!metro.gain){ metro.gain=audioCtx.createGain(); metro.gain.gain.value=0.5;
+    metro.gain.connect(audioCtx.destination); }
+}
+function playClick(time, accent){
+  ensureMetroGain();
+  const osc=audioCtx.createOscillator(), g=audioCtx.createGain();
+  osc.frequency.value=accent?1800:1200;
+  osc.connect(g); g.connect(metro.gain);
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.exponentialRampToValueAtTime(1, time+0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, time+0.03);
+  osc.start(time); osc.stop(time+0.04);
+}
+async function countIn(){
+  ensureMetroGain();
+  const secPerBeat=60/metro.bpm, start=audioCtx.currentTime+0.05;
+  for(let i=0;i<4;i++) playClick(start+i*secPerBeat, i===0);
+  await new Promise(r=>setTimeout(r, 4*secPerBeat*1000));
+}
+function startMetroScheduler(){
+  if(metro.running) return;
+  ensureMetroGain();
+  metro.running=true; metro.beatCount=0;
+  metro.nextClickTime=audioCtx.currentTime+0.05;
+  metro.timer=setInterval(metroTick,25);
+}
+function stopMetroScheduler(){
+  metro.running=false;
+  if(metro.timer){ clearInterval(metro.timer); metro.timer=null; }
+}
+function metroTick(){
+  const lookahead=0.1, secPerBeat=60/metro.bpm;
+  while(metro.nextClickTime < audioCtx.currentTime+lookahead){
+    playClick(metro.nextClickTime, metro.beatCount%4===0);
+    metro.nextClickTime += secPerBeat; metro.beatCount++;
+  }
+}
+function setBpm(v){ metro.bpm=Math.max(40,Math.min(240,v)); $('bpmval').textContent=metro.bpm; }
+$('bpmup').addEventListener('click',()=>setBpm(metro.bpm+2));
+$('bpmdn').addEventListener('click',()=>setBpm(metro.bpm-2));
+$('countInToggle').addEventListener('change',e=>{ metro.countIn=e.target.checked; });
+$('clickRecToggle').addEventListener('change',e=>{ metro.clickOn=e.target.checked; });
+
 // ---- level meter + live pitch detection -----------------------------------
 // Autocorrelation pitch detector (robust for voice). Runs every animation
 // frame off the mic analyser; drives both the input meter and the tuner.
@@ -893,13 +1272,186 @@ $('continueBtn').addEventListener('click',()=>{
   $('stopChoice').style.display='none';
   startRec();
 });
-$('keepBtn').addEventListener('click',()=>{ $('stopChoice').style.display='none'; });
+$('keepBtn').addEventListener('click',()=>{ $('stopChoice').style.display='none'; saveCurrentTakeToHistory(); });
 $('redoBtn').addEventListener('click',()=>{
   keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
   pendingContinueAt=null; $('stopChoice').style.display='none';
   $('playtake').disabled=true; $('takePlayer').style.display='none'; $('playtake').style.display='';
   $('renderstatus').textContent='Cleared. Record again from the start.';
   startRec();
+});
+
+// ==== TAKE HISTORY (multi-take recording + comping) =========================
+// Every take you explicitly "Keep as-is" is saved server-side and shown here,
+// instead of the old model where only the single most recent take existed.
+// `activeTakeId` (if set) is rendered by reference (take_id) instead of
+// re-uploading inline audio — see doRender().
+let takes=[], activeTakeId=null, takePreviewAudio=null;
+
+async function loadTakes(){
+  if(!SID) return;
+  let d; try{ d=await(await fetch('/takes?id='+SID)).json(); }catch(e){ return; }
+  takes=d.takes||[];
+  if(takes.length && !activeTakeId) activeTakeId=takes[takes.length-1].id;
+  renderTakeStrip();
+}
+
+async function saveCurrentTakeToHistory(kind){
+  if(!window._lastVocalWav || !SID) return;
+  const b64=await blobToB64(window._lastVocalWav);
+  let r; try{
+    r=await fetch('/take',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:kind||'lead', fx_snapshot:collectFx()})});
+  }catch(e){ toast('Could not save that take.','error'); return; }
+  const d=await r.json();
+  if(!r.ok){ toast(d.error||'Could not save that take.','error'); return; }
+  takes.push(d.take);
+  activeTakeId=d.take.id;
+  renderTakeStrip();
+  toast('Take saved.','ok',2000);
+}
+
+function selectTake(tid){ activeTakeId=tid; renderTakeStrip(); }
+
+let lastDeletedTakeId=null;
+async function deleteTakeFromHistory(tid){
+  if(!SID) return;
+  try{ await fetch('/take_delete',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:SID, take:tid})}); }catch(e){ toast('Could not delete that take.','error'); return; }
+  takes=takes.filter(t=>t.id!==tid);
+  if(activeTakeId===tid) activeTakeId=takes.length? takes[takes.length-1].id : null;
+  lastDeletedTakeId=tid;
+  $('undoDeleteBtn').style.display='';
+  renderTakeStrip();
+}
+$('undoDeleteBtn').addEventListener('click', async()=>{
+  if(!lastDeletedTakeId) return;
+  let r; try{
+    r=await fetch('/take_restore',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID, take:lastDeletedTakeId})});
+  }catch(e){ toast('Could not restore that take.','error'); return; }
+  const d=await r.json();
+  if(!r.ok){ toast(d.error||'Could not restore that take.','error'); return; }
+  takes.push(d.take); activeTakeId=d.take.id;
+  lastDeletedTakeId=null; $('undoDeleteBtn').style.display='none';
+  renderTakeStrip();
+  toast('Take restored.','ok',2000);
+});
+
+function playTakePreview(tid){
+  if(takePreviewAudio){ takePreviewAudio.pause(); takePreviewAudio=null; }
+  const a=new Audio('/take_audio?id='+SID+'&take='+tid+'&t='+Date.now());
+  takePreviewAudio=a; a.play().catch(()=>{});
+}
+
+const TAKE_KIND_LABEL={lead:'take',comp:'comp',harmony:'harmony'};
+function renderTakeStrip(){
+  $('takeHistory').style.display = takes.length? 'block':'none';
+  const box=$('takeStrip'); box.innerHTML='';
+  takes.forEach((t,i)=>{
+    const card=document.createElement('div');
+    card.className='takecard'+(t.id===activeTakeId?' active':'');
+    card.innerHTML=
+      '<div class="takecard-top">'+
+        '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+'</span>'+
+        '<span class="takex" title="Delete this take">✕</span>'+
+      '</div>'+
+      '<div class="takedur">'+fmt(t.duration||0)+'</div>'+
+      '<button class="takeplay">▶ Play</button>';
+    card.addEventListener('click',e=>{ if(e.target.classList.contains('takex')||e.target.classList.contains('takeplay')) return; selectTake(t.id); });
+    card.querySelector('.takex').addEventListener('click',e=>{ e.stopPropagation(); deleteTakeFromHistory(t.id); });
+    card.querySelector('.takeplay').addEventListener('click',e=>{ e.stopPropagation(); playTakePreview(t.id); });
+    box.appendChild(card);
+  });
+  // comp controls: need at least 2 takes to join
+  $('compRow').style.display = takes.length>=2 ? 'flex' : 'none';
+  if(takes.length>=2){
+    const opt=t=>'<option value="'+t.id+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind)+' ('+fmt(t.duration||0)+')</option>';
+    $('compHead').innerHTML=takes.map(opt).join('');
+    $('compTail').innerHTML=takes.map(opt).join('');
+    $('compTail').selectedIndex=takes.length-1;
+  }
+  refreshDuetUI();
+}
+
+// ==== DUET / HARMONY =========================================================
+// Sing a second vocal layer against a chosen take (+ the backing track), heard
+// only in your headphones while recording — same isolation as the metronome:
+// playback goes to audioCtx.destination / plain <audio> elements, never into
+// the MediaRecorder's mic-only stream.
+let activeHarmonyTakeId=null, harmonyRecorder=null, harmonyChunks=[], harmonyLeadAudio=null;
+
+function refreshDuetUI(){
+  const nonHarmony=takes.filter(t=>t.kind!=='harmony');
+  $('duetPicker').style.display = nonHarmony.length? 'flex':'none';
+  $('duetHint').style.display = nonHarmony.length? 'none':'';
+  if(nonHarmony.length){
+    $('duetLead').innerHTML=nonHarmony.map((t,i)=>
+      '<option value="'+t.id+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind)+' ('+fmt(t.duration||0)+')</option>').join('');
+  }
+  const harmonies=takes.filter(t=>t.kind==='harmony');
+  if(harmonies.length && !harmonies.some(t=>t.id===activeHarmonyTakeId)){
+    activeHarmonyTakeId=harmonies[harmonies.length-1].id;
+  }
+  if(!harmonies.length) activeHarmonyTakeId=null;
+  $('harmonyRow').style.display = activeHarmonyTakeId? 'flex':'none';
+}
+
+$('duetRecBtn').addEventListener('click', async()=>{
+  const leadId=$('duetLead').value; if(!leadId) return;
+  if(!mediaStream){ await primeMic(); if(!mediaStream) return; }
+  if(audioCtx.state==='suspended') await audioCtx.resume();
+  harmonyLeadAudio=new Audio('/take_audio?id='+SID+'&take='+leadId+'&t='+Date.now());
+  harmonyLeadAudio.currentTime=0;
+  harmonyChunks=[];
+  harmonyRecorder=new MediaRecorder(mediaStream,{mimeType:pickMime(),audioBitsPerSecond:512000});
+  harmonyRecorder.ondataavailable=e=>{ if(e.data.size) harmonyChunks.push(e.data); };
+  harmonyRecorder.onstop=finishHarmonyRec;
+  try{ backingAudio.currentTime=0; }catch(_){}
+  await Promise.all([backingAudio.play().catch(()=>{}), harmonyLeadAudio.play().catch(()=>{})]);
+  harmonyRecorder.start();
+  $('duetRecBtn').style.display='none'; $('duetStopBtn').style.display='';
+  $('duetStatus').textContent='Recording harmony — listen for the lead take + music in your headphones…';
+});
+$('duetStopBtn').addEventListener('click',()=>{
+  if(harmonyRecorder && harmonyRecorder.state!=='inactive') harmonyRecorder.stop();
+  backingAudio.pause();
+  if(harmonyLeadAudio) harmonyLeadAudio.pause();
+  $('duetRecBtn').style.display=''; $('duetStopBtn').style.display='none';
+});
+async function finishHarmonyRec(){
+  $('duetStatus').textContent='Saving harmony take…';
+  const blob=new Blob(harmonyChunks,{type:harmonyRecorder.mimeType||'audio/webm'});
+  const arr=await blob.arrayBuffer();
+  const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
+  const buf=await ctx.decodeAudioData(arr);
+  const wav=encodeWav(buf);
+  const b64=await blobToB64(wav);
+  let r; try{
+    r=await fetch('/take',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:'harmony'})});
+  }catch(e){ $('duetStatus').textContent=''; toast('Could not save the harmony take.','error'); return; }
+  const d=await r.json();
+  if(!r.ok){ $('duetStatus').textContent=''; toast(d.error||'Could not save the harmony take.','error'); return; }
+  takes.push(d.take); activeHarmonyTakeId=d.take.id;
+  renderTakeStrip();
+  $('duetStatus').textContent='Harmony saved. Adjust its level in Step 5.';
+  toast('Harmony take saved.','ok');
+}
+$('compBtn').addEventListener('click',async()=>{
+  const head=$('compHead').value, tail=$('compTail').value;
+  const punch=parseFloat($('compPunch').value)||0;
+  if(head===tail){ toast('Pick two different takes to join.','warn'); return; }
+  $('compBtn').disabled=true;
+  let r; try{
+    r=await fetch('/comp',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID, head_take:head, tail_take:tail, punch_sec:punch})});
+  }catch(e){ $('compBtn').disabled=false; toast('Could not reach the server.','error'); return; }
+  $('compBtn').disabled=false;
+  const d=await r.json();
+  if(!r.ok){ toast(d.error||'Could not join those takes.','error'); return; }
+  takes.push(d.take); activeTakeId=d.take.id; renderTakeStrip();
+  toast('Takes joined.','ok');
 });
 
 // ==== TRANSPORT STATE =======================================================
@@ -1073,6 +1625,13 @@ document.addEventListener('keydown',e=>{
   if(/(INPUT|SELECT|TEXTAREA)/.test(e.target.tagName)) return;
   if(e.code==='Space'){ e.preventDefault(); recording?stopRec():(!$('rec').disabled&&startRec()); }
   if(e.key==='p'||e.key==='P'){ e.preventDefault(); if(!$('play').disabled) toggleMusic(); }
+  if(e.key==='m'||e.key==='M'){ e.preventDefault();
+    $('clickRecToggle').checked=!$('clickRecToggle').checked;
+    metro.clickOn=$('clickRecToggle').checked; }
+  if((e.metaKey||e.ctrlKey) && (e.key==='z'||e.key==='Z')){
+    e.preventDefault();
+    if(e.shiftKey) $('fxRedoBtn').click(); else $('fxUndoBtn').click();
+  }
 });
 
 let punchAt=0;   // song-time where the current take began (0 unless punch-in)
@@ -1098,6 +1657,10 @@ async function startRec(){
   punchAt = punch ? (pendingContinueAt!=null ? pendingContinueAt
                      : (ytReady? videoTime() : (backingAudio.currentTime||0))) : 0;
   pendingContinueAt=null;
+
+  // count-in only makes sense for a fresh take from the top — a mid-song
+  // punch-in should stay locked to the song's own beat, not a fresh 4-click.
+  if(metro.countIn && !punch) await countIn();
 
   recChunks=[];
   recorder=new MediaRecorder(mediaStream,{mimeType:pickMime(),audioBitsPerSecond:512000});
@@ -1138,6 +1701,7 @@ async function startRec(){
     }
   };
   recorder.start();
+  if(metro.clickOn) startMetroScheduler();
 
   $('play').textContent='❚❚ Pause music'; $('play').classList.add('amber');
   recording=true;
@@ -1149,6 +1713,7 @@ function stopRec(){ if(!recording)return;
   // remember how long we actually sang (song time) so we can trim precisely
   window._recEndMusicPos = backingAudio.currentTime || 0;
   recorder.stop(); backingAudio.pause();
+  stopMetroScheduler();
   if(ytReady){ try{ ytPlayer.pauseVideo(); }catch(_){} }
   if(window._phoneThisTake){
     fetch('/phone/cmd',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1765,26 +2330,45 @@ function collectFx(){
   };
 }
 async function doRender(){
-  if(!window._lastVocalWav){ $('rendererr').textContent='Record a vocal take first.'; return; }
+  if(!window._lastVocalWav && !activeTakeId){ $('rendererr').textContent='Record a vocal take first.'; return; }
   $('rendererr').textContent=''; $('result').innerHTML=''; $('render').disabled=true;
   $('renderbar').style.display='block'; $('renderfill').style.width='30%';
-  $('renderstatus').textContent='Uploading take…';
-  const b64=await blobToB64(window._lastVocalWav);
-  const body={id:SID, vocal_wav_b64:b64, fx:collectFx(), mix:{
+  const body={id:SID, fx:collectFx(), mix:{
     vocal_gain_db:+$('vgain').value, music_gain_db:+$('mgain').value,
-    music_key:musicKey, format:$('ofmt').value, loudnorm:true },
-    chirp_music_pos_sec:window._chirpMusicPos};
+    music_key:musicKey, format:$('ofmt').value, loudnorm:true,
+    chirp_music_pos_sec:window._chirpMusicPos }};
+  if(activeHarmonyTakeId){
+    body.mix.harmony_take_id=activeHarmonyTakeId;
+    body.mix.harmony_gain_db=+$('hgain').value;
+  }
+  // prefer a take you picked from the take-history strip; otherwise fall back
+  // to uploading whatever's currently in the take player (old single-take path)
+  if(activeTakeId && takes.some(t=>t.id===activeTakeId)){
+    body.take_id=activeTakeId;
+    $('renderstatus').textContent='Starting render…';
+  } else {
+    $('renderstatus').textContent='Uploading take…';
+    body.vocal_wav_b64=await blobToB64(window._lastVocalWav);
+  }
   let r; try{ r=await fetch('/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
   catch(e){ return failRender('Could not reach server.'); }
   const d=await r.json(); if(!r.ok) return failRender(d.error||'Render failed.');
   $('renderfill').style.width='55%';
   poll=setInterval(checkRender,800);
 }
-function failRender(m){ $('render').disabled=false; $('rendererr').textContent=m; $('renderbar').style.display='none'; }
+function failRender(m){ $('render').disabled=false; $('rendererr').textContent=m; $('renderbar').style.display='none'; toast(m,'error'); }
 async function checkRender(){
   let j; try{ j=await(await fetch('/status?id='+SID)).json(); }catch(e){return;}
-  $('renderstatus').textContent={processing_vocal:'Applying voice FX…',mixing:'Mixing final song…',done:'Done'}[j.stage]||'Rendering…';
-  if(j.stage==='mixing') $('renderfill').style.width='80%';
+  const STAGE_LABEL={
+    starting:'Starting…',
+    correcting_pitch:'Correcting pitch…',
+    applying_fx:'Applying EQ / compression…',
+    mixing: j.format ? 'Mixing & encoding '+j.format.toUpperCase()+'…' : 'Mixing final song…',
+    done:'Done',
+  };
+  const STAGE_PCT={starting:35,correcting_pitch:50,applying_fx:65,mixing:85,done:100};
+  $('renderstatus').textContent=STAGE_LABEL[j.stage]||'Rendering…';
+  if(STAGE_PCT[j.stage]) $('renderfill').style.width=STAGE_PCT[j.stage]+'%';
   if(j.status==='done'){ clearInterval(poll);poll=null; $('renderfill').style.width='100%';
     $('render').disabled=false; $('renderstatus').textContent='Rendered.';
     // Full in-app playback of the finished mix: play/pause/stop/seek + download.
@@ -1797,7 +2381,12 @@ async function checkRender(){
     if(window._finalAudio){ try{window._finalAudio.pause();}catch(_){}}
     window._finalAudio=fa;
     buildPlayer($('finalPlayer'), fa, {label:'Your finished song'});
-    if(window._chirpMusicPos!=null) tryCombineVideo(); }
+    if(window._chirpMusicPos!=null) tryCombineVideo();
+    if(autoAdvanceOn && queue.length){
+      toast('Rendered. Auto-advancing to the next song…','ok',2500);
+      setTimeout(playNext, 2500);
+    }
+  }
   else if(j.status==='error'){ clearInterval(poll);poll=null; failRender(j.error||'Render failed.'); }
 }
 

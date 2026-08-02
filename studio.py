@@ -26,11 +26,17 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 import audio_fx
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+INDEX_PATH = os.path.join(HERE, "index.html")
+
+
+def _read_index():
+    with open(INDEX_PATH, "rb") as fh:
+        return fh.read()
 
 def _sessions_dir():
     """Sessions go next to the code for a git-clone/dev run, but inside a macOS
@@ -64,8 +70,9 @@ os.makedirs(SESS_DIR, exist_ok=True)
 # accepts "localhost"). The server SOCKET binds to 0.0.0.0 below so a phone
 # on the same WiFi can also reach it for the phone-camera-sync feature;
 # binding 0.0.0.0 still happily accepts localhost/127.0.0.1 connections too,
-# so the desktop flow above is unaffected.
-HOST, PORT = "localhost", 8770
+# so the desktop flow above is unaffected. KARAOKE_PORT lets multiple dev
+# checkouts run side by side without fighting over the same port.
+HOST, PORT = "localhost", int(os.environ.get("KARAOKE_PORT", 8770))
 BIND_HOST = "0.0.0.0"
 
 
@@ -98,6 +105,88 @@ def get_job(jid):
         return dict(JOBS.get(jid, {}))
 
 
+def _read_meta(jid):
+    try:
+        with open(os.path.join(SESS_DIR, jid, "meta.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_meta(jid, **kw):
+    sdir = os.path.join(SESS_DIR, jid)
+    os.makedirs(sdir, exist_ok=True)
+    meta = _read_meta(jid)
+    meta.update(kw)
+    try:
+        with open(os.path.join(sdir, "meta.json"), "w", encoding="utf-8") as fh:
+            json.dump(meta, fh)
+    except OSError:
+        pass
+
+
+def _probe_duration(path):
+    try:
+        r = subprocess.run(["ffprobe", "-v", "quiet", "-show_entries",
+                            "format=duration", "-of", "csv=p=0", path],
+                           capture_output=True, text=True)
+        return float(r.stdout.strip())
+    except Exception:
+        return None
+
+
+# ---- Take history (multi-take recording + comping) -------------------------
+# Stored as a `takes` list inside the session's meta.json (via _read_meta/
+# _write_meta above), one WAV file per take. Deletes are soft (a `deleted`
+# flag) so undo can just un-hide the entry — the file is never removed.
+
+def _add_take(jid, file, duration, kind="lead", fx_snapshot=None,
+              punch_sec=None, source_take_ids=None, tid=None):
+    tid = tid or uuid.uuid4().hex[:8]
+    meta = _read_meta(jid)
+    takes = meta.get("takes") or []
+    take = {
+        "id": tid, "file": file, "duration": duration, "kind": kind,
+        "fx_snapshot": fx_snapshot, "punch_sec": punch_sec,
+        "source_take_ids": source_take_ids, "deleted": False,
+    }
+    takes.append(take)
+    _write_meta(jid, takes=takes)
+    return take
+
+
+def _get_take(jid, tid):
+    for t in _read_meta(jid).get("takes") or []:
+        if t.get("id") == tid:
+            return t
+    return None
+
+
+def _set_take_deleted(jid, tid, deleted):
+    meta = _read_meta(jid)
+    takes = meta.get("takes") or []
+    found = False
+    for t in takes:
+        if t.get("id") == tid:
+            t["deleted"] = deleted
+            found = True
+    if found:
+        _write_meta(jid, takes=takes)
+    return found
+
+
+def _del_take(jid, tid):
+    return _set_take_deleted(jid, tid, True)
+
+
+def _restore_take(jid, tid):
+    return _set_take_deleted(jid, tid, False)
+
+
+def list_takes(jid):
+    return [t for t in (_read_meta(jid).get("takes") or []) if not t.get("deleted")]
+
+
 def job_or_disk(jid):
     """Return the in-memory job, or reconstruct a minimal one from disk if the
     server was restarted but the session folder (with a backing track) survives.
@@ -109,16 +198,8 @@ def job_or_disk(jid):
         return {}
     backing = os.path.join(SESS_DIR, jid, "backing.wav")
     if os.path.exists(backing):
-        dur = None
-        try:
-            r = subprocess.run(["ffprobe", "-v", "quiet", "-show_entries",
-                                "format=duration", "-of", "csv=p=0", backing],
-                               capture_output=True, text=True)
-            dur = float(r.stdout.strip())
-        except Exception:
-            pass
         set_job(jid, status="ready", stage="ready", pct=100,
-                title="Karaoke", duration=dur, recovered=True)
+                title="Karaoke", duration=_probe_duration(backing), recovered=True)
         return get_job(jid)
     return {}
 
@@ -216,18 +297,42 @@ def do_prepare(jid, url):
     except Exception:
         pass
 
-    # duration for the UI
-    dur = None
-    try:
-        r = subprocess.run(["ffprobe", "-v", "quiet", "-show_entries",
-                            "format=duration", "-of", "csv=p=0", backing],
-                           capture_output=True, text=True)
-        dur = float(r.stdout.strip())
-    except Exception:
-        pass
-
     set_job(jid, status="ready", stage="ready", pct=100,
-            video_id=vid, title=title or "Karaoke", duration=dur)
+            video_id=vid, title=title or "Karaoke", duration=_probe_duration(backing))
+
+
+# ---- Local file import (no YouTube) -----------------------------------------
+
+MAX_IMPORT_BYTES = 500 * 1024 * 1024  # 500MB
+
+
+def do_import(jid, upload_path, filename):
+    """Convert an uploaded local audio/video file into the session's backing
+    track, the same role yt-dlp's download plays for a YouTube session. No
+    video_id is set, so the client falls into the existing lyrics-fallback
+    (synced clock) UI automatically — there's no video to show."""
+    set_job(jid, status="running", stage="preparing", pct=50, error=None)
+    sdir = os.path.join(SESS_DIR, jid)
+    backing = os.path.join(sdir, "backing.wav")
+    cmd = ["ffmpeg", "-y", "-i", upload_path, "-vn",
+           "-ar", "48000", "-ac", "2", "-c:a", "pcm_s24le", backing]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        set_job(jid, status="error", error="ffmpeg not found on PATH.")
+        return
+    try:
+        os.remove(upload_path)
+    except OSError:
+        pass
+    if r.returncode != 0 or not os.path.exists(backing):
+        set_job(jid, status="error",
+                error="Could not read that file as audio/video. Try a different file.")
+        return
+
+    title = os.path.splitext(os.path.basename(filename or ""))[0].strip() or "Karaoke"
+    set_job(jid, status="ready", stage="ready", pct=100,
+            video_id=None, title=title, duration=_probe_duration(backing))
 
 
 # ---- Backing transpose (change key), rendered on demand + cached ------------
@@ -261,8 +366,19 @@ def backing_for_key(jid, semitones):
 
 # ---- Vocal processing + mixdown --------------------------------------------
 
+# One lock per session, so a second /render for the same jid while one is
+# already running can't race on vocal_fx.wav/final.<fmt> (same pattern as
+# _KEY_LOCKS above).
+_RENDER_LOCKS = {}
+
+
+def _render_lock(jid):
+    with LOCK:
+        return _RENDER_LOCKS.setdefault(jid, threading.Lock())
+
+
 def do_render(jid, vocal_path, fx, mix_opts):
-    set_job(jid, status="rendering", stage="processing_vocal", error=None)
+    set_job(jid, status="rendering", stage="starting", error=None)
     sdir = os.path.join(SESS_DIR, jid)
     # mix against whatever key the singer settled on (0 = original)
     try:
@@ -277,18 +393,30 @@ def do_render(jid, vocal_path, fx, mix_opts):
 
     tmp = os.path.join(sdir, "tmp")
     os.makedirs(tmp, exist_ok=True)
+    out_fmt = mix_opts.get("format", "wav")
 
     try:
         processed_vocal = os.path.join(sdir, "vocal_fx.wav")
-        audio_fx.process_vocal(vocal_path, processed_vocal, fx, tmp)
+        audio_fx.process_vocal(
+            vocal_path, processed_vocal, fx, tmp,
+            progress=lambda stage: set_job(jid, stage=stage),
+        )
 
-        set_job(jid, stage="mixing")
-        out_fmt = mix_opts.get("format", "wav")
+        harmony_path = None
+        harmony_take_id = mix_opts.get("harmony_take_id")
+        if harmony_take_id:
+            harmony_take = _get_take(jid, harmony_take_id)
+            if harmony_take:
+                harmony_path = os.path.join(sdir, harmony_take["file"])
+
+        set_job(jid, stage="mixing", format=out_fmt)
         final = os.path.join(sdir, f"final.{out_fmt}")
         audio_fx.mixdown(
             processed_vocal, backing, final,
             vocal_gain_db=float(mix_opts.get("vocal_gain_db", 0)),
             music_gain_db=float(mix_opts.get("music_gain_db", -3)),
+            harmony_path=harmony_path,
+            harmony_gain_db=float(mix_opts.get("harmony_gain_db", -3)),
             out_format=out_fmt,
             loudnorm=bool(mix_opts.get("loudnorm", True)),
         )
@@ -325,6 +453,16 @@ def do_combine_video(jid):
     set_job(jid, video_status="done", final_video_file="final_video.mp4")
 
 
+def _run_render_locked(jid, vocal_path, fx, mix_opts, lock):
+    """Thread target for /render: holds `lock` for the whole render so a
+    second request for the same session can't start until this one is done
+    (the lock itself was already acquired by the HTTP handler)."""
+    try:
+        do_render(jid, vocal_path, fx, mix_opts)
+    finally:
+        lock.release()
+
+
 # ---- HTTP -------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -342,7 +480,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         p = urlparse(self.path)
         if p.path in ("/", "/index.html"):
-            b = INDEX_HTML.encode()
+            try:
+                b = _read_index()
+            except OSError:
+                self._json(500, {"error": "index.html is missing next to studio.py."})
+                return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(b)))
@@ -446,6 +588,22 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"cmd": j.get("phone_cmd"), "seq": j.get("phone_cmd_seq", 0)})
             return
 
+        if p.path == "/takes":
+            jid = (parse_qs(p.query).get("id") or [""])[0]
+            self._json(200, {"takes": list_takes(jid)})
+            return
+
+        if p.path == "/take_audio":
+            q = parse_qs(p.query)
+            jid = (q.get("id") or [""])[0]
+            tid = (q.get("take") or [""])[0]
+            take = _get_take(jid, tid)
+            if not take:
+                self._json(404, {"error": "unknown take"})
+                return
+            self._send_file(os.path.join(SESS_DIR, jid, take["file"]), "audio/wav")
+            return
+
         self._json(404, {"error": "not found"})
 
     def _send_file(self, path, ctype, dl_name=None):
@@ -525,6 +683,42 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"id": jid})
             return
 
+        if p.path == "/import":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                length = 0
+            if length <= 0:
+                self._json(400, {"error": "No file received."})
+                return
+            if length > MAX_IMPORT_BYTES:
+                self._json(413, {"error": "That file is too large (500MB max)."})
+                return
+            filename = unquote(self.headers.get("X-Filename", "") or "")
+            ext = os.path.splitext(filename)[1][:10] or ".upload"
+            ext = re.sub(r"[^A-Za-z0-9.]", "", ext) or ".upload"
+            jid = uuid.uuid4().hex[:12]
+            sdir = os.path.join(SESS_DIR, jid)
+            os.makedirs(sdir, exist_ok=True)
+            upload_path = os.path.join(sdir, "upload" + ext)
+            try:
+                with open(upload_path, "wb") as fh:
+                    remaining = length
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+                        remaining -= len(chunk)
+            except OSError:
+                self._json(500, {"error": "Could not save the uploaded file."})
+                return
+            set_job(jid, status="queued")
+            threading.Thread(target=do_import, args=(jid, upload_path, filename),
+                             daemon=True).start()
+            self._json(200, {"id": jid})
+            return
+
         if p.path == "/render":
             body = self._read_body()
             jid = body.get("id")
@@ -532,27 +726,42 @@ class Handler(BaseHTTPRequestHandler):
             if not j:
                 self._json(404, {"error": "unknown session"})
                 return
-            # vocal audio arrives as base64 wav
-            b64 = body.get("vocal_wav_b64", "")
-            if not b64:
-                self._json(400, {"error": "No vocal recording received."})
-                return
             sdir = os.path.join(SESS_DIR, jid)
             os.makedirs(sdir, exist_ok=True)
-            vocal_path = os.path.join(sdir, "vocal_raw.wav")
-            try:
-                with open(vocal_path, "wb") as fh:
-                    fh.write(base64.b64decode(b64))
-            except Exception:
-                self._json(400, {"error": "Could not decode recording."})
+
+            # vocal comes either as an inline base64 recording, or by
+            # referencing an already-saved take (from the take-history strip)
+            take_id = body.get("take_id")
+            if take_id:
+                take = _get_take(jid, take_id)
+                if not take:
+                    self._json(404, {"error": "unknown take"})
+                    return
+                vocal_path = os.path.join(sdir, take["file"])
+            else:
+                b64 = body.get("vocal_wav_b64", "")
+                if not b64:
+                    self._json(400, {"error": "No vocal recording received."})
+                    return
+                vocal_path = os.path.join(sdir, "vocal_raw.wav")
+                try:
+                    with open(vocal_path, "wb") as fh:
+                        fh.write(base64.b64decode(b64))
+                except Exception:
+                    self._json(400, {"error": "Could not decode recording."})
+                    return
+
+            lock = _render_lock(jid)
+            if not lock.acquire(blocking=False):
+                self._json(409, {"error": "A render is already running for this session."})
                 return
             fx = body.get("fx", {})
             mix_opts = body.get("mix", {})
             chirp_pos = body.get("chirp_music_pos_sec")
             set_job(jid, status="rendering",
                     chirp_music_pos_sec=float(chirp_pos) if chirp_pos is not None else 0.0)
-            threading.Thread(target=do_render,
-                             args=(jid, vocal_path, fx, mix_opts),
+            threading.Thread(target=_run_render_locked,
+                             args=(jid, vocal_path, fx, mix_opts, lock),
                              daemon=True).start()
             self._json(200, {"ok": True})
             return
@@ -625,6 +834,95 @@ class Handler(BaseHTTPRequestHandler):
             set_job(jid, video_status="aligning", video_error=None)
             threading.Thread(target=do_combine_video, args=(jid,), daemon=True).start()
             self._json(200, {"ok": True})
+            return
+
+        if p.path == "/take":
+            body = self._read_body()
+            jid = body.get("id")
+            j = job_or_disk(jid)
+            if not j:
+                self._json(404, {"error": "unknown session"})
+                return
+            b64 = body.get("vocal_wav_b64", "")
+            if not b64:
+                self._json(400, {"error": "No recording received."})
+                return
+            sdir = os.path.join(SESS_DIR, jid)
+            os.makedirs(sdir, exist_ok=True)
+            tid = uuid.uuid4().hex[:8]
+            fname = f"take_{tid}.wav"
+            fpath = os.path.join(sdir, fname)
+            try:
+                with open(fpath, "wb") as fh:
+                    fh.write(base64.b64decode(b64))
+            except Exception:
+                self._json(400, {"error": "Could not decode recording."})
+                return
+            take = _add_take(
+                jid, file=fname, duration=_probe_duration(fpath),
+                kind=body.get("kind", "lead"),
+                fx_snapshot=body.get("fx_snapshot"),
+                punch_sec=body.get("punch_sec"),
+                tid=tid,
+            )
+            self._json(200, {"take": take})
+            return
+
+        if p.path == "/take_delete":
+            body = self._read_body()
+            jid = body.get("id")
+            tid = body.get("take")
+            ok = _del_take(jid, tid)
+            if not ok:
+                self._json(404, {"error": "unknown take"})
+                return
+            self._json(200, {"ok": True})
+            return
+
+        if p.path == "/take_restore":
+            body = self._read_body()
+            jid = body.get("id")
+            tid = body.get("take")
+            ok = _restore_take(jid, tid)
+            if not ok:
+                self._json(404, {"error": "unknown take"})
+                return
+            self._json(200, {"take": _get_take(jid, tid)})
+            return
+
+        if p.path == "/comp":
+            body = self._read_body()
+            jid = body.get("id")
+            head = _get_take(jid, body.get("head_take"))
+            tail = _get_take(jid, body.get("tail_take"))
+            if not head or not tail:
+                self._json(404, {"error": "unknown take"})
+                return
+            try:
+                punch_sec = float(body.get("punch_sec", 0))
+            except (TypeError, ValueError):
+                self._json(400, {"error": "punch_sec must be a number"})
+                return
+            sdir = os.path.join(SESS_DIR, jid)
+            tid = uuid.uuid4().hex[:8]
+            fname = f"take_{tid}.wav"
+            out_path = os.path.join(sdir, fname)
+            try:
+                audio_fx.stitch_vocals(
+                    os.path.join(sdir, head["file"]),
+                    os.path.join(sdir, tail["file"]),
+                    out_path, punch_sec,
+                    crossfade_ms=float(body.get("crossfade_ms", 40)),
+                )
+            except Exception as e:
+                self._json(500, {"error": "Could not join those takes: " + str(e)[:300]})
+                return
+            take = _add_take(
+                jid, file=fname, duration=_probe_duration(out_path), kind="comp",
+                punch_sec=punch_sec, source_take_ids=[head["id"], tail["id"]],
+                tid=tid,
+            )
+            self._json(200, {"take": take})
             return
 
         self._json(404, {"error": "not found"})
@@ -2639,7 +2937,14 @@ function blobToB64(blob){ return new Promise(res=>{const fr=new FileReader();
 """
 
 
+
+
 def main():
+    if not os.path.isfile(INDEX_PATH):
+        raise SystemExit(
+            f"Fatal: index.html not found at {INDEX_PATH}\n"
+            "It must sit next to studio.py — check your install/bundle."
+        )
     srv = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
     print(f"\n  🎤 Karaoke Studio  →  http://{HOST}:{PORT}\n")
     lan = _lan_ip()

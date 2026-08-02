@@ -263,16 +263,22 @@ def apply_ffmpeg_fx(in_path, out_path, fx, sample_rate=48000):
         raise RuntimeError("ffmpeg fx failed: " + r.stderr[-500:])
 
 
-def process_vocal(in_wav, out_wav, fx, tmpdir):
+def process_vocal(in_wav, out_wav, fx, tmpdir, progress=None):
     """
     Full vocal chain. Pitch correction (librosa) runs first if requested,
     then the ffmpeg DSP chain (denoise/eq/comp/reverb) on top.
+
+    `progress`, if given, is called with a short stage-name string before
+    each step, so a caller (e.g. the HTTP job status) can show real progress
+    instead of a single "processing" state.
     """
     pitch = fx.get("pitch") or {}
     do_pitch = bool(pitch.get("enabled"))
 
     stage_in = in_wav
     if do_pitch:
+        if progress:
+            progress("correcting_pitch")
         pc_out = os.path.join(tmpdir, "pitched.wav")
         pitch_correct(
             in_wav, pc_out,
@@ -282,6 +288,8 @@ def process_vocal(in_wav, out_wav, fx, tmpdir):
         )
         stage_in = pc_out
 
+    if progress:
+        progress("applying_fx")
     apply_ffmpeg_fx(stage_in, out_wav, fx)
 
 
@@ -289,9 +297,11 @@ def process_vocal(in_wav, out_wav, fx, tmpdir):
 
 def mixdown(vocal_path, music_path, out_path,
             vocal_gain_db=0.0, music_gain_db=0.0,
+            harmony_path=None, harmony_gain_db=-3.0,
             out_format="wav", loudnorm=True):
     """
-    Mix processed vocal + backing music into a final high-quality file.
+    Mix processed vocal + backing music (+ optional harmony vocal) into a
+    final high-quality file.
     """
     # Vocal bus: gain + a gentle presence lift so the voice sits ON TOP of the
     # music instead of buried in it (a common "lack of quality" cause).
@@ -306,12 +316,30 @@ def mixdown(vocal_path, music_path, out_path,
     glue = "acompressor=threshold=0.1:ratio=2:knee=6:attack=15:release=250:makeup=1"
     post = (glue + ",loudnorm=I=-14:TP=-1.5:LRA=11") if loudnorm else glue
 
-    filter_complex = (
-        f"[0:a]{v_filter},aresample=48000[v];"
-        f"[1:a]{m_filter},aresample=48000[m];"
-        f"[v][m]amix=inputs=2:duration=longest:normalize=0[mix];"
-        f"[mix]{post}[out]"
-    )
+    inputs = ["-i", vocal_path, "-i", music_path]
+    if harmony_path:
+        # Harmony bus: same presence treatment as the lead, sat a little
+        # lower by default so it supports rather than competes with the lead.
+        h_filter = (
+            f"volume={harmony_gain_db:.1f}dB,"
+            f"equalizer=f=4000:t=q:w=1.2:g=1.5,"
+            f"equalizer=f=250:t=q:w=1.0:g=1.0"
+        )
+        inputs += ["-i", harmony_path]
+        filter_complex = (
+            f"[0:a]{v_filter},aresample=48000[v];"
+            f"[1:a]{m_filter},aresample=48000[m];"
+            f"[2:a]{h_filter},aresample=48000[h];"
+            f"[v][h][m]amix=inputs=3:duration=longest:normalize=0[mix];"
+            f"[mix]{post}[out]"
+        )
+    else:
+        filter_complex = (
+            f"[0:a]{v_filter},aresample=48000[v];"
+            f"[1:a]{m_filter},aresample=48000[m];"
+            f"[v][m]amix=inputs=2:duration=longest:normalize=0[mix];"
+            f"[mix]{post}[out]"
+        )
 
     codec = {
         "wav":  ["-c:a", "pcm_s24le"],
@@ -321,8 +349,7 @@ def mixdown(vocal_path, music_path, out_path,
 
     cmd = [
         "ffmpeg", "-y",
-        "-i", vocal_path,
-        "-i", music_path,
+        *inputs,
         "-filter_complex", filter_complex,
         "-map", "[out]",
         "-ar", "48000", "-ac", "2",

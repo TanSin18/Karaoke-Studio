@@ -140,7 +140,9 @@ download final  ◀──────────────────   WAV 
 - `studio.py` — the local web server + orchestration (pure Python stdlib HTTP).
 - `audio_fx.py` — the offline effects engine: pitch correction (librosa),
   the ffmpeg filter chain, transpose, stitching, and mixdown.
-- `index.html` — the full studio UI (also embedded into `studio.py` at runtime).
+- `index.html` — the full studio UI, served from disk by `studio.py` at
+  runtime. It must stay next to `studio.py` (a packaged `.app` build needs to
+  bundle both files together).
 
 ---
 
