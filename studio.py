@@ -472,6 +472,7 @@ class Handler(BaseHTTPRequestHandler):
 
 INDEX_HTML = r"""<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>Karaoke Studio</title>
 <style>
   :root{
@@ -479,13 +480,23 @@ INDEX_HTML = r"""<meta charset="utf-8">
     --ink:#e8ebf0; --muted:#8b93a3; --dim:#5a6172;
     --amber:#ffb454; --amber2:#ff9b3d; --rec:#ff3b47; --ok:#39d98a;
     --fader:#3a3f4c; --track:#0a0b0e;
+    --bg-base:#0b0c0f; --bg-glow:#20242e;
+    /* text sitting on permanently-dark "hardware" surfaces (rack, meters,
+       inputs, buttons, result cards) — these stay dark in both themes, like
+       a mixing console, so their text never flips with --ink/--muted/--dim */
+    --well-ink:#e8ebf0; --well-muted:#8b93a3; --well-dim:#5a6172;
     --mono:'SF Mono',ui-monospace,Menlo,monospace;
+  }
+  :root[data-theme="light"]{
+    --panel:#ffffff; --panel2:#f6f7f9; --edge:#dde1e8;
+    --ink:#1b1e24; --muted:#5b6270; --dim:#848c9b;
+    --bg-base:#eef0f4; --bg-glow:#ffffff;
   }
   *{box-sizing:border-box}
   body{
     margin:0;min-height:100vh;background:
-      radial-gradient(1200px 600px at 70% -10%, #20242e 0%, transparent 60%),
-      #0b0c0f;
+      radial-gradient(1200px 600px at 70% -10%, var(--bg-glow) 0%, transparent 60%),
+      var(--bg-base);
     color:var(--ink);
     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     padding:20px;
@@ -509,10 +520,10 @@ INDEX_HTML = r"""<meta charset="utf-8">
   .card h2::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber)}
 
   input[type=text]{width:100%;padding:11px 13px;border-radius:8px;border:1px solid var(--edge);
-    background:#0a0b0e;color:var(--ink);font-size:13px;outline:none;font-family:var(--mono)}
+    background:#0a0b0e;color:var(--well-ink);font-size:13px;outline:none;font-family:var(--mono)}
   input[type=text]:focus{border-color:var(--amber2)}
   .btn{padding:11px 18px;border:none;border-radius:8px;cursor:pointer;font-weight:650;font-size:13px;
-    background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink);
+    background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--well-ink);
     border:1px solid var(--edge);transition:filter .12s}
   .btn:hover{filter:brightness(1.15)}
   .btn:disabled{opacity:.4;cursor:default}
@@ -528,24 +539,24 @@ INDEX_HTML = r"""<meta charset="utf-8">
     border:1px solid #000;box-shadow:inset 0 0 40px rgba(0,0,0,.6)}
   .stage iframe{width:100%;height:100%;border:0;display:block}
   .stage .placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    flex-direction:column;gap:8px;color:var(--dim);font-family:var(--mono);font-size:12px;letter-spacing:.08em}
+    flex-direction:column;gap:8px;color:var(--well-dim);font-family:var(--mono);font-size:12px;letter-spacing:.08em}
   .placeholder .big{font-size:40px;opacity:.4}
   .stage #ytplayer,.stage iframe{width:100%;height:100%}
   .stage{position:relative}
   .novideo{position:absolute;bottom:8px;right:8px;z-index:5;font-family:var(--mono);font-size:10px;
-    letter-spacing:.06em;color:var(--muted);background:rgba(10,11,14,.82);border:1px solid var(--edge);
+    letter-spacing:.06em;color:var(--well-muted);background:rgba(10,11,14,.82);border:1px solid var(--edge);
     border-radius:6px;padding:4px 8px;cursor:pointer}
   .novideo:hover{color:var(--amber);border-color:var(--amber2)}
   .vfallback{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:12px;text-align:center;padding:22px;
     background:radial-gradient(600px 300px at 50% 0%,#20242e 0%,transparent 70%),#0b0c0f}
   .vf-note{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--amber);text-transform:uppercase}
-  .vf-title{font-size:16px;font-weight:650;color:var(--ink);max-width:80%}
+  .vf-title{font-size:16px;font-weight:650;color:var(--well-ink);max-width:80%}
   .vf-clock{font-family:var(--mono);font-size:44px;font-weight:700;color:var(--amber);letter-spacing:.04em;line-height:1}
   .vf-link{text-decoration:none;background:linear-gradient(180deg,#3a3f4c,#2b2f39);border:1px solid var(--edge);
-    color:var(--ink);padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:600}
+    color:var(--well-ink);padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:600}
   .vf-link:hover{filter:brightness(1.15)}
-  .vf-hint{font-family:var(--mono);font-size:11px;color:var(--dim);max-width:82%;line-height:1.6}
+  .vf-hint{font-family:var(--mono);font-size:11px;color:var(--well-dim);max-width:82%;line-height:1.6}
 
   /* transport */
   .transport{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
@@ -554,10 +565,10 @@ INDEX_HTML = r"""<meta charset="utf-8">
   #seek:disabled{opacity:.4}
   .keybox{display:flex;align-items:center;gap:8px;background:#0a0b0e;border:1px solid var(--edge);
     border-radius:8px;padding:5px 10px}
-  .klabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim)}
+  .klabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--well-dim)}
   .kval{font-family:var(--mono);font-size:14px;color:var(--amber);min-width:26px;text-align:center;font-weight:700}
   .ksmall{width:24px;height:24px;border-radius:6px;border:1px solid var(--edge);background:linear-gradient(180deg,#3a3f4c,#2b2f39);
-    color:var(--ink);cursor:pointer;font-size:15px;line-height:1;font-weight:700;padding:0}
+    color:var(--well-ink);cursor:pointer;font-size:15px;line-height:1;font-weight:700;padding:0}
   .ksmall:hover{filter:brightness(1.2)} .ksmall:disabled{opacity:.4;cursor:default}
   .keyhint{font-family:var(--mono);font-size:11px;color:var(--dim)}
   .punch{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--muted);
@@ -579,7 +590,7 @@ INDEX_HTML = r"""<meta charset="utf-8">
     box-shadow:inset 0 2px 10px rgba(0,0,0,.6)}
   .fxrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed #23262e}
   .fxrow:last-child{border-bottom:none}
-  .fxname{width:118px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+  .fxname{width:118px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--well-muted);text-transform:uppercase}
   .fxname.on{color:var(--amber)}
   input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;
     background:#2a2e38;flex:1;outline:none}
@@ -587,7 +598,7 @@ INDEX_HTML = r"""<meta charset="utf-8">
     background:radial-gradient(circle at 35% 30%,#fff 0%,var(--amber) 40%,var(--amber2) 100%);
     cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.6),0 0 0 1px #a5651f}
   input[type=range]:disabled::-webkit-slider-thumb{background:#4a4f5c;box-shadow:none}
-  .val{font-family:var(--mono);font-size:11px;color:var(--muted);width:52px;text-align:right}
+  .val{font-family:var(--mono);font-size:11px;color:var(--well-muted);width:52px;text-align:right}
   .tog{width:34px;height:19px;border-radius:11px;background:#2a2e38;position:relative;cursor:pointer;
     border:1px solid #000;flex:none;transition:background .15s}
   .tog.on{background:var(--amber2)}
@@ -596,7 +607,7 @@ INDEX_HTML = r"""<meta charset="utf-8">
   .tog.on::after{left:16px}
 
   select{padding:8px 10px;border-radius:7px;border:1px solid var(--edge);background:#0a0b0e;
-    color:var(--ink);font-size:12px;font-family:var(--mono);outline:none}
+    color:var(--well-ink);font-size:12px;font-family:var(--mono);outline:none}
   select:focus{border-color:var(--amber2)}
 
   .mixrow{display:flex;align-items:center;gap:12px;padding:8px 0}
@@ -615,14 +626,14 @@ INDEX_HTML = r"""<meta charset="utf-8">
   .rdur{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.82);color:#fff;font-family:var(--mono);
     font-size:10px;padding:2px 5px;border-radius:4px}
   .rmeta{padding:9px 10px}
-  .rtitle{font-size:12.5px;line-height:1.35;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;
+  .rtitle{font-size:12.5px;line-height:1.35;color:var(--well-ink);display:-webkit-box;-webkit-line-clamp:2;
     -webkit-box-orient:vertical;overflow:hidden}
-  .rchan{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:5px;letter-spacing:.03em;
+  .rchan{font-family:var(--mono);font-size:10px;color:var(--well-dim);margin-top:5px;letter-spacing:.03em;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rcard.loading{opacity:.5;pointer-events:none}
   /* live pitch tuner */
   .tuner{background:#0a0b0e;border:1px solid var(--edge);border-radius:12px;padding:14px;margin-top:12px;text-align:center}
-  .tuner-note{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--dim);line-height:1;letter-spacing:.02em;transition:color .1s}
+  .tuner-note{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--well-dim);line-height:1;letter-spacing:.02em;transition:color .1s}
   .tuner-note.good{color:var(--ok)} .tuner-note.off{color:var(--amber)}
   .tuner-scale{position:relative;height:26px;margin:10px auto 4px;max-width:340px;
     background:linear-gradient(90deg,rgba(248,113,113,.18),rgba(74,217,138,.22) 50%,rgba(248,113,113,.18));
@@ -630,16 +641,16 @@ INDEX_HTML = r"""<meta charset="utf-8">
   .tuner-center{position:absolute;left:50%;top:0;bottom:0;width:2px;background:var(--ok);transform:translateX(-1px);opacity:.7}
   .tuner-needle{position:absolute;top:2px;bottom:2px;width:4px;left:50%;border-radius:2px;background:#fff;
     transform:translateX(-2px);transition:left .06s linear,background .1s}
-  .tuner-msg{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.04em}
+  .tuner-msg{font-family:var(--mono);font-size:11px;color:var(--well-muted);letter-spacing:.04em}
   /* live monitor volumes */
   .mons{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;
     background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
   .monrow{display:flex;align-items:center;gap:8px;flex:1;min-width:180px}
-  .monlbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;white-space:nowrap}
+  .monlbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--well-dim);text-transform:uppercase;white-space:nowrap}
   .monrow input[type=range]{flex:1}
   .monval{font-family:var(--mono);font-size:11px;color:var(--amber);min-width:38px;text-align:right}
   .tunertog{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;
-    letter-spacing:.08em;color:var(--muted);text-transform:uppercase;cursor:pointer}
+    letter-spacing:.08em;color:var(--well-muted);text-transform:uppercase;cursor:pointer}
   .tunertog input{accent-color:var(--amber2)}
   /* continue/keep choice bar */
   .choice{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px;padding:12px;
@@ -654,7 +665,7 @@ INDEX_HTML = r"""<meta charset="utf-8">
     background:linear-gradient(180deg,#1a1f2a,#141821);border:1px solid var(--accent2)}
   .testpanel h3{margin:0 0 4px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;
     text-transform:uppercase;color:var(--accent)}
-  .testpanel .tp-sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
+  .testpanel .tp-sub{font-family:var(--mono);font-size:11px;color:var(--well-muted);margin-bottom:12px}
   .loopbar{position:relative;height:34px;background:#0a0b0e;border:1px solid #000;border-radius:8px;
     margin:10px 0;overflow:hidden;cursor:pointer}
   .loopregion{position:absolute;top:0;bottom:0;background:rgba(110,168,254,.28);border-left:2px solid var(--accent);
@@ -662,10 +673,10 @@ INDEX_HTML = r"""<meta charset="utf-8">
   .loopplay{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.85}
   .looprow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .tp-btn{padding:9px 16px;border:1px solid var(--edge);border-radius:8px;cursor:pointer;font-weight:650;font-size:13px;
-    background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink)}
+    background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--well-ink)}
   .tp-btn.on{background:linear-gradient(180deg,var(--accent),var(--accent2));color:#0b0e13;border-color:var(--accent2)}
   .tp-btn:hover{filter:brightness(1.15)}
-  .tp-note{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.03em}
+  .tp-note{font-family:var(--mono);font-size:11px;color:var(--well-dim);letter-spacing:.03em}
   .hint{color:var(--dim);font-size:11.5px;line-height:1.6;margin-top:10px;font-family:var(--mono);letter-spacing:.02em}
   .err{color:var(--rec);font-size:12.5px;margin-top:10px;font-family:var(--mono)}
   .status{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
@@ -675,25 +686,39 @@ INDEX_HTML = r"""<meta charset="utf-8">
   .player{background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:12px;margin-top:12px}
   .player .ctrls{display:flex;align-items:center;gap:8px}
   .pbtn{width:38px;height:34px;border-radius:8px;border:1px solid var(--edge);cursor:pointer;
-    background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink);font-size:14px;line-height:1;
+    background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--well-ink);font-size:14px;line-height:1;
     display:flex;align-items:center;justify-content:center}
   .pbtn:hover{filter:brightness(1.18)} .pbtn:disabled{opacity:.4;cursor:default}
   .pbtn.play{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#211500;border-color:#a5651f}
   .player .pseek{flex:1}
   .player .ptime{font-family:var(--mono);font-size:11px;color:var(--amber);min-width:96px;text-align:right;letter-spacing:.04em}
-  .player .plabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim);
+  .player .plabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--well-dim);
     text-transform:uppercase;margin-bottom:8px}
   .step{opacity:.4;pointer-events:none;transition:opacity .3s}
   .step.active{opacity:1;pointer-events:auto}
   .bar{height:6px;background:#0a0b0e;border-radius:4px;overflow:hidden;border:1px solid #000;margin-top:8px}
   .bar .fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber2),var(--amber));transition:width .3s}
   kbd{font-family:var(--mono);background:#0a0b0e;border:1px solid var(--edge);border-radius:4px;padding:1px 6px;font-size:11px;color:var(--amber)}
+  .themebtn{margin-left:auto;background:transparent;border:1px solid var(--edge);color:var(--muted);
+    font-family:var(--mono);font-size:11px;letter-spacing:.06em;padding:7px 12px;border-radius:8px;
+    cursor:pointer;display:flex;align-items:center;gap:6px}
+  .themebtn:hover{border-color:var(--amber2);color:var(--amber)}
 </style>
+<script>
+// Set the theme before the page paints, so switching to light doesn't flash dark first.
+(function(){
+  var t=localStorage.getItem('theme');
+  if(!t) t=(matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
+  if(t==='light') document.documentElement.setAttribute('data-theme','light');
+  document.documentElement.style.colorScheme=t;
+})();
+</script>
 
 <div class="wrap">
   <header>
     <div class="logo">KARAOKE <b>STUDIO</b></div>
     <div class="tag">// record · tune · mix · export</div>
+    <button id="themeToggle" class="themebtn" title="Toggle light / dark theme">🌙 Dark</button>
   </header>
 
   <!-- STEP 1: find a song -->
@@ -896,7 +921,7 @@ INDEX_HTML = r"""<meta charset="utf-8">
           <div class="fxrow">
             <div class="tog" data-fx="deess"></div>
             <div class="fxname" data-name="deess">De-ess</div>
-            <div style="flex:1;color:var(--dim);font-family:var(--mono);font-size:11px">tame harsh S sounds</div>
+            <div style="flex:1;color:var(--well-dim);font-family:var(--mono);font-size:11px">tame harsh S sounds</div>
           </div>
         </div>
       </div>
@@ -932,6 +957,24 @@ INDEX_HTML = r"""<meta charset="utf-8">
 
 <script>
 const $=id=>document.getElementById(id);
+
+// ---- light/dark theme toggle -----------------------------------------------
+function applyTheme(t){
+  if(t==='light') document.documentElement.setAttribute('data-theme','light');
+  else document.documentElement.removeAttribute('data-theme');
+  // Tell the browser this page is authored for the active scheme, so it
+  // doesn't "helpfully" auto-adjust our explicit colors (e.g. lightening a
+  // deliberately pure-black video stage when the OS is in light mode).
+  document.documentElement.style.colorScheme = t;
+  localStorage.setItem('theme', t);
+  $('themeToggle').textContent = t==='light' ? '☀ Light' : '🌙 Dark';
+}
+$('themeToggle').addEventListener('click', ()=>{
+  const cur = document.documentElement.getAttribute('data-theme')==='light' ? 'light' : 'dark';
+  applyTheme(cur==='light' ? 'dark' : 'light');
+});
+applyTheme(document.documentElement.getAttribute('data-theme')==='light' ? 'light' : 'dark');
+
 let SID=null, poll=null;
 let mediaStream=null, recorder=null, recChunks=[], audioCtx=null;
 let backingAudio=null, recording=false, startT=0, dur=0, rafMeter=null;
