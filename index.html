@@ -107,6 +107,9 @@
     box-shadow:inset 0 2px 10px rgba(0,0,0,.6)}
   .fxrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed #23262e}
   .fxrow:last-child{border-bottom:none}
+  .fxgroup{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--dim);
+    text-transform:uppercase;margin-top:10px;padding-top:8px;border-top:1px dashed #23262e}
+  .fxgroup:first-child{margin-top:0;padding-top:0;border-top:none}
   .fxname{width:118px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
   .fxname.on{color:var(--amber)}
   input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;
@@ -374,57 +377,25 @@
             <input type="range" id="pstr" min="0" max="100" value="80">
             <div class="val" id="pstrv">80%</div>
           </div>
-          <!-- reverb -->
+          <!-- pro vocal chain: clean EQ -> fast/smooth comp -> de-esser ->
+               tone EQ -> saturation -> reverb/delay sends. All stages are
+               always applied together (it's one signal path, not toggles
+               per effect) but every parameter below is adjustable. -->
           <div class="fxrow">
-            <div class="tog" data-fx="reverb"></div>
-            <div class="fxname" data-name="reverb">Reverb</div>
-            <input type="range" id="reverb" min="0" max="100" value="35" disabled>
-            <div class="val" id="reverbv">35%</div>
+            <div class="tog" data-fx="pro"></div>
+            <div class="fxname" data-name="pro">Pro vocal chain</div>
+            <div style="flex:1;color:var(--dim);font-family:var(--mono);font-size:11px">
+              studio EQ / compression / de-ess / reverb chain — adjustable below
+            </div>
+            <button id="proReset" class="btn" style="padding:4px 10px;font-size:11px" title="Reset every value below to the studio defaults">↺ Reset</button>
           </div>
-          <!-- echo -->
-          <div class="fxrow">
-            <div class="tog" data-fx="echo"></div>
-            <div class="fxname" data-name="echo">Echo</div>
-            <input type="range" id="echo" min="0" max="100" value="20" disabled>
-            <div class="val" id="echov">20%</div>
-          </div>
-          <!-- eq low/mid/high -->
-          <div class="fxrow">
-            <div class="tog" data-fx="eq"></div>
-            <div class="fxname" data-name="eq">EQ · low</div>
-            <input type="range" id="eqlow" min="-12" max="12" value="2" disabled>
-            <div class="val" id="eqlowv">+2 dB</div>
-          </div>
-          <div class="fxrow">
-            <div style="width:34px"></div>
-            <div class="fxname">EQ · mid</div>
-            <input type="range" id="eqmid" min="-12" max="12" value="1" disabled>
-            <div class="val" id="eqmidv">+1 dB</div>
-          </div>
-          <div class="fxrow">
-            <div style="width:34px"></div>
-            <div class="fxname">EQ · high</div>
-            <input type="range" id="eqhigh" min="-12" max="12" value="3" disabled>
-            <div class="val" id="eqhighv">+3 dB</div>
-          </div>
-          <!-- compression -->
-          <div class="fxrow">
-            <div class="tog" data-fx="compress"></div>
-            <div class="fxname" data-name="compress">Compress</div>
-            <input type="range" id="compress" min="0" max="100" value="55" disabled>
-            <div class="val" id="compressv">55%</div>
-          </div>
-          <!-- denoise + deess -->
+          <div id="proChainRack"></div>
+          <!-- denoise -->
           <div class="fxrow">
             <div class="tog" data-fx="denoise"></div>
             <div class="fxname" data-name="denoise">De-noise</div>
             <input type="range" id="denoise" min="0" max="100" value="40" disabled>
             <div class="val" id="denoisev">40%</div>
-          </div>
-          <div class="fxrow">
-            <div class="tog" data-fx="deess"></div>
-            <div class="fxname" data-name="deess">De-ess</div>
-            <div style="flex:1;color:var(--dim);font-family:var(--mono);font-size:11px">tame harsh S sounds</div>
           </div>
         </div>
       </div>
@@ -468,7 +439,112 @@ let backingAudio=null, recording=false, startT=0, dur=0, rafMeter=null;
 let takeAudio=null, takePlayerUI=null, takeGraph=null;
 
 // ---- FX toggle state ----
-const fxOn = {pitch:true, reverb:false, echo:false, eq:false, compress:true, denoise:false, deess:true};
+const fxOn = {pitch:true, pro:true, denoise:false};
+
+// ---- pro vocal chain: Clean EQ -> Fast/Smooth Comp -> De-esser -> Tone EQ ->
+// Saturation -> Reverb/Delay sends. Defaults here MUST match
+// audio_fx.PRO_CHAIN_DEFAULTS on the backend — the "Reset" button re-fetches
+// the backend's copy via /pro_chain_defaults so the two can never drift for
+// long, but the initial render uses this local copy to avoid a fetch race
+// before the rack can be shown.
+const PRO_CHAIN_FIELDS = [
+  {group:'Clean EQ', fields:[
+    {key:'hpf_freq', label:'HPF freq', min:20, max:200, step:1, unit:'Hz', dp:0, def:85},
+    {key:'dip_freq', label:'Low-mid dip freq', min:100, max:500, step:1, unit:'Hz', dp:0, def:250},
+    {key:'dip_gain', label:'Low-mid dip gain', min:-12, max:0, step:0.1, unit:'dB', dp:1, def:-2.5},
+    {key:'dip_q', label:'Low-mid dip Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.4},
+    {key:'nasal_freq', label:'Nasal cut freq', min:500, max:1500, step:1, unit:'Hz', dp:0, def:900},
+    {key:'nasal_gain', label:'Nasal cut gain', min:-12, max:0, step:0.1, unit:'dB', dp:1, def:-1.5},
+    {key:'nasal_q', label:'Nasal cut Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:2.0},
+  ]},
+  {group:'Fast compressor', fields:[
+    {key:'fast_ratio', label:'Ratio', min:1, max:20, step:0.1, unit:':1', dp:1, def:4},
+    {key:'fast_attack', label:'Attack', min:0.1, max:50, step:0.1, unit:'ms', dp:1, def:1},
+    {key:'fast_release', label:'Release', min:10, max:500, step:1, unit:'ms', dp:0, def:80},
+    {key:'fast_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-18},
+  ]},
+  {group:'Smooth compressor', fields:[
+    {key:'smooth_ratio', label:'Ratio', min:1, max:20, step:0.1, unit:':1', dp:1, def:3},
+    {key:'smooth_attack', label:'Attack', min:1, max:200, step:1, unit:'ms', dp:0, def:25},
+    {key:'smooth_release', label:'Release', min:50, max:2000, step:10, unit:'ms', dp:0, def:500},
+    {key:'smooth_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20},
+  ]},
+  {group:'De-esser', fields:[
+    {key:'deess_freq', label:'Frequency', min:2000, max:10000, step:100, unit:'Hz', dp:0, def:6000},
+    {key:'deess_intensity', label:'Intensity', min:0, max:100, step:1, unit:'%', dp:0, def:40},
+  ]},
+  {group:'Tone EQ', fields:[
+    {key:'tone1_freq', label:'Chest warmth freq', min:80, max:400, step:1, unit:'Hz', dp:0, def:180},
+    {key:'tone1_gain', label:'Chest warmth gain', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:1.0},
+    {key:'tone1_q', label:'Chest warmth Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.0},
+    {key:'tone2_freq', label:'Presence freq', min:2000, max:6000, step:10, unit:'Hz', dp:0, def:3800},
+    {key:'tone2_gain', label:'Presence gain', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:2.0},
+    {key:'tone2_q', label:'Presence Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.2},
+    {key:'air_freq', label:'Air shelf freq', min:6000, max:16000, step:100, unit:'Hz', dp:0, def:10500},
+    {key:'air_gain', label:'Air shelf gain', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:2.5},
+  ]},
+  {group:'Saturation', fields:[
+    {key:'sat_drive_db', label:'Drive', min:0, max:20, step:0.5, unit:'dB', dp:1, def:8},
+    {key:'sat_mix', label:'Mix', min:0, max:100, step:1, unit:'%', dp:0, def:12},
+  ]},
+  {group:'Reverb send', fields:[
+    {key:'verb_decay', label:'Decay (RT60)', min:0.2, max:4, step:0.1, unit:'s', dp:1, def:1.8},
+    {key:'verb_predelay', label:'Pre-delay', min:0, max:100, step:1, unit:'ms', dp:0, def:35},
+    {key:'verb_lowcut', label:'Low cut', min:50, max:500, step:10, unit:'Hz', dp:0, def:200},
+    {key:'verb_highcut', label:'High cut', min:2000, max:12000, step:100, unit:'Hz', dp:0, def:6000},
+    {key:'verb_send_db', label:'Send level', min:-24, max:0, step:0.5, unit:'dB', dp:1, def:-3},
+  ]},
+  {group:'Delay send', fields:[
+    {key:'delay_time_ms', label:'Time', min:50, max:800, step:5, unit:'ms', dp:0, def:350},
+    {key:'delay_feedback', label:'Feedback', min:0, max:80, step:1, unit:'%', dp:0, def:13},
+    {key:'delay_lowcut', label:'Low cut', min:50, max:1000, step:10, unit:'Hz', dp:0, def:300},
+    {key:'delay_highcut', label:'High cut', min:1000, max:8000, step:100, unit:'Hz', dp:0, def:4000},
+    {key:'delay_send_db', label:'Send level', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20},
+  ]},
+];
+const PRO_CHAIN_IDS = [];
+const PRO_CHAIN_VALUES = {};
+
+function fmtProVal(v, f){
+  const n=Number(v).toFixed(f.dp);
+  return (f.unit==='dB' && v>=0 ? '+':'') + n + (f.unit?' '+f.unit:'');
+}
+function renderProChainRack(){
+  const box=$('proChainRack'); box.innerHTML='';
+  PRO_CHAIN_FIELDS.forEach(grp=>{
+    const h=document.createElement('div'); h.className='fxgroup'; h.textContent=grp.group;
+    box.appendChild(h);
+    grp.fields.forEach(f=>{
+      PRO_CHAIN_VALUES[f.key]=f.def;
+      const id='pc_'+f.key;
+      PRO_CHAIN_IDS.push(id);
+      const row=document.createElement('div'); row.className='fxrow';
+      row.innerHTML=
+        '<div style="width:34px"></div>'+
+        '<div class="fxname">'+f.label+'</div>'+
+        '<input type="range" id="'+id+'" min="'+f.min+'" max="'+f.max+'" step="'+f.step+'" value="'+f.def+'" disabled>'+
+        '<div class="val" id="'+id+'v"></div>';
+      box.appendChild(row);
+      const el=row.querySelector('input'), out=row.querySelector('.val');
+      const upd=()=>{ PRO_CHAIN_VALUES[f.key]=+el.value; out.textContent=fmtProVal(el.value,f); liveFxIfPlaying(); };
+      el.addEventListener('input',upd); upd();
+    });
+  });
+}
+renderProChainRack();
+
+$('proReset').addEventListener('click', async ()=>{
+  let defaults=null;
+  try{ const r=await fetch('/pro_chain_defaults'); if(r.ok) defaults=await r.json(); }catch(e){}
+  PRO_CHAIN_FIELDS.forEach(grp=>grp.fields.forEach(f=>{
+    const v=(defaults && defaults[f.key]!=null) ? defaults[f.key] : f.def;
+    const el=$('pc_'+f.key); if(!el) return;
+    el.value=v; PRO_CHAIN_VALUES[f.key]=+v;
+    $('pc_'+f.key+'v').textContent=fmtProVal(v,f);
+  }));
+  liveFxIfPlaying();
+});
+
 function refreshTogs(){
   document.querySelectorAll('.tog').forEach(t=>{
     const k=t.dataset.fx; t.classList.toggle('on', !!fxOn[k]);
@@ -476,9 +552,7 @@ function refreshTogs(){
     if(nm) nm.classList.toggle('on', !!fxOn[k]);
   });
   // enable/disable sliders per group
-  setEnabled('reverb',['reverb']); setEnabled('echo',['echo']);
-  setEnabled('compress',['compress']); setEnabled('denoise',['denoise']);
-  setEnabled('eq',['eqlow','eqmid','eqhigh']);
+  setEnabled('pro', PRO_CHAIN_IDS); setEnabled('denoise',['denoise']);
   ['pstr','pkey','pscale'].forEach(i=>$(i).disabled=!fxOn.pitch);
 }
 function setEnabled(fx, ids){ ids.forEach(i=>{const el=$(i); if(el) el.disabled=!fxOn[fx];}); }
@@ -494,10 +568,7 @@ function liveFxIfPlaying(){ if(typeof applyLiveFx==='function') applyLiveFx(); }
 function bindVal(id, fmt){ const el=$(id),out=$(id+'v'); if(!el||!out)return;
   const upd=()=>{ out.textContent=fmt(el.value); liveFxIfPlaying(); };
   el.addEventListener('input',upd); upd(); }
-bindVal('pstr',v=>v+'%'); bindVal('reverb',v=>v+'%'); bindVal('echo',v=>v+'%');
-bindVal('compress',v=>v+'%'); bindVal('denoise',v=>v+'%');
-bindVal('eqlow',v=>(v>=0?'+':'')+v+' dB'); bindVal('eqmid',v=>(v>=0?'+':'')+v+' dB');
-bindVal('eqhigh',v=>(v>=0?'+':'')+v+' dB');
+bindVal('pstr',v=>v+'%'); bindVal('denoise',v=>v+'%');
 bindVal('vgain',v=>(v>=0?'+':'')+v+' dB'); bindVal('mgain',v=>(v>=0?'+':'')+v+' dB');
 refreshTogs();
 
@@ -1397,11 +1468,11 @@ function enterTestMode(){
       '<span class="tp-note" id="loopInfo"></span>'+
     '</div>'+
     '<div class="looprow" id="fxQuick"></div>'+
-    '<div class="tp-note" style="margin-top:8px">Reverb / EQ / compression / volume preview exactly. '+
-      'Pitch fix previews approximately here — the precise version is applied when you render.</div>';
+    '<div class="tp-note" style="margin-top:8px">EQ / compression / de-ess / reverb send / volume preview approximately here. '+
+      'Saturation, the delay send, and pitch fix only apply exactly when you render.</div>';
   $('takePlayer').appendChild(p);
   // quick FX toggles that mirror the rack
-  const quick=[['reverb','Reverb'],['eq','EQ'],['compress','Compress'],['pitch','Pitch fix'],['deess','De-ess'],['denoise','De-noise']];
+  const quick=[['pro','Pro chain'],['pitch','Pitch fix'],['denoise','De-noise']];
   const fxq=p.querySelector('#fxQuick');
   quick.forEach(([key,label])=>{
     const b=document.createElement('button'); b.className='tp-btn'+(fxOn[key]?' on':''); b.textContent=label;
@@ -1451,26 +1522,30 @@ function takePos(){
 }
 
 function buildTakeGraphNodes(){
-  // Studio-smooth vocal chain:
-  //   src → hp → deHarsh → eqLow → eqMid → eqHigh → deEss → comp → dry/wet(reverb) → vocalGain
-  // comp smooths the "throw" (loud pushes); deEss/deHarsh tame harsh S & 3kHz bite.
-  const hp=audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=80; hp.Q.value=0.7;
-  const deHarsh=audioCtx.createBiquadFilter(); deHarsh.type='peaking'; deHarsh.frequency.value=3000; deHarsh.Q.value=1.4; deHarsh.gain.value=-2.5;
-  const eqLow=audioCtx.createBiquadFilter(); eqLow.type='lowshelf'; eqLow.frequency.value=200;
-  const eqMid=audioCtx.createBiquadFilter(); eqMid.type='peaking'; eqMid.frequency.value=1500; eqMid.Q.value=1;
-  const eqHigh=audioCtx.createBiquadFilter(); eqHigh.type='highshelf'; eqHigh.frequency.value=6000;
-  const deEss=audioCtx.createBiquadFilter(); deEss.type='highshelf'; deEss.frequency.value=7000; deEss.gain.value=-3;
+  // Approximate live preview of the pro vocal chain (exact version applies at
+  // render time via ffmpeg — see audio_fx.build_pro_chain_filter_complex):
+  //   src → hp → dip → nasal → tone1 → tone2 → air → deEss → comp → comp2 →
+  //   dry/wet(reverb) → vocalGain
+  // Saturation and the delay send aren't previewed live (WebAudio has no
+  // built-in soft-clipper/parallel-mix primitive worth the complexity here).
+  const hp=audioCtx.createBiquadFilter(); hp.type='highpass';
+  const dip=audioCtx.createBiquadFilter(); dip.type='peaking';
+  const nasal=audioCtx.createBiquadFilter(); nasal.type='peaking';
+  const tone1=audioCtx.createBiquadFilter(); tone1.type='peaking';
+  const tone2=audioCtx.createBiquadFilter(); tone2.type='peaking';
+  const air=audioCtx.createBiquadFilter(); air.type='highshelf';
+  const deEss=audioCtx.createBiquadFilter(); deEss.type='highshelf';
   const comp=audioCtx.createDynamicsCompressor();
-  comp.threshold.value=-22; comp.knee.value=26; comp.ratio.value=3.2; comp.attack.value=0.006; comp.release.value=0.18;
+  const comp2=audioCtx.createDynamicsCompressor();
   const dry=audioCtx.createGain(), wet=audioCtx.createGain();
   const conv=audioCtx.createConvolver(); conv.buffer=makeImpulse(2.2,2.0);
   const vocalGain=audioCtx.createGain();
-  hp.connect(deHarsh); deHarsh.connect(eqLow); eqLow.connect(eqMid); eqMid.connect(eqHigh);
-  eqHigh.connect(deEss); deEss.connect(comp);
-  comp.connect(dry); comp.connect(conv); conv.connect(wet);
+  hp.connect(dip); dip.connect(nasal); nasal.connect(tone1); tone1.connect(tone2);
+  tone2.connect(air); air.connect(deEss); deEss.connect(comp); comp.connect(comp2);
+  comp2.connect(dry); comp2.connect(conv); conv.connect(wet);
   dry.connect(vocalGain); wet.connect(vocalGain); vocalGain.connect(audioCtx.destination);
   const musicGainNode=audioCtx.createGain(); musicGainNode.connect(audioCtx.destination);
-  takeGraph={hp,deHarsh,eqLow,eqMid,eqHigh,deEss,comp,dry,wet,vocalGain,musicGainNode};
+  takeGraph={hp,dip,nasal,tone1,tone2,air,deEss,comp,comp2,dry,wet,vocalGain,musicGainNode};
   applyLiveFx();
   return {hp, vocalGain, musicGainNode};
 }
@@ -1553,26 +1628,53 @@ function applyMusicMonitorVol_graph(){
   }
 }
 // Reflect FX-rack + mix settings into the live take graph.
+function clampParam(param, min, max, v){ param.value = Math.max(min, Math.min(max, v)); }
+
+// Reflect the pro-chain sliders (+ mix gain) into the live take graph. This is
+// an approximation for audition — the exact chain (incl. saturation and the
+// delay send) is only applied by ffmpeg at render time.
 function applyLiveFx(){
   if(!takeGraph) return;
-  const eq=fxOn.eq?{low:+$('eqlow').value,mid:+$('eqmid').value,high:+$('eqhigh').value}:{low:0,mid:0,high:0};
-  if(takeGraph.eqLow) takeGraph.eqLow.gain.value=eq.low;
-  if(takeGraph.eqMid) takeGraph.eqMid.gain.value=eq.mid;
-  if(takeGraph.eqHigh) takeGraph.eqHigh.gain.value=eq.high;
-  const rev=fxOn.reverb?(+$('reverb').value)/100:0;
-  if(takeGraph.wet) takeGraph.wet.gain.value=rev*0.9;
-  if(takeGraph.dry) takeGraph.dry.gain.value=1-rev*0.4;
-  const vdb=+$('vgain').value; if(takeGraph.vocalGain) takeGraph.vocalGain.gain.value=Math.pow(10,vdb/20);
-  // smoothing chain: compression (throw), de-ess, de-harsh — scale by toggle+amount
+  const pv=PRO_CHAIN_VALUES, on=!!fxOn.pro;
+  const nyq=(audioCtx.sampleRate||48000)/2 - 1;
+
+  if(takeGraph.hp) clampParam(takeGraph.hp.frequency, 10, nyq, on?pv.hpf_freq:10);
+  if(takeGraph.dip){ clampParam(takeGraph.dip.frequency,10,nyq,pv.dip_freq); takeGraph.dip.Q.value=pv.dip_q;
+    takeGraph.dip.gain.value = on?pv.dip_gain:0; }
+  if(takeGraph.nasal){ clampParam(takeGraph.nasal.frequency,10,nyq,pv.nasal_freq); takeGraph.nasal.Q.value=pv.nasal_q;
+    takeGraph.nasal.gain.value = on?pv.nasal_gain:0; }
+  if(takeGraph.tone1){ clampParam(takeGraph.tone1.frequency,10,nyq,pv.tone1_freq); takeGraph.tone1.Q.value=pv.tone1_q;
+    takeGraph.tone1.gain.value = on?pv.tone1_gain:0; }
+  if(takeGraph.tone2){ clampParam(takeGraph.tone2.frequency,10,nyq,pv.tone2_freq); takeGraph.tone2.Q.value=pv.tone2_q;
+    takeGraph.tone2.gain.value = on?pv.tone2_gain:0; }
+  if(takeGraph.air){ clampParam(takeGraph.air.frequency,10,nyq,pv.air_freq);
+    takeGraph.air.gain.value = on?pv.air_gain:0; }
+  if(takeGraph.deEss){ clampParam(takeGraph.deEss.frequency,10,nyq,pv.deess_freq);
+    takeGraph.deEss.gain.value = on ? -(pv.deess_intensity/100)*8 : 0; }
   if(takeGraph.comp){
-    const c=fxOn.compress?(+$('compress').value)/100:0;
-    // more compression → lower threshold + higher ratio → smoother pushes
-    takeGraph.comp.threshold.value = -12 - c*24;      // -12..-36 dB
-    takeGraph.comp.ratio.value     = 1.5 + c*4;       // 1.5..5.5:1
-    takeGraph.comp.knee.value      = 24;
+    clampParam(takeGraph.comp.threshold,-100,0, on?pv.fast_threshold_db:0);
+    takeGraph.comp.knee.value=6; clampParam(takeGraph.comp.ratio,1,20, on?pv.fast_ratio:1);
+    clampParam(takeGraph.comp.attack,0,1, (on?pv.fast_attack:0)/1000);
+    clampParam(takeGraph.comp.release,0,1, (on?pv.fast_release:10)/1000);
   }
-  if(takeGraph.deEss) takeGraph.deEss.gain.value = fxOn.deess ? -6 : -2;   // always a touch, more when on
-  if(takeGraph.deHarsh) takeGraph.deHarsh.gain.value = -2.5;               // gentle de-harsh always on
+  if(takeGraph.comp2){
+    clampParam(takeGraph.comp2.threshold,-100,0, on?pv.smooth_threshold_db:0);
+    takeGraph.comp2.knee.value=8; clampParam(takeGraph.comp2.ratio,1,20, on?pv.smooth_ratio:1);
+    clampParam(takeGraph.comp2.attack,0,1, (on?pv.smooth_attack:0)/1000);
+    clampParam(takeGraph.comp2.release,0,1, (on?pv.smooth_release:10)/1000);
+  }
+  // reverb send: regenerate the impulse if the decay time changed meaningfully
+  if(takeGraph.conv){
+    const targetDecay=on?pv.verb_decay:0.01;
+    if(Math.abs((takeGraph._verbDecay||0)-targetDecay)>0.05){
+      takeGraph.conv.buffer=makeImpulse(Math.max(0.05,targetDecay),2.0);
+      takeGraph._verbDecay=targetDecay;
+    }
+  }
+  const wetGain = on ? Math.pow(10, pv.verb_send_db/20) : 0;
+  if(takeGraph.wet) takeGraph.wet.gain.value=wetGain;
+  if(takeGraph.dry) takeGraph.dry.gain.value=1;
+  const vdb=+$('vgain').value; if(takeGraph.vocalGain) takeGraph.vocalGain.gain.value=Math.pow(10,vdb/20);
   applyMusicMonitorVol_graph();
 }
 
@@ -1593,12 +1695,8 @@ $('render').addEventListener('click',doRender);
 function collectFx(){
   return {
     pitch: fxOn.pitch?{enabled:true,key:$('pkey').value,scale:$('pscale').value,strength:(+$('pstr').value)/100}:{enabled:false},
-    reverb: fxOn.reverb?(+$('reverb').value)/100:0,
-    echo: fxOn.echo?(+$('echo').value)/100:0,
-    eq: fxOn.eq?{low:+$('eqlow').value,mid:+$('eqmid').value,high:+$('eqhigh').value}:{},
-    compress: fxOn.compress?(+$('compress').value)/100:0,
+    pro: Object.assign({enabled:!!fxOn.pro}, PRO_CHAIN_VALUES),
     denoise: fxOn.denoise?(+$('denoise').value)/100:0,
-    deess: !!fxOn.deess,
   };
 }
 async function doRender(){
