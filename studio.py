@@ -683,6 +683,8 @@ INDEX_HTML = r"""<meta charset="utf-8">
   .player .ptime{font-family:var(--mono);font-size:11px;color:var(--amber);min-width:96px;text-align:right;letter-spacing:.04em}
   .player .plabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim);
     text-transform:uppercase;margin-bottom:8px}
+  .pwave{width:100%;height:64px;display:block;border-radius:6px;background:var(--track);
+    border:1px solid var(--edge);margin-bottom:10px;cursor:pointer}
   .step{opacity:.4;pointer-events:none;transition:opacity .3s}
   .step.active{opacity:1;pointer-events:auto}
   .bar{height:6px;background:#0a0b0e;border-radius:4px;overflow:hidden;border:1px solid #000;margin-top:8px}
@@ -1638,9 +1640,51 @@ function stitchBuffers(ctx,head,tail,punchSec){
 // Buffer-based player: no <audio> element. Position comes from opts.getPos()/
 // getDur(); play/pause/stop/seek call opts hooks. Used for take playback where
 // vocal+music are AudioBufferSources kept in perfect sample-sync.
+// Min/max peaks per column, computed ONCE per buffer (scanning raw samples
+// every animation frame during playback would jank on longer takes).
+function computeWavePeaks(buffer, cols){
+  const data=buffer.getChannelData(0);
+  const perCol=data.length/cols;
+  const peaks=new Float32Array(cols*2);
+  for(let x=0;x<cols;x++){
+    const start=Math.floor(x*perCol), end=Math.max(start+1,Math.floor((x+1)*perCol));
+    let min=1, max=-1;
+    for(let i=start;i<end && i<data.length;i++){ const v=data[i]; if(v<min)min=v; if(v>max)max=v; }
+    if(min>max){ min=0; max=0; }
+    peaks[x*2]=min; peaks[x*2+1]=max;
+  }
+  return peaks;
+}
+
+// Cheap per-frame redraw from cached peaks, plus an optional playhead line.
+function drawWaveform(canvas, peaks, playheadFrac){
+  const dpr=window.devicePixelRatio||1;
+  const w=canvas.clientWidth||canvas.width, h=canvas.clientHeight||64;
+  const cw=Math.max(1,Math.round(w*dpr)), ch=Math.round(h*dpr);
+  if(canvas.width!==cw||canvas.height!==ch){ canvas.width=cw; canvas.height=ch; }
+  const ctx=canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  if(!peaks || !peaks.length) return;
+  const cols=peaks.length/2, mid=h/2, colW=w/cols;
+  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--amber2').trim()||'#ff9b3d';
+  ctx.globalAlpha=.85;
+  for(let x=0;x<cols;x++){
+    const min=peaks[x*2], max=peaks[x*2+1];
+    const y1=mid+min*mid, y2=mid+max*mid;
+    ctx.fillRect(x*colW, Math.min(y1,y2), Math.max(1,colW), Math.max(1,Math.abs(y2-y1)));
+  }
+  ctx.globalAlpha=1;
+  if(playheadFrac!=null){
+    ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--ink').trim()||'#e8ebf0';
+    ctx.fillRect(playheadFrac*w,0,1.5,h);
+  }
+}
+
 function buildBufferPlayer(container, opts){
   container.innerHTML=
     (opts.label? '<div class="plabel">'+opts.label+'</div>':'')+
+    (opts.buffer? '<canvas class="pwave"></canvas>':'')+
     '<div class="ctrls">'+
       '<button class="pbtn play" data-a="play" title="Play/Pause">▶</button>'+
       '<button class="pbtn" data-a="stop" title="Stop (back to start)">■</button>'+
@@ -1651,13 +1695,34 @@ function buildBufferPlayer(container, opts){
   const btnStop=container.querySelector('[data-a=stop]');
   const seek=container.querySelector('.pseek');
   const time=container.querySelector('.ptime');
+  const wave=container.querySelector('.pwave');
   let dragging=false, playing=false;
+
+  const wavePeaks = (wave && opts.buffer) ? computeWavePeaks(opts.buffer, 400) : null;
+
+  if(wave){
+    drawWaveform(wave, wavePeaks, 0);
+    window.addEventListener('resize', ()=>drawWaveform(wave, wavePeaks, playheadFrac()));
+    wave.addEventListener('click',(e)=>{
+      const d=opts.getDur()||0; if(!d) return;
+      const rect=wave.getBoundingClientRect();
+      const t=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width))*d;
+      opts.onSeek&&opts.onSeek(t); paint();
+    });
+  }
+
+  function playheadFrac(){
+    const d=opts.getDur()||0; if(!d) return 0;
+    return Math.min(opts.getPos()||0, d)/d;
+  }
+
   function paint(){
     const d=opts.getDur()||0, t=Math.min(opts.getPos()||0, d);
     time.textContent=fmt(t)+' / '+fmt(d);
     if(!dragging && d) seek.value=Math.round(t/d*1000);
     playing = (typeof tp!=='undefined' && tp)? tp.playing : playing;
     btnPlay.textContent=playing?'❚❚':'▶'; btnPlay.classList.toggle('play',!playing);
+    if(wave) drawWaveform(wave, wavePeaks, playheadFrac());
   }
   btnPlay.addEventListener('click',()=>{
     if(tp && tp.playing){ opts.onPause&&opts.onPause(); }
@@ -1768,6 +1833,7 @@ function buildTakeAudio(){
 
   takePlayerUI=buildBufferPlayer($('takePlayer'), {
     label:'Your take — vocals locked to the music',
+    buffer:vocalBuf,
     getPos:()=>takePos(), getDur:()=>tp.dur,
     onPlay:(t)=>startTakePlayback(t),
     onPause:()=>pauseTakePlayback(),
