@@ -38,21 +38,23 @@ You need three command-line tools installed and on your `PATH`:
 | `yt-dlp`  | downloads the backing audio          |
 | `ffmpeg`  | audio conversion, effects, mixdown   |
 
-Optional but recommended: `rubberband` and `sox` (higher-quality pitch/transpose).
+Optional but recommended: `rubberband` and `sox` (higher-quality pitch/transpose),
+and `qrencode` (shows a scannable QR code on the party-mode TV screen — without
+it guests just type in the join URL shown as text).
 
 Plus a few Python packages: `numpy`, `scipy`, `librosa`, `soundfile`.
 
 ### macOS (Homebrew)
 
 ```bash
-brew install python yt-dlp ffmpeg rubberband sox
+brew install python yt-dlp ffmpeg rubberband sox qrencode
 pip3 install numpy scipy librosa soundfile
 ```
 
 ### Linux (Debian/Ubuntu)
 
 ```bash
-sudo apt install python3 python3-pip ffmpeg rubberband-cli sox
+sudo apt install python3 python3-pip ffmpeg rubberband-cli sox qrencode
 pip3 install yt-dlp numpy scipy librosa soundfile
 ```
 
@@ -143,6 +145,27 @@ download final  ◀──────────────────   WAV 
 - `index.html` — the full studio UI, served from disk by `studio.py` at
   runtime. It must stay next to `studio.py` (a packaged `.app` build needs to
   bundle both files together).
+
+---
+
+## Party mode
+
+Turn the app into a Jackbox-style karaoke party: one machine (the TV) runs the
+server as usual, and guests join from their own phones over the same WiFi to
+queue songs.
+
+1. On the host machine, open **`http://localhost:8770/party`** and click
+   **Start Party** — this shows a room code, a QR code, and the join URL.
+2. Guests scan the QR code (or open the join URL / type in the room code) on
+   their phones. They search for a song, preview it privately on their own
+   device (with their own key/pitch adjustment), then add themselves to the
+   queue — solo, or as a duet/group by entering multiple names.
+3. The TV screen shows who's up next and plays each song in turn (muted video
+   as the lyrics/master clock, backing audio synced to it) — the host taps
+   **Next** to advance, and can reorder or remove queued songs.
+
+Party mode doesn't record anything — it's queue + playback only. Recording
+stays a personal-mode feature.
 
 ---
 
