@@ -767,7 +767,6 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not found"})
 
 
-
 def main():
     if not os.path.isfile(INDEX_PATH):
         raise SystemExit(
