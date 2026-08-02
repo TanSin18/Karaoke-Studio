@@ -72,14 +72,25 @@ pip install numpy scipy librosa soundfile
 
 1. Download **`Karaoke-Studio-mac.zip`** from the
    [**Releases**](https://github.com/TanSin18/Karaoke-Studio/releases) page.
-2. Unzip it and **double-click `Karaoke Studio`**.
-3. First launch: it offers to install the free tools it needs (a few minutes,
-   one time). After that it just opens the studio in your browser.
+2. Unzip it.
+3. **⚠️ First time — do NOT double-click.** Instead:
+   **right-click the app → Open → click "Open"** in the dialog.
+   (After this once, double-click works normally forever.)
+4. First launch offers to install the free tools it needs (a few minutes, one
+   time). After that it just opens the studio in your browser.
 
-> Because the app isn't from the App Store, the first time you may need to
-> **right-click → Open** (then click *Open*) to get past macOS Gatekeeper.
+### Why the "can't verify it's free of malware" warning?
 
-It still runs entirely on your own computer — nothing is uploaded anywhere.
+That warning appears for **every** app not signed with a paid Apple Developer
+account — it is **not** a real malware detection, just Apple's block on unsigned
+apps. The **right-click → Open** step above is the standard, safe way past it.
+
+If you already double-clicked and got stuck, either:
+- **right-click → Open → Open**, or
+- open **System Settings → Privacy & Security**, scroll down, and click
+  **"Open Anyway"** next to the Karaoke Studio message.
+
+It runs entirely on your own computer — nothing is uploaded anywhere.
 
 ---
 
