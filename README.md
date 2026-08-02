@@ -68,19 +68,34 @@ pip install numpy scipy librosa soundfile
 
 ---
 
-## Run it
+## Easiest: the Mac app (no terminal, no setup)
+
+1. Download **`Karaoke-Studio-mac.zip`** from the
+   [**Releases**](https://github.com/TanSin18/Karaoke-Studio/releases) page.
+2. Unzip it and **double-click `Karaoke Studio`**.
+3. First launch: it offers to install the free tools it needs (a few minutes,
+   one time). After that it just opens the studio in your browser.
+
+> Because the app isn't from the App Store, the first time you may need to
+> **right-click → Open** (then click *Open*) to get past macOS Gatekeeper.
+
+It still runs entirely on your own computer — nothing is uploaded anywhere.
+
+---
+
+## Run from source (any OS)
 
 ```bash
 git clone https://github.com/TanSin18/Karaoke-Studio.git
 cd Karaoke-Studio
+pip3 install -r requirements.txt
 python3 studio.py
 ```
 
 Then open **http://localhost:8770** in your browser.
 
 > **On macOS** you can also double-click **`Karaoke Studio.command`** in Finder —
-> it starts the server and opens your browser in one step. (First time: right-click
-> → Open to get past Gatekeeper.)
+> it starts the server and opens your browser in one step.
 
 ### Important: use `localhost`, not `127.0.0.1`
 

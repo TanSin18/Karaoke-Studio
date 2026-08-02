@@ -29,7 +29,32 @@ from urllib.parse import urlparse, parse_qs
 import audio_fx
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SESS_DIR = os.path.join(HERE, "sessions")
+
+def _sessions_dir():
+    """Sessions go next to the code for a git-clone/dev run, but inside a macOS
+    .app bundle that folder is often read-only, so fall back to a user-writable
+    Application Support location. Env override wins for advanced users."""
+    env = os.environ.get("KARAOKE_SESSIONS")
+    if env:
+        return env
+    # detect running from inside a .app bundle (…/Contents/Resources)
+    in_app = ("/Contents/Resources" in HERE) or ("/Contents/MacOS" in HERE)
+    local = os.path.join(HERE, "sessions")
+    if not in_app:
+        try:
+            os.makedirs(local, exist_ok=True)
+            testf = os.path.join(local, ".write_test")
+            with open(testf, "w") as fh:
+                fh.write("ok")
+            os.remove(testf)
+            return local
+        except OSError:
+            pass
+    support = os.path.expanduser("~/Library/Application Support/Karaoke Studio/sessions")
+    os.makedirs(support, exist_ok=True)
+    return support
+
+SESS_DIR = _sessions_dir()
 os.makedirs(SESS_DIR, exist_ok=True)
 
 # NOTE: bind to "localhost", not "127.0.0.1". YouTube's embedded player rejects
