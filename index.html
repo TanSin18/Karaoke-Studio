@@ -227,6 +227,13 @@
   <!-- STEP 1: find a song -->
   <div class="card" style="margin-bottom:16px">
     <h2>1 · Find a song</h2>
+
+    <!-- resume a previously-prepared song, no re-download needed -->
+    <div id="recentWrap" style="display:none;margin-bottom:16px">
+      <div class="metlabel">RESUME A RECENT SONG</div>
+      <div class="results" id="recentResults"></div>
+    </div>
+
     <div class="tabs">
       <button class="tab on" id="tabSearch">Search YouTube</button>
       <button class="tab" id="tabUrl">Paste a link</button>
@@ -556,6 +563,57 @@ function renderResults(res){
   });
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---- resume a recent song (prepared before, backing track already on disk) --
+async function loadRecentSessions(){
+  let r; try{ r=await fetch('/sessions'); }catch(e){ return; }
+  if(!r.ok) return;
+  let d; try{ d=await r.json(); }catch(e){ return; }
+  const sessions=d.sessions||[];
+  if(!sessions.length) return;
+  renderRecentSessions(sessions);
+  $('recentWrap').style.display='block';
+}
+function renderRecentSessions(sessions){
+  const box=$('recentResults'); box.innerHTML='';
+  sessions.forEach(s=>{
+    const card=document.createElement('div'); card.className='rcard';
+    const dur=(s.duration!=null)? fmt(s.duration) : '';
+    card.innerHTML=
+      '<div style="position:relative">'+
+        (s.thumb? '<img class="rthumb" loading="lazy" src="'+s.thumb+'" alt="">' : '<div class="rthumb"></div>')+
+        (dur?'<span class="rdur">'+dur+'</span>':'')+
+      '</div>'+
+      '<div class="rmeta">'+
+        '<div class="rtitle">'+escapeHtml(s.title)+'</div>'+
+      '</div>';
+    card.addEventListener('click',()=>{
+      document.querySelectorAll('.rcard').forEach(c=>c.classList.remove('loading'));
+      card.classList.add('loading');
+      resumeSession(s.id);
+    });
+    box.appendChild(card);
+  });
+}
+function resumeSession(sid){
+  SID=sid;
+  $('loaderr').textContent='';
+  $('loadbar').style.display='block'; $('loadfill').style.width='100%';
+  $('loadstatus').textContent='Resuming session…';
+  fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
+    if(j && (j.status==='ready'||j.stage==='ready')){ onReady(j); }
+    else {
+      document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
+      $('loadbar').style.display='none';
+      $('loaderr').textContent='That session is no longer available.';
+    }
+  }).catch(()=>{
+    document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
+    $('loadbar').style.display='none';
+    $('loaderr').textContent='Could not reach the local server.';
+  });
+}
+loadRecentSessions();
 
 async function loadTrack(explicitUrl){
   const url=(explicitUrl||$('url').value).trim();
@@ -1642,10 +1700,6 @@ function blobToB64(blob){ return new Promise(res=>{const fr=new FileReader();
 // (runs LAST, after every declaration exists, to avoid temporal-dead-zone errors)
 (function autoload(){
   const sid=new URLSearchParams(location.search).get('sid');
-  if(!sid) return;
-  SID=sid;
-  fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
-    if(j && (j.status==='ready'||j.stage==='ready')) onReady(j);
-  }).catch(()=>{});
+  if(sid) resumeSession(sid);
 })();
 </script>

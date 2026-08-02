@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -78,6 +79,26 @@ def get_job(jid):
         return dict(JOBS.get(jid, {}))
 
 
+def _read_meta(jid):
+    try:
+        with open(os.path.join(SESS_DIR, jid, "meta.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_meta(jid, **kw):
+    sdir = os.path.join(SESS_DIR, jid)
+    os.makedirs(sdir, exist_ok=True)
+    meta = _read_meta(jid)
+    meta.update(kw)
+    try:
+        with open(os.path.join(sdir, "meta.json"), "w", encoding="utf-8") as fh:
+            json.dump(meta, fh)
+    except OSError:
+        pass
+
+
 def job_or_disk(jid):
     """Return the in-memory job, or reconstruct a minimal one from disk if the
     server was restarted but the session folder (with a backing track) survives.
@@ -89,16 +110,20 @@ def job_or_disk(jid):
         return {}
     backing = os.path.join(SESS_DIR, jid, "backing.wav")
     if os.path.exists(backing):
-        dur = None
-        try:
-            r = subprocess.run(["ffprobe", "-v", "quiet", "-show_entries",
-                                "format=duration", "-of", "csv=p=0", backing],
-                               capture_output=True, text=True)
-            dur = float(r.stdout.strip())
-        except Exception:
-            pass
+        meta = _read_meta(jid)
+        dur = meta.get("duration")
+        if dur is None:
+            try:
+                r = subprocess.run(["ffprobe", "-v", "quiet", "-show_entries",
+                                    "format=duration", "-of", "csv=p=0", backing],
+                                   capture_output=True, text=True)
+                dur = float(r.stdout.strip())
+            except Exception:
+                pass
         set_job(jid, status="ready", stage="ready", pct=100,
-                title="Karaoke", duration=dur, recovered=True)
+                title=meta.get("title") or "Karaoke",
+                video_id=meta.get("video_id"),
+                duration=dur, recovered=True)
         return get_job(jid)
     return {}
 
@@ -208,6 +233,41 @@ def do_prepare(jid, url):
 
     set_job(jid, status="ready", stage="ready", pct=100,
             video_id=vid, title=title or "Karaoke", duration=dur)
+    _write_meta(jid, video_id=vid, title=title or "Karaoke", duration=dur,
+                url=url, created_at=time.time())
+
+
+def list_recent_sessions(limit=8):
+    """Sessions with a downloaded backing track, newest first, for the
+    'resume a recent song' panel. Survives server restarts (reads meta.json)."""
+    out = []
+    try:
+        entries = os.listdir(SESS_DIR)
+    except OSError:
+        return out
+    for jid in entries:
+        sdir = os.path.join(SESS_DIR, jid)
+        backing = os.path.join(sdir, "backing.wav")
+        if not os.path.isfile(backing):
+            continue
+        meta = _read_meta(jid)
+        created_at = meta.get("created_at")
+        if created_at is None:
+            try:
+                created_at = os.path.getmtime(backing)
+            except OSError:
+                created_at = 0
+        vid = meta.get("video_id")
+        out.append({
+            "id": jid,
+            "title": meta.get("title") or "Karaoke",
+            "video_id": vid,
+            "duration": meta.get("duration"),
+            "thumb": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg" if vid else None,
+            "created_at": created_at,
+        })
+    out.sort(key=lambda s: s["created_at"] or 0, reverse=True)
+    return out[:limit]
 
 
 # ---- Backing transpose (change key), rendered on demand + cached ------------
@@ -320,9 +380,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"results": results})
             return
 
+        if p.path == "/sessions":
+            self._json(200, {"sessions": list_recent_sessions()})
+            return
+
         if p.path == "/status":
             jid = (parse_qs(p.query).get("id") or [""])[0]
-            j = get_job(jid)
+            j = job_or_disk(jid)
             if not j:
                 self._json(404, {"error": "unknown job"})
             else:
@@ -699,6 +763,13 @@ INDEX_HTML = r"""<meta charset="utf-8">
   <!-- STEP 1: find a song -->
   <div class="card" style="margin-bottom:16px">
     <h2>1 · Find a song</h2>
+
+    <!-- resume a previously-prepared song, no re-download needed -->
+    <div id="recentWrap" style="display:none;margin-bottom:16px">
+      <div class="metlabel">RESUME A RECENT SONG</div>
+      <div class="results" id="recentResults"></div>
+    </div>
+
     <div class="tabs">
       <button class="tab on" id="tabSearch">Search YouTube</button>
       <button class="tab" id="tabUrl">Paste a link</button>
@@ -1028,6 +1099,57 @@ function renderResults(res){
   });
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---- resume a recent song (prepared before, backing track already on disk) --
+async function loadRecentSessions(){
+  let r; try{ r=await fetch('/sessions'); }catch(e){ return; }
+  if(!r.ok) return;
+  let d; try{ d=await r.json(); }catch(e){ return; }
+  const sessions=d.sessions||[];
+  if(!sessions.length) return;
+  renderRecentSessions(sessions);
+  $('recentWrap').style.display='block';
+}
+function renderRecentSessions(sessions){
+  const box=$('recentResults'); box.innerHTML='';
+  sessions.forEach(s=>{
+    const card=document.createElement('div'); card.className='rcard';
+    const dur=(s.duration!=null)? fmt(s.duration) : '';
+    card.innerHTML=
+      '<div style="position:relative">'+
+        (s.thumb? '<img class="rthumb" loading="lazy" src="'+s.thumb+'" alt="">' : '<div class="rthumb"></div>')+
+        (dur?'<span class="rdur">'+dur+'</span>':'')+
+      '</div>'+
+      '<div class="rmeta">'+
+        '<div class="rtitle">'+escapeHtml(s.title)+'</div>'+
+      '</div>';
+    card.addEventListener('click',()=>{
+      document.querySelectorAll('.rcard').forEach(c=>c.classList.remove('loading'));
+      card.classList.add('loading');
+      resumeSession(s.id);
+    });
+    box.appendChild(card);
+  });
+}
+function resumeSession(sid){
+  SID=sid;
+  $('loaderr').textContent='';
+  $('loadbar').style.display='block'; $('loadfill').style.width='100%';
+  $('loadstatus').textContent='Resuming session…';
+  fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
+    if(j && (j.status==='ready'||j.stage==='ready')){ onReady(j); }
+    else {
+      document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
+      $('loadbar').style.display='none';
+      $('loaderr').textContent='That session is no longer available.';
+    }
+  }).catch(()=>{
+    document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
+    $('loadbar').style.display='none';
+    $('loaderr').textContent='Could not reach the local server.';
+  });
+}
+loadRecentSessions();
 
 async function loadTrack(explicitUrl){
   const url=(explicitUrl||$('url').value).trim();
@@ -2114,11 +2236,7 @@ function blobToB64(blob){ return new Promise(res=>{const fr=new FileReader();
 // (runs LAST, after every declaration exists, to avoid temporal-dead-zone errors)
 (function autoload(){
   const sid=new URLSearchParams(location.search).get('sid');
-  if(!sid) return;
-  SID=sid;
-  fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
-    if(j && (j.status==='ready'||j.stage==='ready')) onReady(j);
-  }).catch(()=>{});
+  if(sid) resumeSession(sid);
 })();
 </script>
 """
