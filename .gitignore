@@ -2,6 +2,7 @@
 sessions/
 downloads/
 profiles/
+.certs/
 
 # Python
 __pycache__/
