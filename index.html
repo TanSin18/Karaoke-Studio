@@ -1619,6 +1619,16 @@ function mountVideo(vid){
 function onVideoState(e){
   if(!backingAudio) return;
   const st=e.data;
+  // During take playback (`previewing`), the video is only running for
+  // visual lyrics sync — startTakePlayback() calls ytPlayer.playVideo() for
+  // that alone. Audio is owned entirely by the sample-accurate vSrc/mSrc
+  // AudioBufferSourceNodes it builds. Without this guard, that playVideo()
+  // call fires this same handler, which would start the OLD backingAudio
+  // <audio> element playing too — a second, unsynced copy of the backing
+  // track running alongside mSrc for the whole take: the "both tracks
+  // playing at once" bug. Take playback's own start/pause/stop functions
+  // are the only things allowed to touch backingAudio while previewing.
+  if(previewing) return;
   if(st===YT.PlayerState.PLAYING){
     // match audio to video and play
     syncAudioToVideo(true);
@@ -2887,6 +2897,10 @@ async function startTakePlayback(fromT, loopIt){
   if(audioCtx.state==='suspended') await audioCtx.resume();
   if(!backingBuffer){ await decodeBackingBuffer(musicKey); }
   stopSources();
+  // mSrc below is the only backing-track source take playback should ever
+  // have running — if "Play music" was left going before switching to
+  // "Play take", silence it here so it can't double up with mSrc.
+  try{ backingAudio&&backingAudio.pause(); }catch(_){}
   const g=buildTakeGraphNodes();
   const looping = !!loopIt && testMode && loopB>loopA;
   const at=looping ? loopA : ((fromT!=null?fromT:tp.pos)||0);
@@ -2932,6 +2946,10 @@ function pauseTakePlayback(){
   tp.pos=takePos(); tp.playing=false;
   stopSources();
   if(ytReady){ try{ ytPlayer.pauseVideo(); }catch(_){} }
+  // belt-and-suspenders: backingAudio should never be running during take
+  // playback (mSrc is the only intended backing-track source), but pause it
+  // directly rather than trusting the YT pause event to get there in time.
+  try{ backingAudio&&backingAudio.pause(); }catch(_){}
   cancelAnimationFrame(tp.raf);
   takePlayerUI&&takePlayerUI.paint();
 }
@@ -2939,6 +2957,7 @@ function stopTakePlayback(){
   if(tp){ tp.playing=false; if(tp.raf) cancelAnimationFrame(tp.raf); }
   stopSources();
   if(ytReady){ try{ ytPlayer.pauseVideo(); }catch(_){} }
+  try{ backingAudio&&backingAudio.pause(); }catch(_){}
   previewing=false; $('rec').disabled=false; $('play').disabled=false; resetMusicBtn();
   takePlayerUI&&takePlayerUI.paint();
 }
