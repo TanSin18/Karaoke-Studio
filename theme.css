@@ -1,0 +1,132 @@
+/* Shared "neon jukebox" design tokens + core components, used by index.html,
+   the party-mode TV screen (/party), and the guest join page (/join), so all
+   three surfaces are one visual system instead of drifting copies. Page-
+   specific layout/components stay in each page's own <style> block. */
+
+/* Bold neon-party palette. Kept the --amber/--amber2/--glow-amber token
+   NAMES (dozens of call sites across index.html, /party, /join reference
+   them) but repointed the VALUES to electric cyan — no more amber/yellow as
+   the dominant color. Pink got brighter/more magenta, plus new purple/green
+   accents for real multi-color "string lights" energy in the marquee. */
+:root{
+  --panel:#1c1030; --panel2:#241640; --rack:#150a26; --edge:#3d2a5e;
+  --ink:#f2ecff; --muted:#b3a3d9; --dim:#7a6a9e;
+  --amber:#00e5ff; --amber2:#00b8cc;              /* now "primary" = electric cyan */
+  --pink:#ff2fd0; --pink2:#d600a8;                 /* brighter magenta */
+  --purple:#b026ff; --green:#39ff8a;               /* extra party accents */
+  --rec:#ff3b47; --ok:#39ff8a;
+  --fader:#4a3a70; --track:#120820;
+  --mono:'SF Mono',ui-monospace,Menlo,monospace;
+
+  --glow-amber: 0 0 6px rgba(0,229,255,.6), 0 0 16px rgba(0,229,255,.32);
+  --glow-pink:  0 0 6px rgba(255,47,208,.6), 0 0 16px rgba(214,0,168,.32);
+  --glow-purple:0 0 6px rgba(176,38,255,.6), 0 0 16px rgba(176,38,255,.32);
+  --glow-green: 0 0 6px rgba(57,255,138,.6), 0 0 16px rgba(57,255,138,.30);
+  --glow-rec:   0 0 8px var(--rec), 0 0 3px #fff;
+  --glow-ok:    var(--glow-green);
+  --metal: linear-gradient(180deg,#2c1d4a,#1c1030);
+  --glass: linear-gradient(180deg,rgba(255,255,255,.06),rgba(0,0,0,.2));
+  --bg: radial-gradient(1200px 600px at 70% -10%, #2c1d4a 0%, transparent 60%), #0d0618;
+}
+
+/* Light mode: only the page chrome (cards, body, text) flips — "hardware"
+   surfaces (the FX rack, sliders, meters, text inputs, buttons — anything
+   using --track/--rack/--fader/--metal) intentionally stay dark in both
+   themes, like a mixing console, so they don't need their own parallel set
+   of ink/muted/dim tokens. Respects the OS preference by default; an
+   explicit data-theme attribute (set by the toggle in index.html) overrides it. */
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --panel:#ffffff; --panel2:#f4f1fb; --edge:#ddd6ef;
+    --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
+    --bg: radial-gradient(1200px 600px at 70% -10%, #efe9fb 0%, transparent 60%), #f8f6fc;
+    --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
+  }
+}
+:root[data-theme="light"]{
+  --panel:#ffffff; --panel2:#f4f1fb; --edge:#ddd6ef;
+  --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
+  --bg: radial-gradient(1200px 600px at 70% -10%, #efe9fb 0%, transparent 60%), #f8f6fc;
+  --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
+}
+
+*{box-sizing:border-box}
+
+.hidden{display:none}
+
+/* ---- buttons ---------------------------------------------------------- */
+.btn{padding:12px 20px;border:1px solid var(--edge);border-radius:14px;cursor:pointer;
+  font-weight:650;font-size:13px;background:var(--metal);color:var(--ink);
+  transition:filter .12s,box-shadow .12s,transform .08s}
+.btn:hover{filter:brightness(1.15);transform:translateY(-1px)}
+.btn:active{transform:translateY(0) scale(.98)}
+.btn:disabled{opacity:.4;cursor:default;transform:none}
+.btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#001a1f;
+  border-color:#008494;box-shadow:var(--glow-amber)}
+.btn.pink{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#2a0022;
+  border-color:#8a0070;box-shadow:var(--glow-pink)}
+.btn.purple{background:linear-gradient(180deg,var(--purple),#7a0fd6);color:#fff;
+  border-color:#6a0fc0;box-shadow:var(--glow-purple)}
+.btn.green{background:linear-gradient(180deg,var(--green),#1fcc6b);color:#00220f;
+  border-color:#149a4f;box-shadow:var(--glow-green)}
+.btn.rec{background:linear-gradient(180deg,#ff4d58,#e0313c);color:#fff;border-color:#a51f27}
+.btn.rec:not(:disabled){box-shadow:var(--glow-rec)}
+.btn.ghost{background:transparent;color:var(--ink)}
+.btn.wide{width:100%}
+.btn.small{padding:5px 10px;font-size:12px;border-radius:9px}
+.btn.small:disabled{opacity:.25}
+
+/* ---- cards -------------------------------------------------------------*/
+.card{background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
+  border:1px solid var(--edge);border-radius:14px;padding:16px;
+  box-shadow:0 10px 30px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.04)}
+
+/* ---- inputs --------------------------------------------------------- */
+input[type=text]{width:100%;padding:11px 13px;border-radius:10px;border:1px solid var(--edge);
+  background:var(--track);color:var(--ink);font-size:13px;outline:none;font-family:var(--mono);
+  transition:border-color .15s,box-shadow .15s}
+input[type=text]:focus{border-color:var(--pink2);box-shadow:var(--glow-pink)}
+select{padding:8px 10px;border-radius:9px;border:1px solid var(--edge);background:var(--track);
+  color:var(--ink);font-size:12px;font-family:var(--mono);outline:none}
+select:focus{border-color:var(--amber2)}
+
+/* skeuomorphic fader: recessed track, raised metal cap, glow when focused */
+input[type=range]{-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;
+  background:var(--track);box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000;
+  flex:1;min-width:80px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:22px;border-radius:5px;
+  background:linear-gradient(180deg,#6a5f78,var(--fader) 55%,#332b3d);
+  border:1px solid #100c16;position:relative;cursor:pointer;
+  box-shadow:0 2px 5px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.15)}
+input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--track);
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000}
+input[type=range]::-moz-range-thumb{width:18px;height:22px;border-radius:5px;
+  background:linear-gradient(180deg,#6a5f78,var(--fader) 55%,#332b3d);
+  border:1px solid #100c16;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.6)}
+input[type=range]:focus::-webkit-slider-thumb{box-shadow:0 2px 5px rgba(0,0,0,.6),var(--glow-pink)}
+input[type=range]:disabled::-webkit-slider-thumb{background:#453c4f;box-shadow:none}
+
+.tog{width:34px;height:19px;border-radius:11px;background:#332c3f;position:relative;cursor:pointer;
+  border:1px solid #000;flex:none;transition:background .15s,box-shadow .15s}
+.tog.on{background:var(--amber2);box-shadow:var(--glow-amber)}
+.tog::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;
+  background:#f0e9f5;transition:left .15s}
+.tog.on::after{left:16px}
+
+kbd{font-family:var(--mono);background:var(--track);border:1px solid var(--edge);border-radius:5px;
+  padding:1px 6px;font-size:11px;color:var(--amber)}
+
+/* ---- marquee bulbs: the jukebox/arcade motif ----------------------------
+   A short row of dots cycling cyan/pink/purple/green with a slow pulse —
+   like a string of party lights — used on card headers, room codes, and
+   anywhere that wants a little marquee-light energy. */
+.marquee{display:inline-flex;gap:5px;align-items:center;vertical-align:middle}
+.marquee .bulb{width:6px;height:6px;border-radius:50%;background:var(--amber);
+  box-shadow:var(--glow-amber);animation:bulbpulse 1.8s ease-in-out infinite}
+.marquee .bulb:nth-child(4n+2){background:var(--pink);box-shadow:var(--glow-pink);animation-delay:.3s}
+.marquee .bulb:nth-child(4n+3){background:var(--purple);box-shadow:var(--glow-purple);animation-delay:.6s}
+.marquee .bulb:nth-child(4n+4){background:var(--green);box-shadow:var(--glow-green);animation-delay:.9s}
+@keyframes bulbpulse{0%,50%,100%{opacity:.45;transform:scale(.8)} 25%{opacity:1;transform:scale(1.2)}}
+
+.neon-text{text-shadow:var(--glow-amber)}
+.neon-text.pink{text-shadow:var(--glow-pink)}

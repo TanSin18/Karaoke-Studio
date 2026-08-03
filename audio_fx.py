@@ -173,7 +173,139 @@ def _rubberband_shift(seg, sr, semitones):
         return out
 
 
-# ---- ffmpeg DSP chain -------------------------------------------------------
+# ---- Pro vocal chain (Clean EQ -> Fast comp -> Smooth comp -> De-esser ->
+#      Tone EQ -> Saturation -> Reverb/Delay AUX sends) ----------------------
+#
+# A fuller, adjustable studio chain modeled on a standard male-vocal signal
+# path. Every stage exposes the parameters a hardware/plugin chain would, with
+# defaults tuned for a mic already gain-staged to -18..-12 dBFS. Values are
+# looked up from the fx["pro"] dict with these defaults as fallback, so the
+# frontend only needs to send the parameters the user actually changed.
+PRO_CHAIN_DEFAULTS = {
+    # 1.1 clean EQ: rumble HPF + low-mid mud dip + nasal/boxiness cut
+    "hpf_freq": 85,
+    "dip_freq": 250, "dip_gain": -2.5, "dip_q": 1.4,
+    "nasal_freq": 900, "nasal_gain": -1.5, "nasal_q": 2.0,
+    # 2.2 fast peak compressor (FET/1176 style)
+    "fast_ratio": 4, "fast_attack": 1, "fast_release": 80, "fast_threshold_db": -18,
+    # 3.3 smooth body compressor (opto/LA-2A style)
+    "smooth_ratio": 3, "smooth_attack": 25, "smooth_release": 500, "smooth_threshold_db": -20,
+    # 4.4 de-esser
+    "deess_freq": 6000, "deess_intensity": 40,
+    # 5.5 additive tone EQ: chest warmth + presence + air shelf
+    "tone1_freq": 180, "tone1_gain": 1.0, "tone1_q": 1.0,
+    "tone2_freq": 3800, "tone2_gain": 2.0, "tone2_q": 1.2,
+    "air_freq": 10500, "air_gain": 2.5,
+    # 6.6 tube/tape saturation (parallel blend)
+    "sat_drive_db": 8, "sat_mix": 12,
+    # AUX 1: plate reverb send. -3dB (~71% linear) was too hot for a default —
+    # it washed vocals out rather than just adding polish; -9dB (~35%) is a
+    # much safer "gold standard" amount of ambience out of the box.
+    "verb_decay": 1.8, "verb_predelay": 35, "verb_lowcut": 200, "verb_highcut": 6000, "verb_send_db": -9,
+    # AUX 2: slap/echo delay send (time is absolute ms — the app doesn't
+    # detect song tempo, so this isn't beat-synced like "1/8 dotted")
+    "delay_time_ms": 350, "delay_feedback": 13, "delay_lowcut": 300, "delay_highcut": 4000, "delay_send_db": -20,
+}
+
+
+def _pv(pro, key):
+    v = pro.get(key)
+    return float(v) if v is not None else float(PRO_CHAIN_DEFAULTS[key])
+
+
+def _db_to_lin(db):
+    return 10 ** (db / 20)
+
+
+def build_pro_chain_filter_complex(pro, sample_rate=48000):
+    """
+    Build an ffmpeg -filter_complex graph implementing the pro vocal chain.
+    Returns (filter_complex_string, output_pad_label).
+    """
+    g = lambda k: _pv(pro, k)
+
+    hpf = g("hpf_freq")
+    dip_f, dip_g, dip_q = g("dip_freq"), g("dip_gain"), g("dip_q")
+    nas_f, nas_g, nas_q = g("nasal_freq"), g("nasal_gain"), g("nasal_q")
+
+    fast_ratio, fast_atk, fast_rel = g("fast_ratio"), g("fast_attack"), g("fast_release")
+    fast_thr = max(0.000976, min(1, _db_to_lin(g("fast_threshold_db"))))
+
+    smooth_ratio, smooth_atk, smooth_rel = g("smooth_ratio"), g("smooth_attack"), g("smooth_release")
+    smooth_thr = max(0.000976, min(1, _db_to_lin(g("smooth_threshold_db"))))
+
+    deess_freq_ratio = max(0.01, min(1, g("deess_freq") / (sample_rate / 2)))
+    deess_i = max(0, min(1, g("deess_intensity") / 100))
+
+    tone1_f, tone1_g, tone1_q = g("tone1_freq"), g("tone1_gain"), g("tone1_q")
+    tone2_f, tone2_g, tone2_q = g("tone2_freq"), g("tone2_gain"), g("tone2_q")
+    air_f, air_g = g("air_freq"), g("air_gain")
+
+    sat_drive = g("sat_drive_db")
+    sat_mix = max(0, min(100, g("sat_mix"))) / 100
+
+    verb_decay = max(0.1, g("verb_decay"))
+    verb_predelay = max(0, g("verb_predelay"))
+    verb_lo, verb_hi = g("verb_lowcut"), g("verb_highcut")
+    verb_send = _db_to_lin(g("verb_send_db"))
+
+    delay_ms = max(1, g("delay_time_ms"))
+    delay_fb = max(0, min(0.9, g("delay_feedback") / 100))
+    delay_lo, delay_hi = g("delay_lowcut"), g("delay_highcut")
+    delay_send = _db_to_lin(g("delay_send_db"))
+
+    # 1) linear pre-chain: clean EQ -> fast comp -> smooth comp -> de-esser -> tone EQ
+    pre = (
+        f"highpass=f={hpf:.1f}:poles=2,highpass=f={hpf:.1f}:poles=1,"
+        f"equalizer=f={dip_f:.1f}:t=q:w={dip_q:.2f}:g={dip_g:.2f},"
+        f"equalizer=f={nas_f:.1f}:t=q:w={nas_q:.2f}:g={nas_g:.2f},"
+        f"acompressor=threshold={fast_thr:.5f}:ratio={fast_ratio:.2f}:attack={fast_atk:.2f}:"
+        f"release={fast_rel:.2f}:knee=6:makeup=1.6,"
+        f"acompressor=threshold={smooth_thr:.5f}:ratio={smooth_ratio:.2f}:attack={smooth_atk:.2f}:"
+        f"release={smooth_rel:.2f}:knee=8:makeup=2.0,"
+        f"deesser=f={deess_freq_ratio:.3f}:i={deess_i:.2f}:m=0.5,"
+        f"equalizer=f={tone1_f:.1f}:t=q:w={tone1_q:.2f}:g={tone1_g:.2f},"
+        f"equalizer=f={tone2_f:.1f}:t=q:w={tone2_q:.2f}:g={tone2_g:.2f},"
+        f"treble=f={air_f:.1f}:g={air_g:.2f}"
+    )
+
+    # 2) saturation: parallel blend of dry + soft-clipped wet (10-15% wet by default)
+    dry_w = max(0.0001, 1 - sat_mix)
+    wet_w = max(0.0001, sat_mix)
+
+    # 3) reverb AUX: predelay -> multi-tap decaying echo (stands in for a true
+    #    IR reverb, no external impulse needed) -> band-limit -> send level
+    rt = verb_decay / 1.8
+    taps_delays = "|".join(str(x) for x in (29, 47, 71, 97))
+    taps_decays = "|".join(f"{min(0.95, w * rt):.3f}" for w in (0.5, 0.4, 0.3, 0.25))
+    verb_chain = (
+        f"adelay={verb_predelay:.0f}|{verb_predelay:.0f},"
+        f"aecho=0.85:0.9:{taps_delays}:{taps_decays},"
+        f"highpass=f={verb_lo:.1f},lowpass=f={verb_hi:.1f},"
+        f"volume={verb_send:.4f}"
+    )
+
+    # 4) delay AUX: slap/echo -> band-limit ("telephone" tone) -> send level
+    delay_chain = (
+        f"aecho=0.9:0.9:{delay_ms:.0f}:{delay_fb:.3f},"
+        f"highpass=f={delay_lo:.1f},lowpass=f={delay_hi:.1f},"
+        f"volume={delay_send:.4f}"
+    )
+
+    fc = (
+        f"[0:a]{pre}[pre];"
+        f"[pre]asplit=2[sdry][ssat];"
+        f"[ssat]volume={sat_drive:.1f}dB,asoftclip=type=tanh,volume={-sat_drive * 0.7:.2f}dB[ssatw];"
+        f"[sdry][ssatw]amix=inputs=2:weights={dry_w:.3f} {wet_w:.3f}:normalize=0[postsat];"
+        f"[postsat]asplit=3[mdry][mverb][mdel];"
+        f"[mverb]{verb_chain}[verbwet];"
+        f"[mdel]{delay_chain}[delwet];"
+        f"[mdry][verbwet][delwet]amix=inputs=3:weights=1 1 1:normalize=0[outfx]"
+    )
+    return fc, "outfx"
+
+
+# ---- ffmpeg DSP chain (legacy simple chain, used if fx has no "pro" dict) ---
 
 def build_ffmpeg_chain(fx):
     """
@@ -249,15 +381,28 @@ def build_ffmpeg_chain(fx):
 
 
 def apply_ffmpeg_fx(in_path, out_path, fx, sample_rate=48000):
-    chain = build_ffmpeg_chain(fx)
-    cmd = [
-        "ffmpeg", "-y", "-i", in_path,
-        "-af", chain,
-        "-ar", str(sample_rate),
-        "-ac", "2",
-        "-c:a", "pcm_s24le",  # 24-bit high quality intermediate
-        out_path,
-    ]
+    pro = fx.get("pro")
+    if pro is not None and pro.get("enabled", True):
+        filter_complex, out_label = build_pro_chain_filter_complex(pro, sample_rate)
+        cmd = [
+            "ffmpeg", "-y", "-i", in_path,
+            "-filter_complex", filter_complex,
+            "-map", f"[{out_label}]",
+            "-ar", str(sample_rate),
+            "-ac", "2",
+            "-c:a", "pcm_s24le",  # 24-bit high quality intermediate
+            out_path,
+        ]
+    else:
+        chain = build_ffmpeg_chain(fx)
+        cmd = [
+            "ffmpeg", "-y", "-i", in_path,
+            "-af", chain,
+            "-ar", str(sample_rate),
+            "-ac", "2",
+            "-c:a", "pcm_s24le",  # 24-bit high quality intermediate
+            out_path,
+        ]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("ffmpeg fx failed: " + r.stderr[-500:])

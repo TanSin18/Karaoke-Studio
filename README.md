@@ -17,8 +17,10 @@ effects, and export a finished mix — all on your own machine.
 - **Record your vocals** with a live **pitch tuner** (shows the note you're hitting)
   and an adjustable **voice monitor** (hear yourself in your headphones).
 - **Transpose the key** of the backing track (−6 … +6 semitones) to fit your range.
-- **Studio-smooth vocal chain** — compression (evens out loud pushes), de-ess,
-  de-harsh, EQ, reverb/echo, and Auto-Tune-style **pitch correction**.
+- **Pro vocal chain** — clean EQ, dual (fast + smooth) compression, de-esser,
+  tone EQ, saturation, and reverb/delay sends, modeled on a standard studio
+  signal path with tuned defaults — every stage is adjustable, plus
+  Auto-Tune-style **pitch correction**.
 - **Test mode** — loop a section and audition each effect live before committing.
 - **Punch-in / continuation** — re-sing from any point, or sing along to your take
   and have it auto-record the rest.
@@ -192,7 +194,9 @@ and check your input device in the OS sound settings.
 - Only download and record content you have the rights to. Respect YouTube's Terms
   of Service and copyright law in your country.
 - Pitch correction previews approximately live; the precise, high-quality version
-  is applied when you export.
+  is applied when you export. The vocal chain's EQ/compression/de-ess/reverb
+  preview approximately live too; saturation and the delay send only apply
+  exactly at export.
 
 ---
 

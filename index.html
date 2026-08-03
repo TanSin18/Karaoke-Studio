@@ -1,65 +1,72 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Karaoke Studio</title>
+<link rel="stylesheet" href="/theme.css">
+<script>
+// applied before first paint to avoid a flash of the wrong theme
+try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
+</script>
 <style>
-  :root{
-    --panel:#15171c; --panel2:#1c1f26; --rack:#0e0f13; --edge:#2a2e38;
-    --ink:#e8ebf0; --muted:#8b93a3; --dim:#5a6172;
-    --amber:#ffb454; --amber2:#ff9b3d; --rec:#ff3b47; --ok:#39d98a;
-    --fader:#3a3f4c; --track:#0a0b0e;
-    --mono:'SF Mono',ui-monospace,Menlo,monospace;
-
-    /* jukebox amber-neon: the same accents as above, turned into real glow */
-    --accent: var(--amber);
-    --accent2: var(--amber2);
-    --glow-amber: 0 0 6px rgba(255,180,84,.55), 0 0 16px rgba(255,155,61,.30);
-    --glow-rec:   0 0 8px var(--rec), 0 0 3px #fff;
-    --glow-ok:    0 0 6px rgba(57,217,138,.6), 0 0 14px rgba(57,217,138,.25);
-    --metal: linear-gradient(180deg,#20242e,#15171c);
-    --glass: linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.16));
-  }
-  *{box-sizing:border-box}
   body{
-    margin:0;min-height:100vh;background:
-      radial-gradient(1200px 600px at 70% -10%, #20242e 0%, transparent 60%),
-      #0b0c0f;
+    margin:0;min-height:100vh;background:var(--bg);
     color:var(--ink);
     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     padding:20px;
   }
   .wrap{max-width:1180px;margin:0 auto}
-  header{display:flex;align-items:baseline;gap:14px;margin-bottom:18px}
+  header{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+  .profileChip{position:relative}
+  .profileMenu{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:220px;
+    background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--edge);border-radius:12px;padding:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  .profileMenu input[type=text]{margin-bottom:8px}
+  .profileMenu .btn{width:100%;margin-bottom:4px}
+  .profileList{max-height:160px;overflow-y:auto;margin-top:8px;display:flex;flex-direction:column;gap:4px}
+  .profileList button{width:100%;text-align:left;background:none;border:none;color:var(--muted);
+    padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12.5px}
+  .profileList button:hover{background:rgba(255,255,255,.06);color:var(--ink)}
   .logo{font-family:var(--mono);font-weight:700;font-size:19px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--ink)}
+    text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:12px}
   .logo b{color:var(--amber);text-shadow:var(--glow-amber)}
-  .tag{color:var(--dim);font-size:12px;font-family:var(--mono);letter-spacing:.08em}
 
-  .grid{display:grid;grid-template-columns:1.35fr .95fr;gap:16px}
-  @media(max-width:1100px){.grid{grid-template-columns:1fr}}
+  /* One full-width step at a time (tab-switched) once a song is loaded,
+     rather than a 2-column layout that made you scroll past everything. */
+  .grid{display:block}
 
-  .card{background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
-    border:1px solid var(--edge);border-radius:12px;padding:16px;
-    box-shadow:0 10px 30px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04)}
+  .npRow{display:flex;align-items:center;gap:14px}
+  .npRow img{width:80px;height:45px;object-fit:cover;border-radius:8px;flex:none;background:#0a0b0e}
+  .npInfo{flex:1;min-width:0}
+  .npTitle{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .npSub{font-family:var(--mono);font-size:11px;color:var(--ok);letter-spacing:.06em;margin-top:2px}
+
+  .sessionNav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .sessionTab{flex:1;min-width:120px;padding:12px 14px;border-radius:14px;border:1px solid var(--edge);
+    background:var(--metal);color:var(--muted);font-weight:650;font-size:13px;cursor:pointer;
+    text-align:center;transition:filter .12s,box-shadow .12s,transform .08s,color .12s}
+  .sessionTab:hover{filter:brightness(1.15);transform:translateY(-1px)}
+  .sessionTab.active{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#fff;
+    border-color:var(--pink2);box-shadow:var(--glow-pink)}
+
   .card h2{margin:0 0 12px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;
     text-transform:uppercase;color:var(--muted);font-weight:600;
     display:flex;align-items:center;gap:8px}
   .card h2::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber);
     box-shadow:var(--glow-amber)}
+  #duetCard h2::before,#mixCard h2::before{background:var(--pink);box-shadow:var(--glow-pink)}
 
-  input[type=text]{width:100%;padding:11px 13px;border-radius:8px;border:1px solid var(--edge);
-    background:#0a0b0e;color:var(--ink);font-size:13px;outline:none;font-family:var(--mono);
-    transition:border-color .15s,box-shadow .15s}
-  input[type=text]:focus{border-color:var(--amber2);box-shadow:var(--glow-amber)}
-  .btn{padding:11px 18px;border:none;border-radius:8px;cursor:pointer;font-weight:650;font-size:13px;
-    background:var(--metal);color:var(--ink);
-    border:1px solid var(--edge);transition:filter .12s,box-shadow .12s}
-  .btn:hover{filter:brightness(1.15)}
-  .btn:disabled{opacity:.4;cursor:default}
-  .btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#211500;border-color:#a5651f;
-    box-shadow:var(--glow-amber)}
-  .btn.rec{background:linear-gradient(180deg,#ff4d58,#e0313c);color:#fff;border-color:#a51f27}
-  .btn.rec:not(:disabled){box-shadow:var(--glow-rec)}
-  .btn.wide{width:100%}
+  /* practice/advanced disclosure drawers (native <details>, styled to match card headers) */
+  details.drawer{margin-top:12px;border-top:1px dashed var(--edge);padding-top:10px}
+  details.drawer summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:8px;user-select:none}
+  details.drawer summary::-webkit-details-marker{display:none}
+  details.drawer summary::before{content:"";width:6px;height:6px;border-radius:50%;
+    background:var(--pink);box-shadow:var(--glow-pink)}
+  details.drawer summary::after{content:"▸";margin-left:auto;color:var(--dim);transition:transform .15s}
+  details.drawer[open] summary::after{transform:rotate(90deg)}
+  details.drawer summary:hover{color:var(--ink)}
+  details.drawer .drawer-body{margin-top:10px;display:flex;flex-direction:column;gap:10px}
 
   .row{display:flex;gap:10px;align-items:center}
   .mt{margin-top:12px}
@@ -118,37 +125,20 @@
   /* fx rack — brushed metal + glass panel face */
   .rack{background:var(--glass),var(--rack);border:1px solid #000;border-radius:10px;padding:14px;
     box-shadow:inset 0 2px 10px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05)}
-  .fxrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed #23262e;flex-wrap:wrap}
+  .fxrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed #23262e;flex-wrap:wrap;min-width:0}
   .fxrow:last-child{border-bottom:none}
+  .fxrow input[type=range]{min-width:0;flex:1 1 120px}
+  .infoBtn{background:none;border:1px solid var(--edge);color:var(--dim);border-radius:50%;
+    width:18px;height:18px;line-height:1;font-size:11px;cursor:pointer;flex:none;padding:0}
+  .infoBtn:hover{color:var(--pink);border-color:var(--pink2)}
+  .fxdesc{font-size:11.5px;color:var(--muted);line-height:1.5;padding:0 0 10px 46px}
   .fxname{min-width:90px;width:118px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
   .fxname.on{color:var(--amber);text-shadow:var(--glow-amber)}
+  .fxgroup{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--dim);
+    text-transform:uppercase;margin-top:10px;padding-top:8px;border-top:1px dashed #23262e}
+  .fxgroup:first-child{margin-top:0;padding-top:0;border-top:none}
 
-  /* skeuomorphic fader: recessed track, raised metal cap, amber glow when focused */
-  input[type=range]{-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;
-    background:var(--track);box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000;
-    flex:1;min-width:80px;outline:none}
-  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:22px;border-radius:4px;
-    background:linear-gradient(180deg,#565c6c,var(--fader) 55%,#2c2f38);
-    border:1px solid #0a0b0e;position:relative;cursor:pointer;
-    box-shadow:0 2px 5px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.15)}
-  input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--track);
-    box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000}
-  input[type=range]::-moz-range-thumb{width:18px;height:22px;border-radius:4px;
-    background:linear-gradient(180deg,#565c6c,var(--fader) 55%,#2c2f38);
-    border:1px solid #0a0b0e;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.6)}
-  input[type=range]:focus::-webkit-slider-thumb{box-shadow:0 2px 5px rgba(0,0,0,.6),var(--glow-amber)}
-  input[type=range]:disabled::-webkit-slider-thumb{background:#3a3d45;box-shadow:none}
   .val{font-family:var(--mono);font-size:11px;color:var(--muted);width:52px;text-align:right}
-  .tog{width:34px;height:19px;border-radius:11px;background:#2a2e38;position:relative;cursor:pointer;
-    border:1px solid #000;flex:none;transition:background .15s,box-shadow .15s}
-  .tog.on{background:var(--amber2);box-shadow:var(--glow-amber)}
-  .tog::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;
-    background:#dfe3ea;transition:left .15s}
-  .tog.on::after{left:16px}
-
-  select{padding:8px 10px;border-radius:7px;border:1px solid var(--edge);background:#0a0b0e;
-    color:var(--ink);font-size:12px;font-family:var(--mono);outline:none}
-  select:focus{border-color:var(--amber2)}
 
   .mixrow{display:flex;align-items:center;gap:12px;padding:8px 0;flex-wrap:wrap}
   .mixrow .fxname{min-width:70px;width:90px}
@@ -158,6 +148,17 @@
     padding:3px 6px;cursor:pointer;opacity:0;transition:opacity .12s}
   .rcard:hover .rqueue{opacity:1}
   .rqueue:hover{border-color:var(--amber2);color:var(--amber)}
+  .rsave{position:absolute;top:6px;right:6px;background:rgba(10,11,14,.85);color:var(--ink);
+    border:1px solid var(--edge);border-radius:6px;font-family:var(--mono);font-size:12px;
+    padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .12s,color .12s,border-color .12s}
+  .rcard:hover .rsave{opacity:1}
+  .rsave:hover{border-color:var(--pink2);color:var(--pink)}
+  .rsave.saved{opacity:1;color:var(--pink);border-color:var(--pink2)}
+  .rremove{position:absolute;top:6px;right:6px;background:rgba(10,11,14,.85);color:var(--dim);
+    border:1px solid var(--edge);border-radius:6px;font-size:12px;padding:3px 7px;cursor:pointer;
+    opacity:0;transition:opacity .12s}
+  .rcard:hover .rremove{opacity:1}
+  .rremove:hover{border-color:var(--rec);color:var(--rec)}
 
   /* queue */
   .queuepanel{margin-top:14px;background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
@@ -242,28 +243,36 @@
   .choice{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px;padding:12px;
     background:linear-gradient(180deg,#20242e,#191c23);border:1px solid var(--amber2);border-radius:10px}
   .choice-msg{font-family:var(--mono);font-size:12px;color:var(--amber);flex:1;min-width:160px}
+  .scoreCard{margin-top:12px;padding:14px;border-radius:12px;text-align:center;
+    background:linear-gradient(180deg,#241a3a,#1c1030);border:1px solid var(--pink2);box-shadow:var(--glow-pink)}
+  .scoreStars{font-size:24px;letter-spacing:5px}
+  .scoreLabel{font-weight:700;font-size:14.5px;margin-top:4px;color:var(--ink)}
+  .scoreDetail{color:var(--muted);font-size:11.5px;margin-top:4px;font-family:var(--mono)}
+  .takeScoreBadge{font-family:var(--mono);font-size:9px;color:var(--pink);margin-left:4px}
   /* take mini-mixer + test mode */
   .takemix{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;
     background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
   .takemix .monrow{min-width:190px}
   #testModeBtn{margin-left:auto}
   .testpanel{margin-top:12px;padding:14px;border-radius:12px;
-    background:linear-gradient(180deg,#1a1f2a,#141821);border:1px solid var(--accent2)}
+    background:linear-gradient(180deg,#241a2e,#1a1420);border:1px solid var(--pink2);box-shadow:var(--glow-pink)}
   .testpanel h3{margin:0 0 4px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--accent)}
+    text-transform:uppercase;color:var(--pink)}
   .testpanel .tp-sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
   .loopbar{position:relative;height:34px;background:#0a0b0e;border:1px solid #000;border-radius:8px;
     margin:10px 0;overflow:hidden;cursor:pointer}
-  .loopregion{position:absolute;top:0;bottom:0;background:rgba(110,168,254,.28);border-left:2px solid var(--accent);
-    border-right:2px solid var(--accent)}
+  .loopregion{position:absolute;top:0;bottom:0;background:rgba(255,61,129,.22);border-left:2px solid var(--pink);
+    border-right:2px solid var(--pink)}
   .loopplay{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.85}
   .looprow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .tp-btn{padding:9px 16px;border:1px solid var(--edge);border-radius:8px;cursor:pointer;font-weight:650;font-size:13px;
     background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink)}
-  .tp-btn.on{background:linear-gradient(180deg,var(--accent),var(--accent2));color:#0b0e13;border-color:var(--accent2)}
+  .tp-btn.on{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#fff;border-color:var(--pink2)}
   .tp-btn:hover{filter:brightness(1.15)}
   .tp-note{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.03em}
   .hint{color:var(--dim);font-size:11.5px;line-height:1.6;margin-top:10px;font-family:var(--mono);letter-spacing:.02em}
+  #phoneQrImg{width:104px;height:104px;background:#fff;border-radius:10px;padding:6px;
+    border:2px solid var(--pink2);box-shadow:var(--glow-pink);flex:none}
   .err{color:var(--rec);font-size:12.5px;margin-top:10px;font-family:var(--mono)}
   .status{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
   .dl{display:inline-block;margin-top:12px;text-decoration:none;background:linear-gradient(180deg,var(--ok),#28b873);
@@ -275,18 +284,17 @@
     background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink);font-size:14px;line-height:1;
     display:flex;align-items:center;justify-content:center}
   .pbtn:hover{filter:brightness(1.18)} .pbtn:disabled{opacity:.4;cursor:default}
-  .pbtn.play{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#211500;border-color:#a5651f}
+  .pbtn.play{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#001a1f;border-color:#008494}
   .player .pseek{flex:1}
   .player .ptime{font-family:var(--mono);font-size:11px;color:var(--amber);min-width:96px;text-align:right;letter-spacing:.04em}
   .player .plabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim);
     text-transform:uppercase;margin-bottom:8px}
   .pwave{width:100%;height:64px;display:block;border-radius:6px;background:var(--track);
     border:1px solid var(--edge);margin-bottom:10px;cursor:pointer}
-  .step{opacity:.4;pointer-events:none;transition:opacity .3s}
-  .step.active{opacity:1;pointer-events:auto}
+  .step{display:none}
+  .step.active{display:block}
   .bar{height:6px;background:#0a0b0e;border-radius:4px;overflow:hidden;border:1px solid #000;margin-top:8px}
   .bar .fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber2),var(--amber));transition:width .3s}
-  kbd{font-family:var(--mono);background:#0a0b0e;border:1px solid var(--edge);border-radius:4px;padding:1px 6px;font-size:11px;color:var(--amber)}
 
   /* ---- toasts (replaces ad-hoc inline error text for transient messages) --- */
   .toaststack{position:fixed;top:16px;right:16px;z-index:1000;display:flex;flex-direction:column;
@@ -300,6 +308,23 @@
   .toast.warn{border-color:var(--amber2);box-shadow:0 8px 24px rgba(0,0,0,.5),var(--glow-amber)}
   .toast.error{border-color:var(--rec);box-shadow:0 8px 24px rgba(0,0,0,.5),var(--glow-rec)}
   @keyframes toastin{from{opacity:0;transform:translateX(12px)} to{opacity:1;transform:translateX(0)}}
+
+  /* ---- gamified random-song picker overlay ---------------------------- */
+  .pickerOverlay{position:fixed;inset:0;z-index:900;background:rgba(5,2,12,.88);
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .pickerCard{max-width:600px;width:100%;background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--edge);border-radius:16px;padding:24px;text-align:center;
+    box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .pickerTitle{font-family:var(--mono);font-size:13px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:10px}
+  .pickerGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:10px;
+    max-height:340px;overflow-y:auto}
+  .pickerGrid img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;
+    border:2px solid transparent;transition:border-color .1s,transform .1s}
+  .pickerGrid img.hl{border-color:var(--pink);box-shadow:var(--glow-pink);transform:scale(1.06)}
+  .pickerResult img{width:220px;max-width:80%;aspect-ratio:16/9;object-fit:cover;border-radius:10px;
+    border:2px solid var(--pink2);box-shadow:var(--glow-pink);margin:16px auto 0;display:block}
+  .pickerResultTitle{margin-top:12px;font-size:15px;color:var(--ink)}
 
   /* ---- responsive tiers (the >1100px 2-col rule lives with .grid above) - */
   @media(max-width:700px){
@@ -321,15 +346,63 @@
 
 <div id="toasts" class="toaststack"></div>
 
+<div class="pickerOverlay hidden" id="pickerOverlay">
+  <div class="pickerCard">
+    <div class="pickerTitle">🎲 Picking your song… <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <div class="pickerGrid" id="pickerGrid"></div>
+    <div class="pickerResult hidden" id="pickerResult">
+      <img id="pickerThumb" alt="">
+      <div class="pickerResultTitle" id="pickerResultTitle"></div>
+      <div class="row" style="justify-content:center;margin-top:14px;flex-wrap:wrap">
+        <button class="btn amber" id="pickerSingBtn" type="button">🎤 Sing this!</button>
+        <button class="btn ghost" id="pickerAgainBtn" type="button">🎲 Spin again</button>
+        <button class="btn ghost" id="pickerCloseBtn" type="button">✕ Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="wrap">
   <header>
-    <div class="logo">KARAOKE <b>STUDIO</b></div>
-    <div class="tag">// record · tune · mix · export</div>
+    <div class="logo">KARAOKE <b>STUDIO</b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <div class="profileChip" id="profileChip" style="margin-left:auto">
+      <button class="btn ghost small" id="profileBtn" type="button">👤 <span id="profileNameLabel">Guest</span></button>
+      <div class="profileMenu hidden" id="profileMenu">
+        <input type="text" id="profileInput" placeholder="Your name…" maxlength="40">
+        <button class="btn amber small" id="profileSetBtn" type="button">Switch / create</button>
+        <div id="profileList"></div>
+      </div>
+    </div>
+    <button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme">🌙</button>
+    <a class="btn pink" id="partyLink" href="/party" style="text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones">🎉 Party mode</a>
   </header>
 
   <!-- STEP 1: find a song -->
-  <div class="card" style="margin-bottom:16px">
+  <div class="card" id="step1Card" style="margin-bottom:16px">
     <h2>1 · Find a song</h2>
+
+    <!-- bookmarked songs for the active profile, so you don't have to
+         re-search every time — plus a gamified random pick over them -->
+    <details class="drawer">
+      <summary>📚 My Library <span id="libCount" class="hint" style="margin:0 0 0 6px;display:inline"></span></summary>
+      <div class="drawer-body">
+        <div class="row" style="margin-bottom:10px">
+          <button class="btn purple wide" id="surpriseBtn" type="button">🎲 Surprise me!</button>
+        </div>
+        <div class="results" id="libraryResults"></div>
+        <div class="hint" id="libraryEmpty">Nothing saved yet — hit the ☆ on any search result to add it here.</div>
+      </div>
+    </details>
+
+    <!-- resume a previously-prepared song for this profile, no re-download needed -->
+    <details class="drawer">
+      <summary>🕘 Resume a recent song</summary>
+      <div class="drawer-body">
+        <div class="results" id="recentResults"></div>
+        <div class="hint" id="recentEmpty">No recent sessions for this profile yet.</div>
+      </div>
+    </details>
+
     <div class="tabs">
       <button class="tab on" id="tabSearch">Search YouTube</button>
       <button class="tab" id="tabUrl">Paste a link</button>
@@ -339,9 +412,10 @@
     <!-- search mode -->
     <div id="searchMode">
       <div class="row">
-        <input id="q" type="text" placeholder="Search e.g. “tum hi ho karaoke lyrics”…" spellcheck="false" autocomplete="off">
+        <input id="q" type="text" placeholder="Search e.g. “tum hi ho”…" spellcheck="false" autocomplete="off">
         <button id="searchBtn" class="btn amber">Search</button>
       </div>
+      <label class="punch mt"><input type="checkbox" id="karaokeSuffix" checked> 🎤 Add "karaoke" to search (helps surface lyrics videos)</label>
       <div class="status mt" id="searchStatus"></div>
       <div class="results" id="results"></div>
     </div>
@@ -379,6 +453,26 @@
     </div>
   </div>
 
+  <!-- shown once a song is loaded, replacing the search UI above so the
+       session gets the screen instead of competing with it for space -->
+  <div class="card hidden" id="nowPlayingBar" style="margin-bottom:16px">
+    <div class="npRow">
+      <img id="npThumb" alt="">
+      <div class="npInfo">
+        <div class="npTitle" id="npTitle"></div>
+        <div class="npSub">● loaded and ready</div>
+      </div>
+      <button class="btn ghost small" id="npChangeBtn">🔄 Change song</button>
+    </div>
+  </div>
+
+  <div class="sessionNav hidden" id="sessionNav">
+    <button class="sessionTab active" data-step="stageCard">🎤 Record</button>
+    <button class="sessionTab" data-step="fxCard">🎛 Effects</button>
+    <button class="sessionTab" data-step="duetCard">🎵 Duet</button>
+    <button class="sessionTab" data-step="mixCard">📤 Export</button>
+  </div>
+
   <div class="grid">
     <!-- LEFT: stage + transport + recorder -->
     <div>
@@ -396,7 +490,7 @@
 
         <!-- music transport (independent of recording) -->
         <div class="transport">
-          <button id="play" class="btn" disabled title="Play / pause the soundtrack">▶ Play music</button>
+          <button id="play" class="btn" disabled title="Play / pause the soundtrack (P)">▶ Play music</button>
           <button id="stopmusic" class="btn" disabled title="Stop and go back to the start">■ Stop</button>
           <div class="keybox" title="Transpose the soundtrack to your key">
             <span class="klabel">KEY</span>
@@ -420,7 +514,9 @@
         <div class="metlabel mt">MIC INPUT</div>
         <div class="meter"><div class="lvl" id="mic"></div></div>
 
-        <!-- live monitor volumes (in your headphones; do not change recording) -->
+        <!-- live monitor volumes (in your headphones; do not change recording) —
+             kept always visible, not in the drawer below: you need to reach these
+             instantly while singing, not just as one-time pre-recording setup. -->
         <div class="mons">
           <div class="monrow">
             <span class="monlbl">Music vol</span>
@@ -435,64 +531,90 @@
           <label class="tunertog"><input type="checkbox" id="tunerToggle" checked> pitch guide</label>
         </div>
 
-        <!-- vocal timing calibration: pulls your recorded voice earlier to
-             cancel mic input latency (the "vocals lag the track" problem) -->
-        <div class="mons" style="margin-top:8px">
-          <div class="monrow">
-            <span class="monlbl" title="Move your recorded vocals earlier/later to line up with the music">Vocal timing</span>
-            <input type="range" id="vocalDelay" min="-100" max="400" value="140" step="5">
-            <span class="monval" id="vocalDelayV">140ms</span>
-          </div>
-          <span class="tunertog" id="delayHint" style="cursor:default">vocals lag → slide right</span>
-        </div>
+        <!-- practice/timing settings: less urgent, one-time setup — tucked away
+             so they don't compete with the always-visible controls above. -->
+        <details class="drawer">
+          <summary>Practice &amp; timing settings</summary>
+          <div class="drawer-body">
+            <!-- vocal timing calibration: pulls your recorded voice earlier to
+                 cancel mic input latency (the "vocals lag the track" problem) -->
+            <div class="mons">
+              <div class="monrow">
+                <span class="monlbl" title="Move your recorded vocals earlier/later to line up with the music">Vocal timing</span>
+                <input type="range" id="vocalDelay" min="-100" max="400" value="140" step="5">
+                <span class="monval" id="vocalDelayV">140ms</span>
+              </div>
+              <span class="tunertog" id="delayHint" style="cursor:default">vocals lag → slide right</span>
+            </div>
 
-        <!-- metronome: count-in before recording, optional click while singing -->
-        <div class="mons" id="metroRow">
-          <div class="monrow" style="flex:none">
-            <span class="monlbl">Metronome</span>
-            <button id="bpmdn" class="ksmall" title="Slower">−</button>
-            <span class="kval" id="bpmval">100</span>
-            <button id="bpmup" class="ksmall" title="Faster">+</button>
-            <span class="monlbl">bpm</span>
+            <!-- metronome: count-in before recording, optional click while singing -->
+            <div class="mons" id="metroRow">
+              <div class="monrow" style="flex:none">
+                <span class="monlbl">Metronome</span>
+                <button id="bpmdn" class="ksmall" title="Slower">−</button>
+                <span class="kval" id="bpmval">100</span>
+                <button id="bpmup" class="ksmall" title="Faster">+</button>
+                <span class="monlbl">bpm</span>
+              </div>
+              <label class="tunertog"><input type="checkbox" id="countInToggle" checked> 4-click count-in</label>
+              <label class="tunertog" title="Click track heard only in your headphones — never recorded (M)">
+                <input type="checkbox" id="clickRecToggle"> click while recording</label>
+            </div>
           </div>
-          <label class="tunertog"><input type="checkbox" id="countInToggle" checked> 4-click count-in</label>
-          <label class="tunertog" title="Click track heard only in your headphones — never recorded (M)">
-            <input type="checkbox" id="clickRecToggle"> click while recording</label>
-        </div>
+        </details>
 
         <!-- record transport -->
         <div class="transport">
           <div class="reclamp" id="lamp"></div>
-          <button id="rec" class="btn rec" disabled>● Record</button>
-          <button id="stop" class="btn" disabled>■ Stop</button>
+          <button id="rec" class="btn rec" disabled title="Start recording (Space)">● Record</button>
+          <button id="stop" class="btn" disabled title="Stop recording (Space)">■ Stop</button>
           <button id="playtake" class="btn" disabled title="Hear your take over the music">▶ Play take</button>
+        </div>
+
+        <!-- pitch-accuracy score: aggregates the live tuner's in-tune/off-pitch
+             judgments over the take into a fun, gamified score -->
+        <div class="scoreCard hidden" id="scoreCard">
+          <div class="scoreStars" id="scoreStars"></div>
+          <div class="scoreLabel" id="scoreLabel"></div>
+          <div class="scoreDetail" id="scoreDetail"></div>
         </div>
 
         <!-- after-stop choice: continue from here, or keep what I sang -->
         <div class="choice" id="stopChoice" style="display:none">
           <span class="choice-msg" id="choiceMsg"></span>
           <button class="btn" id="continueBtn" title="Re-sing from where you stopped, keeping the earlier part">▶ Continue from here</button>
-          <button class="btn" id="keepBtn" title="Keep this take as it is">✓ Keep as-is</button>
+          <button class="btn" id="keepBtn" title="Keep this take as it is (Enter)">✓ Keep as-is</button>
           <button class="btn" id="redoBtn" title="Throw this take away and sing again from the start">↺ Redo all</button>
         </div>
 
         <div class="hint">
           Wear headphones so your mic captures only your voice. The clean track is what
           records &amp; exports — the sliders above only change what YOU hear.
-          <kbd>Space</kbd> record · <kbd>P</kbd> play/pause.
+          <kbd>Space</kbd> record · <kbd>P</kbd> play/pause · <kbd>Enter</kbd> keep take.
         </div>
 
         <!-- phone camera pairing: film with your phone, synced to this app's audio -->
-        <div class="hint" id="phonePairPanel" style="margin-top:8px">
-          📱 <span id="phoneStatusText">Loading phone-pairing link…</span>
-          <div id="phoneUrlBox" style="display:none;margin-top:6px">
-            <code id="phoneUrlText" style="user-select:all"></code>
-            <button class="btn" id="phoneCopyBtn" type="button" style="margin-left:8px">Copy link</button>
-            <div style="opacity:.8;margin-top:4px">Open on your phone (same WiFi). Android only for now —
-              camera access over a plain link needs a one-time browser setting; see the
-              <a href="https://github.com/TanSin18/Karaoke-Studio#readme" target="_blank" rel="noopener">README</a>.</div>
+        <details class="drawer">
+          <summary>📱 Phone camera sync (optional)</summary>
+          <div class="drawer-body">
+            <div class="hint" id="phonePairPanel">
+              <span id="phoneStatusText">Loading phone-pairing link…</span>
+              <div id="phoneUrlBox" style="display:none;margin-top:8px">
+                <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+                  <img id="phoneQrImg" class="hidden" alt="Scan with your phone to pair">
+                  <div style="min-width:0">
+                    <code id="phoneUrlText" style="user-select:all;word-break:break-all"></code>
+                    <div class="mt"><button class="btn" id="phoneCopyBtn" type="button">Copy link</button></div>
+                  </div>
+                </div>
+                <div style="opacity:.8;margin-top:8px">Scan the code, or open the link on your phone (same
+                  WiFi). Android only for now — camera access over a plain link needs a one-time browser
+                  setting; see the
+                  <a href="https://github.com/TanSin18/Karaoke-Studio#readme" target="_blank" rel="noopener">README</a>.</div>
+              </div>
+            </div>
           </div>
-        </div>
+        </details>
 
         <!-- your recorded take: full play/pause/stop/seek, appears after recording -->
         <div class="player" id="takePlayer" style="display:none"></div>
@@ -544,60 +666,28 @@
           <div class="fxrow">
             <div style="width:34px"></div>
             <div class="fxname">↳ strength</div>
-            <input type="range" id="pstr" min="0" max="100" value="80">
-            <div class="val" id="pstrv">80%</div>
+            <input type="range" id="pstr" min="0" max="100" value="30">
+            <div class="val" id="pstrv">30%</div>
           </div>
-          <!-- reverb -->
+          <!-- pro vocal chain: clean EQ -> fast/smooth comp -> de-esser ->
+               tone EQ -> saturation -> reverb/delay sends. All stages are
+               always applied together (it's one signal path, not toggles
+               per effect) but every parameter below is adjustable. -->
           <div class="fxrow">
-            <div class="tog" data-fx="reverb"></div>
-            <div class="fxname" data-name="reverb">Reverb</div>
-            <input type="range" id="reverb" min="0" max="100" value="35" disabled>
-            <div class="val" id="reverbv">35%</div>
+            <div class="tog" data-fx="pro"></div>
+            <div class="fxname" data-name="pro">Pro vocal chain</div>
+            <div style="flex:1;color:var(--dim);font-family:var(--mono);font-size:11px">
+              studio EQ / compression / de-ess / reverb chain — adjustable below
+            </div>
+            <button id="proReset" class="btn" style="padding:4px 10px;font-size:11px" title="Reset every value below to the studio defaults">↺ Reset</button>
           </div>
-          <!-- echo -->
-          <div class="fxrow">
-            <div class="tog" data-fx="echo"></div>
-            <div class="fxname" data-name="echo">Echo</div>
-            <input type="range" id="echo" min="0" max="100" value="20" disabled>
-            <div class="val" id="echov">20%</div>
-          </div>
-          <!-- eq low/mid/high -->
-          <div class="fxrow">
-            <div class="tog" data-fx="eq"></div>
-            <div class="fxname" data-name="eq">EQ · low</div>
-            <input type="range" id="eqlow" min="-12" max="12" value="2" disabled>
-            <div class="val" id="eqlowv">+2 dB</div>
-          </div>
-          <div class="fxrow">
-            <div style="width:34px"></div>
-            <div class="fxname">EQ · mid</div>
-            <input type="range" id="eqmid" min="-12" max="12" value="1" disabled>
-            <div class="val" id="eqmidv">+1 dB</div>
-          </div>
-          <div class="fxrow">
-            <div style="width:34px"></div>
-            <div class="fxname">EQ · high</div>
-            <input type="range" id="eqhigh" min="-12" max="12" value="3" disabled>
-            <div class="val" id="eqhighv">+3 dB</div>
-          </div>
-          <!-- compression -->
-          <div class="fxrow">
-            <div class="tog" data-fx="compress"></div>
-            <div class="fxname" data-name="compress">Compress</div>
-            <input type="range" id="compress" min="0" max="100" value="55" disabled>
-            <div class="val" id="compressv">55%</div>
-          </div>
-          <!-- denoise + deess -->
+          <div id="proChainRack"></div>
+          <!-- denoise: the one simple effect the pro chain doesn't fold in -->
           <div class="fxrow">
             <div class="tog" data-fx="denoise"></div>
             <div class="fxname" data-name="denoise">De-noise</div>
             <input type="range" id="denoise" min="0" max="100" value="40" disabled>
             <div class="val" id="denoisev">40%</div>
-          </div>
-          <div class="fxrow">
-            <div class="tog" data-fx="deess"></div>
-            <div class="fxname" data-name="deess">De-ess</div>
-            <div style="flex:1;color:var(--dim);font-family:var(--mono);font-size:11px">tame harsh S sounds</div>
           </div>
         </div>
       </div>
@@ -677,7 +767,197 @@ let backingAudio=null, recording=false, startT=0, dur=0, rafMeter=null;
 let takeAudio=null, takePlayerUI=null, takeGraph=null;
 
 // ---- FX toggle state ----
-const fxOn = {pitch:true, reverb:false, echo:false, eq:false, compress:true, denoise:false, deess:true};
+// Pitch correction defaults OFF: it snaps to a chosen key/scale (C major
+// unless changed), and most songs aren't in C major — for someone who
+// doesn't know their song's key, leaving this on by default risks badly
+// mangling the pitch rather than helping it. Opt in once you know the key.
+const fxOn = {pitch:false, pro:true, denoise:false};
+
+// ---- pro vocal chain: Clean EQ -> Fast/Smooth Comp -> De-esser -> Tone EQ ->
+// Saturation -> Reverb/Delay sends. Defaults here MUST match
+// audio_fx.PRO_CHAIN_DEFAULTS on the backend — the "Reset" button re-fetches
+// the backend's copy via /pro_chain_defaults so the two can never drift for
+// long, but the initial render uses this local copy to avoid a fetch race
+// before the rack can be shown.
+// Each field can carry `essential:true` to show up in the always-visible rack
+// instead of the "More studio controls" drawer, and a plain-language `desc`
+// so a non-engineer understands what turning it up/down actually does.
+const PRO_CHAIN_FIELDS = [
+  {group:'Clean EQ', desc:'Corrective EQ that runs first — cleans up rumble and muddiness before anything else touches your voice. You usually don’t need to touch this.', fields:[
+    {key:'hpf_freq', label:'HPF freq', min:20, max:200, step:1, unit:'Hz', dp:0, def:85,
+      desc:'Cuts everything below this frequency — removes low rumble (breath pops, mic stand noise) without touching your voice.'},
+    {key:'dip_freq', label:'Low-mid dip freq', min:100, max:500, step:1, unit:'Hz', dp:0, def:250,
+      desc:'Where the "mud-reducing" dip below is centered.'},
+    {key:'dip_gain', label:'Low-mid dip gain', min:-12, max:0, step:0.1, unit:'dB', dp:1, def:-2.5,
+      desc:'How much boxy/muddy low-mid tone to cut. More negative = clearer but thinner.'},
+    {key:'dip_q', label:'Low-mid dip Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.4,
+      desc:'How narrow the mud-cut is. Higher = a tighter, more surgical cut.'},
+    {key:'nasal_freq', label:'Nasal cut freq', min:500, max:1500, step:1, unit:'Hz', dp:0, def:900,
+      desc:'Where the "nasal-reducing" cut below is centered.'},
+    {key:'nasal_gain', label:'Nasal cut gain', min:-12, max:0, step:0.1, unit:'dB', dp:1, def:-1.5,
+      desc:'How much honky/nasal tone to cut. More negative = less nasal.'},
+    {key:'nasal_q', label:'Nasal cut Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:2.0,
+      desc:'How narrow the nasal-cut is. Higher = a tighter, more surgical cut.'},
+  ]},
+  {group:'Fast compressor', desc:'Catches sudden loud peaks (a shouted note, a mic bump) fast enough to stop them clipping. Works together with the smooth compressor below.', fields:[
+    {key:'fast_ratio', label:'Ratio', min:1, max:20, step:0.1, unit:':1', dp:1, def:4,
+      desc:'How hard peaks get squashed once they cross the threshold. Higher = more aggressive limiting.'},
+    {key:'fast_attack', label:'Attack', min:0.1, max:50, step:0.1, unit:'ms', dp:1, def:1,
+      desc:'How quickly it reacts to a peak. Lower = catches sharper transients, but can sound clampy if too fast.'},
+    {key:'fast_release', label:'Release', min:10, max:500, step:1, unit:'ms', dp:0, def:80,
+      desc:'How quickly it lets go after a peak passes. Faster = more natural, slower = smoother but can "breathe".'},
+    {key:'fast_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-18,
+      desc:'The volume level where compression kicks in. Lower = catches more of your voice, not just the loudest peaks.'},
+  ]},
+  {group:'Smooth compressor', desc:'A slower, gentler compressor that evens out overall loudness across the whole take, so quiet and loud lines sit closer together.', fields:[
+    {key:'smooth_ratio', label:'Ratio', min:1, max:20, step:0.1, unit:':1', dp:1, def:3,
+      desc:'How much the overall level gets evened out. Higher = flatter, more consistent volume.'},
+    {key:'smooth_attack', label:'Attack', min:1, max:200, step:1, unit:'ms', dp:0, def:25,
+      desc:'How quickly it starts reacting. Slower keeps more natural dynamics.'},
+    {key:'smooth_release', label:'Release', min:50, max:2000, step:10, unit:'ms', dp:0, def:500,
+      desc:'How slowly it eases back off. Longer = smoother, more "glued" sound.'},
+    {key:'smooth_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20,
+      desc:'The volume level where evening-out starts.'},
+  ]},
+  {group:'De-esser', desc:null, fields:[
+    {key:'deess_freq', label:'Frequency', min:2000, max:10000, step:100, unit:'Hz', dp:0, def:6000,
+      desc:'Which frequency range counts as a harsh "s"/"sh" sound to tame.'},
+    {key:'deess_intensity', label:'Intensity', min:0, max:100, step:1, unit:'%', dp:0, def:40, essential:true,
+      label2:'De-ess', desc:'Tames harsh "s"/"sh" sounds. Turn up if esses sound piercing; too high can make speech sound lispy.'},
+  ]},
+  {group:'Tone EQ', desc:'Boosts (rather than cuts) specific tonal qualities to shape your voice’s character, applied after the corrective EQ above.', fields:[
+    {key:'tone1_freq', label:'Chest warmth freq', min:80, max:400, step:1, unit:'Hz', dp:0, def:180,
+      desc:'Where the warmth boost below is centered.'},
+    {key:'tone1_gain', label:'Warmth', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:1.0, essential:true,
+      desc:'Boosts low-chest fullness. Turn up for a warmer, richer tone; down if it sounds boomy or muddy.'},
+    {key:'tone1_q', label:'Chest warmth Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.0,
+      desc:'How narrow the warmth boost is.'},
+    {key:'tone2_freq', label:'Presence freq', min:2000, max:6000, step:10, unit:'Hz', dp:0, def:3800,
+      desc:'Where the presence boost below is centered.'},
+    {key:'tone2_gain', label:'Presence', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:2.0, essential:true,
+      desc:'Boosts clarity in the range where vocals cut through a mix. Turn up to sound more upfront and present.'},
+    {key:'tone2_q', label:'Presence Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.2,
+      desc:'How narrow the presence boost is.'},
+    {key:'air_freq', label:'Air shelf freq', min:6000, max:16000, step:100, unit:'Hz', dp:0, def:10500,
+      desc:'Where the air/brightness boost below starts.'},
+    {key:'air_gain', label:'Air / brightness', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:2.5, essential:true,
+      desc:'Boosts the very top end for a bright, airy sheen. Turn up for sparkle; down if it sounds sibilant or thin.'},
+  ]},
+  {group:'Saturation', desc:null, fields:[
+    {key:'sat_drive_db', label:'Drive', min:0, max:20, step:0.5, unit:'dB', dp:1, def:8,
+      desc:'How hard the signal is pushed into saturation before blending back in — shapes the character of the grit.'},
+    {key:'sat_mix', label:'Warmth saturation', min:0, max:100, step:1, unit:'%', dp:0, def:12, essential:true,
+      desc:'Blends in a touch of analog-style warmth and harmonic richness. Higher = grittier, more "vintage".'},
+  ]},
+  {group:'Reverb send', desc:null, fields:[
+    {key:'verb_decay', label:'Decay (RT60)', min:0.2, max:4, step:0.1, unit:'s', dp:1, def:1.8,
+      desc:'How long the reverb tail rings out. Longer = a bigger, more cavernous space.'},
+    {key:'verb_predelay', label:'Pre-delay', min:0, max:100, step:1, unit:'ms', dp:0, def:35,
+      desc:'A short gap before the reverb starts, so your dry voice stays clear before the room sound arrives.'},
+    {key:'verb_lowcut', label:'Low cut', min:50, max:500, step:10, unit:'Hz', dp:0, def:200,
+      desc:'Removes low rumble from the reverb itself, keeping it from sounding muddy.'},
+    {key:'verb_highcut', label:'High cut', min:2000, max:12000, step:100, unit:'Hz', dp:0, def:6000,
+      desc:'Removes harsh top-end from the reverb, keeping it from sounding hissy.'},
+    {key:'verb_send_db', label:'Reverb amount', min:-24, max:0, step:0.5, unit:'dB', dp:1, def:-9, essential:true,
+      desc:'How much room/space ambience is blended in. Turn up for a bigger, more "live" sound; down for a drier, more intimate vocal.'},
+  ]},
+  {group:'Delay send', desc:null, fields:[
+    {key:'delay_time_ms', label:'Time', min:50, max:800, step:5, unit:'ms', dp:0, def:350,
+      desc:'The gap between your voice and its echo. This app doesn’t detect the song’s tempo, so it’s a fixed time, not a beat-synced fraction.'},
+    {key:'delay_feedback', label:'Feedback', min:0, max:80, step:1, unit:'%', dp:0, def:13,
+      desc:'How many repeats the echo makes before fading out. Higher = more, longer-lasting repeats.'},
+    {key:'delay_lowcut', label:'Low cut', min:50, max:1000, step:10, unit:'Hz', dp:0, def:300,
+      desc:'Removes low rumble from the echo repeats.'},
+    {key:'delay_highcut', label:'High cut', min:1000, max:8000, step:100, unit:'Hz', dp:0, def:4000,
+      desc:'Removes harsh top-end from the echo repeats, so they sit further back than your main voice.'},
+    {key:'delay_send_db', label:'Echo amount', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20, essential:true,
+      desc:'How much slap-back echo is blended in — adds depth and a classic vocal-doubling effect. Turn down for a cleaner, drier sound.'},
+  ]},
+];
+const PRO_CHAIN_IDS = [];
+const PRO_CHAIN_VALUES = {};
+
+function fmtProVal(v, f){
+  const n=Number(v).toFixed(f.dp);
+  return (f.unit==='dB' && v>=0 ? '+':'') + n + (f.unit?' '+f.unit:'');
+}
+// Builds one .fxrow for a field, plus (if it has a `desc`) a small ⓘ button
+// that toggles the plain-language explanation instead of showing it inline —
+// keeps ~30 technical parameters from turning into a wall of paragraphs.
+// Built with DOM methods rather than innerHTML so descriptions containing
+// quotes (e.g. the De-esser's "s"/"sh") never risk breaking an attribute.
+function buildProChainRow(f){
+  PRO_CHAIN_VALUES[f.key]=f.def;
+  const id='pc_'+f.key;
+  PRO_CHAIN_IDS.push(id);
+
+  const row=document.createElement('div'); row.className='fxrow';
+  row.appendChild(document.createElement('div')).style.width='34px';
+  const nm=document.createElement('div'); nm.className='fxname'; nm.textContent=f.label2||f.label;
+  row.appendChild(nm);
+
+  let desc=null;
+  if(f.desc){
+    const info=document.createElement('button');
+    info.type='button'; info.className='infoBtn'; info.textContent='ⓘ';
+    info.setAttribute('aria-label','What does '+(f.label2||f.label)+' do?');
+    row.appendChild(info);
+    desc=document.createElement('div'); desc.className='fxdesc hidden'; desc.textContent=f.desc;
+    info.addEventListener('click',()=>desc.classList.toggle('hidden'));
+  }
+
+  const input=document.createElement('input');
+  Object.assign(input,{type:'range',id,min:f.min,max:f.max,step:f.step,value:f.def,disabled:true});
+  row.appendChild(input);
+  const out=document.createElement('div'); out.className='val'; out.id=id+'v';
+  row.appendChild(out);
+
+  const upd=()=>{ PRO_CHAIN_VALUES[f.key]=+input.value; out.textContent=fmtProVal(input.value,f); liveFxIfPlaying(); };
+  input.addEventListener('input',upd); upd();
+
+  if(!desc) return row;
+  const wrap=document.createElement('div');
+  wrap.appendChild(row); wrap.appendChild(desc);
+  return wrap;
+}
+
+function renderProChainRack(){
+  const box=$('proChainRack'); box.innerHTML='';
+
+  // essentials: the handful of controls that are easy to understand and
+  // reach for — everything else lives in the drawer below so ~30 technical
+  // parameters don't dump onto the screen at once.
+  PRO_CHAIN_FIELDS.forEach(grp=>grp.fields.forEach(f=>{
+    if(f.essential) box.appendChild(buildProChainRow(f));
+  }));
+
+  const details=document.createElement('details'); details.className='drawer';
+  const summary=document.createElement('summary'); summary.textContent='More studio controls (EQ, compressors, timing…)';
+  details.appendChild(summary);
+  const body=document.createElement('div'); body.className='rack drawer-body';
+  PRO_CHAIN_FIELDS.forEach(grp=>{
+    const h=document.createElement('div'); h.className='fxgroup'; h.textContent=grp.group;
+    if(grp.desc) h.title=grp.desc;
+    body.appendChild(h);
+    grp.fields.forEach(f=>body.appendChild(buildProChainRow(f)));
+  });
+  details.appendChild(body);
+  box.appendChild(details);
+}
+renderProChainRack();
+
+$('proReset').addEventListener('click', async ()=>{
+  let defaults=null;
+  try{ const r=await fetch('/pro_chain_defaults'); if(r.ok) defaults=await r.json(); }catch(e){}
+  PRO_CHAIN_FIELDS.forEach(grp=>grp.fields.forEach(f=>{
+    const v=(defaults && defaults[f.key]!=null) ? defaults[f.key] : f.def;
+    const el=$('pc_'+f.key); if(!el) return;
+    el.value=v; PRO_CHAIN_VALUES[f.key]=+v;
+    $('pc_'+f.key+'v').textContent=fmtProVal(v,f);
+  }));
+  liveFxIfPlaying();
+});
+
 function refreshTogs(){
   document.querySelectorAll('.tog').forEach(t=>{
     const k=t.dataset.fx; t.classList.toggle('on', !!fxOn[k]);
@@ -685,9 +965,7 @@ function refreshTogs(){
     if(nm) nm.classList.toggle('on', !!fxOn[k]);
   });
   // enable/disable sliders per group
-  setEnabled('reverb',['reverb']); setEnabled('echo',['echo']);
-  setEnabled('compress',['compress']); setEnabled('denoise',['denoise']);
-  setEnabled('eq',['eqlow','eqmid','eqhigh']);
+  setEnabled('pro', PRO_CHAIN_IDS); setEnabled('denoise',['denoise']);
   ['pstr','pkey','pscale'].forEach(i=>$(i).disabled=!fxOn.pitch);
 }
 function setEnabled(fx, ids){ ids.forEach(i=>{const el=$(i); if(el) el.disabled=!fxOn[fx];}); }
@@ -709,7 +987,7 @@ function makeHistory(){
   };
 }
 const fxHistory=makeHistory();
-const FX_SNAPSHOT_IDS=['pkey','pscale','pstr','reverb','echo','eqlow','eqmid','eqhigh','compress','denoise'];
+const FX_SNAPSHOT_IDS=['pkey','pscale','pstr','denoise', ...PRO_CHAIN_IDS];
 function snapshotFxUI(){
   const s={fxOn:{...fxOn}};
   FX_SNAPSHOT_IDS.forEach(id=>{ s[id]=$(id).value; });
@@ -738,10 +1016,7 @@ function liveFxIfPlaying(){ if(typeof applyLiveFx==='function') applyLiveFx(); }
 function bindVal(id, fmt){ const el=$(id),out=$(id+'v'); if(!el||!out)return;
   const upd=()=>{ out.textContent=fmt(el.value); liveFxIfPlaying(); };
   el.addEventListener('input',upd); upd(); }
-bindVal('pstr',v=>v+'%'); bindVal('reverb',v=>v+'%'); bindVal('echo',v=>v+'%');
-bindVal('compress',v=>v+'%'); bindVal('denoise',v=>v+'%');
-bindVal('eqlow',v=>(v>=0?'+':'')+v+' dB'); bindVal('eqmid',v=>(v>=0?'+':'')+v+' dB');
-bindVal('eqhigh',v=>(v>=0?'+':'')+v+' dB');
+bindVal('pstr',v=>v+'%'); bindVal('denoise',v=>v+'%');
 bindVal('vgain',v=>(v>=0?'+':'')+v+' dB'); bindVal('mgain',v=>(v>=0?'+':'')+v+' dB');
 bindVal('hgain',v=>(v>=0?'+':'')+v+' dB');
 refreshTogs();
@@ -768,8 +1043,9 @@ function switchTab(mode){
 $('searchBtn').addEventListener('click',doSearch);
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
 async function doSearch(){
-  const q=$('q').value.trim();
+  let q=$('q').value.trim();
   if(!q){ $('searchStatus').textContent='Type a song to search for.'; return; }
+  if($('karaokeSuffix').checked && !/karaoke/i.test(q)) q+=' karaoke';
   $('loaderr').textContent=''; $('searchStatus').textContent='Searching YouTube…';
   $('results').innerHTML=''; $('searchBtn').disabled=true;
   let r;
@@ -789,11 +1065,13 @@ function renderResults(res){
   res.forEach(v=>{
     const card=document.createElement('div'); card.className='rcard';
     const dur=(v.duration!=null)? fmt(v.duration) : '';
+    const saved=libraryCache.some(e=>e.video_id===v.id);
     card.innerHTML=
       '<div style="position:relative">'+
         '<img class="rthumb" loading="lazy" src="'+v.thumb+'" alt="">'+
         (dur?'<span class="rdur">'+dur+'</span>':'')+
         '<button class="rqueue" title="Add to queue">+ Queue</button>'+
+        '<button class="rsave'+(saved?' saved':'')+'" title="'+(saved?'Remove from library':'Save to library')+'">'+(saved?'★':'☆')+'</button>'+
       '</div>'+
       '<div class="rmeta">'+
         '<div class="rtitle">'+escapeHtml(v.title)+'</div>'+
@@ -808,10 +1086,201 @@ function renderResults(res){
       e.stopPropagation();
       addToQueue({url:'https://www.youtube.com/watch?v='+v.id, title:v.title, thumb:v.thumb});
     });
+    card.querySelector('.rsave').addEventListener('click',async e=>{
+      e.stopPropagation();
+      const btn=e.currentTarget;
+      if(btn.classList.contains('saved')){ await removeFromLibraryById(v.id); }
+      else{ await saveToLibrary(v); }
+      btn.classList.toggle('saved');
+      btn.textContent=btn.classList.contains('saved')?'★':'☆';
+      btn.title=btn.classList.contains('saved')?'Remove from library':'Save to library';
+    });
     box.appendChild(card);
   });
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---- light/dark theme toggle -----------------------------------------
+function currentTheme(){
+  return document.documentElement.dataset.theme ||
+    (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+}
+function applyThemeIcon(){ $('themeToggle').textContent = currentTheme()==='light' ? '☀️' : '🌙'; }
+applyThemeIcon();
+$('themeToggle').addEventListener('click',()=>{
+  const next = currentTheme()==='light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme=next;
+  try{ localStorage.setItem('kstudio.theme', next); }catch(e){}
+  applyThemeIcon();
+});
+
+// ---- profiles: a display name, not an account — no login. Scopes which
+// sessions/library belong to whom on a shared machine. --------------------
+const PROFILE_KEY='kstudio.profile';
+let activeProfile=(function(){ try{ return localStorage.getItem(PROFILE_KEY)||'Guest'; }catch(e){ return 'Guest'; } })();
+$('profileNameLabel').textContent=activeProfile;
+
+function setActiveProfile(name){
+  activeProfile=(name||'Guest').trim()||'Guest';
+  try{ localStorage.setItem(PROFILE_KEY, activeProfile); }catch(e){}
+  $('profileNameLabel').textContent=activeProfile;
+  refreshLibrary(); refreshRecentSessions();
+}
+$('profileBtn').addEventListener('click',(e)=>{
+  e.stopPropagation();
+  $('profileMenu').classList.toggle('hidden');
+  $('profileInput').value=activeProfile==='Guest'?'':activeProfile;
+  loadProfileList();
+});
+$('profileMenu').addEventListener('click',e=>e.stopPropagation());
+document.addEventListener('click',()=>$('profileMenu').classList.add('hidden'));
+$('profileSetBtn').addEventListener('click',()=>{
+  const v=$('profileInput').value.trim();
+  if(v){ setActiveProfile(v); $('profileMenu').classList.add('hidden'); }
+});
+$('profileInput').addEventListener('keydown',e=>{ if(e.key==='Enter') $('profileSetBtn').click(); });
+async function loadProfileList(){
+  let profiles=[];
+  try{ profiles=(await(await fetch('/profiles')).json()).profiles||[]; }catch(e){}
+  const list=$('profileList');
+  list.innerHTML = profiles.length
+    ? profiles.map(p=>'<button data-name="'+escapeHtml(p.name)+'">'+escapeHtml(p.name)+'</button>').join('')
+    : '<div class="hint" style="margin:4px 0 0">No saved profiles yet.</div>';
+  list.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    setActiveProfile(b.dataset.name); $('profileMenu').classList.add('hidden');
+  }));
+}
+
+// ---- library: bookmarked songs for the active profile ---------------------
+let libraryCache=[];
+async function refreshLibrary(){
+  try{ libraryCache=(await(await fetch('/profile/library?name='+encodeURIComponent(activeProfile))).json()).library||[]; }
+  catch(e){ libraryCache=[]; }
+  renderLibrary();
+}
+function renderLibrary(){
+  $('libCount').textContent=libraryCache.length?'('+libraryCache.length+')':'';
+  $('libraryEmpty').style.display=libraryCache.length?'none':'';
+  const box=$('libraryResults'); box.innerHTML='';
+  libraryCache.forEach(v=>{
+    const card=document.createElement('div'); card.className='rcard';
+    card.innerHTML=
+      '<div style="position:relative">'+
+        '<img class="rthumb" loading="lazy" src="'+v.thumb+'" alt="">'+
+        '<button class="rremove" title="Remove from library">✕</button>'+
+      '</div>'+
+      '<div class="rmeta">'+
+        '<div class="rtitle">'+escapeHtml(v.title)+'</div>'+
+        (v.channel?'<div class="rchan">'+escapeHtml(v.channel)+'</div>':'')+
+      '</div>';
+    card.addEventListener('click',()=>{
+      document.querySelectorAll('.rcard').forEach(c=>c.classList.remove('loading'));
+      card.classList.add('loading');
+      loadTrack('https://www.youtube.com/watch?v='+v.video_id);
+    });
+    card.querySelector('.rremove').addEventListener('click',async e=>{
+      e.stopPropagation();
+      await removeFromLibraryById(v.video_id);
+    });
+    box.appendChild(card);
+  });
+}
+async function saveToLibrary(v){
+  await fetch('/profile/library/add',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:activeProfile, video_id:v.id, title:v.title, thumb:v.thumb, channel:v.channel})});
+  toast('Saved to library.','ok',1500);
+  refreshLibrary();
+}
+async function removeFromLibraryById(video_id){
+  await fetch('/profile/library/remove',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:activeProfile, video_id})});
+  refreshLibrary();
+}
+
+// ---- resume a recent song: profile-scoped session history -----------------
+async function refreshRecentSessions(){
+  let sessions=[];
+  try{ sessions=(await(await fetch('/sessions?profile='+encodeURIComponent(activeProfile))).json()).sessions||[]; }
+  catch(e){}
+  $('recentEmpty').style.display=sessions.length?'none':'';
+  const box=$('recentResults'); box.innerHTML='';
+  sessions.forEach(s=>{
+    const card=document.createElement('div'); card.className='rcard';
+    const dur=(s.duration!=null)?fmt(s.duration):'';
+    card.innerHTML=
+      '<div style="position:relative">'+
+        (s.thumb?'<img class="rthumb" loading="lazy" src="'+s.thumb+'" alt="">':'<div class="rthumb"></div>')+
+        (dur?'<span class="rdur">'+dur+'</span>':'')+
+      '</div>'+
+      '<div class="rmeta"><div class="rtitle">'+escapeHtml(s.title)+'</div></div>';
+    card.addEventListener('click',()=>{
+      document.querySelectorAll('.rcard').forEach(c=>c.classList.remove('loading'));
+      card.classList.add('loading');
+      resumeSession(s.id);
+    });
+    box.appendChild(card);
+  });
+}
+function resumeSession(sid){
+  SID=sid;
+  $('loaderr').textContent='';
+  $('loadbar').style.display='block'; $('loadfill').style.width='100%';
+  $('loadstatus').textContent='Resuming session…';
+  fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
+    if(j && (j.status==='ready'||j.stage==='ready')){ onReady(j); }
+    else{
+      document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
+      $('loadbar').style.display='none';
+      $('loaderr').textContent='That session is no longer available.';
+    }
+  }).catch(()=>{
+    document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
+    $('loadbar').style.display='none';
+    $('loaderr').textContent='Could not reach the local server.';
+  });
+}
+
+// ---- random picker: character-select-style spin over the library ----------
+$('surpriseBtn').addEventListener('click',()=>{
+  if(!libraryCache.length){ toast('Save some songs to your library first!','warn',2000); return; }
+  openPicker();
+});
+function openPicker(){
+  $('pickerOverlay').classList.remove('hidden');
+  $('pickerResult').classList.add('hidden');
+  const grid=$('pickerGrid'); grid.innerHTML='';
+  const imgs=libraryCache.map(v=>{
+    const img=document.createElement('img'); img.src=v.thumb; img.alt=v.title;
+    grid.appendChild(img); return img;
+  });
+  let i=0, delay=80, elapsed=0;
+  const maxTime=1800+Math.random()*800;
+  (function tick(){
+    imgs.forEach(im=>im.classList.remove('hl'));
+    imgs[i%imgs.length].classList.add('hl');
+    i++; elapsed+=delay;
+    delay=Math.min(delay*1.12, 260);
+    if(elapsed<maxTime){ setTimeout(tick,delay); }
+    else{ landOnPick((i-1)%imgs.length); }
+  })();
+}
+function landOnPick(idx){
+  const v=libraryCache[idx];
+  window._pickedVideo=v;
+  $('pickerThumb').src=v.thumb;
+  $('pickerResultTitle').textContent=v.title;
+  $('pickerResult').classList.remove('hidden');
+}
+$('pickerSingBtn').addEventListener('click',()=>{
+  const v=window._pickedVideo; if(!v) return;
+  $('pickerOverlay').classList.add('hidden');
+  loadTrack('https://www.youtube.com/watch?v='+v.video_id);
+});
+$('pickerAgainBtn').addEventListener('click',openPicker);
+$('pickerCloseBtn').addEventListener('click',()=>$('pickerOverlay').classList.add('hidden'));
+
+refreshLibrary();
+refreshRecentSessions();
 
 // ---- playlist / queue: line up several YouTube songs, auto-advance between
 // them. Persisted to localStorage (URLs only — an imported local File object
@@ -879,7 +1348,8 @@ async function loadTrack(explicitUrl){
   $('loaderr').textContent=''; $('load').disabled=true; $('searchBtn').disabled=true;
   $('loadbar').style.display='block'; $('loadstatus').textContent='Downloading backing track…';
   let r;
-  try{ r=await fetch('/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})}); }
+  try{ r=await fetch('/prepare',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url, profile:activeProfile})}); }
   catch(e){ return failLoad('Could not reach the local server.'); }
   const d=await r.json();
   if(!r.ok) return failLoad(d.error||'Load failed.');
@@ -926,6 +1396,32 @@ async function checkLoad(){
 }
 
 let VIDEO_ID=null;
+// ---- session mode: once a song is loaded, stop competing for space with
+// the search UI — collapse it into a compact bar and give the recording
+// session (tab-switched, one full-width panel at a time) the whole screen. --
+function enterSessionMode(title, videoId){
+  $('step1Card').classList.add('hidden');
+  $('nowPlayingBar').classList.remove('hidden');
+  $('sessionNav').classList.remove('hidden');
+  $('npTitle').textContent=title||'Karaoke';
+  const thumb=$('npThumb');
+  if(videoId){ thumb.src='https://i.ytimg.com/vi/'+videoId+'/hqdefault.jpg'; thumb.style.display=''; }
+  else { thumb.style.display='none'; }
+  switchSessionTab('stageCard');
+}
+function switchSessionTab(stepId){
+  ['stageCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.toggle('active', id===stepId));
+  document.querySelectorAll('.sessionTab').forEach(b=>b.classList.toggle('active', b.dataset.step===stepId));
+}
+document.querySelectorAll('.sessionTab').forEach(b=>b.addEventListener('click',()=>switchSessionTab(b.dataset.step)));
+$('npChangeBtn').addEventListener('click',()=>{
+  $('step1Card').classList.remove('hidden');
+  $('nowPlayingBar').classList.add('hidden');
+  $('sessionNav').classList.add('hidden');
+  ['stageCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.remove('active'));
+  $('step1Card').scrollIntoView({behavior:'smooth', block:'start'});
+});
+
 function onReady(j){
   $('load').disabled=false; $('searchBtn').disabled=false;
   document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
@@ -942,7 +1438,7 @@ function onReady(j){
   backingAudio.preload='auto';
   wireBacking(backingAudio);
   decodeBackingBuffer(0);   // decode to an AudioBuffer for sample-accurate take playback
-  ['stageCard','fxCard','duetCard','mixCard'].forEach(c=>$(c).classList.add('active'));
+  enterSessionMode(window._title, VIDEO_ID);
   // enable transport controls
   $('rec').disabled=false; $('render').disabled=false; $('play').disabled=false;
   $('stopmusic').disabled=false;
@@ -1219,6 +1715,25 @@ $('tunerToggle').addEventListener('change',()=>{ tunerOn=$('tunerToggle').checke
 function showTuner(on){ $('tuner').style.display=on?'':'none'; if(!on){ $('tunerNote').textContent='—';
   $('tunerNote').className='tuner-note'; $('tunerNeedle').style.left='50%'; $('tunerMsg').textContent='sing a note…'; } }
 let tunerSmooth=null;
+
+// ---- pitch-accuracy scoring: gamifies the existing live tuner signal by
+// aggregating it over a take instead of adding a separate pitch-detection
+// pass. Reset in startRec(), accumulated here on every in-tune-or-not
+// judgment the tuner already makes, finalized in stopRec(). ---------------
+let scoreFrames=0, scoreInTune=0, scoreStreak=0, scoreBestStreak=0;
+function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scoreBestStreak=0; }
+function computeScore(){
+  if(scoreFrames<10) return null;  // too little signal (mic issue, or barely sang) to judge fairly
+  return { accuracy: Math.round(100*scoreInTune/scoreFrames), bestStreak: scoreBestStreak, frames: scoreFrames };
+}
+function scoreTier(accuracy){
+  if(accuracy>=90) return {stars:5, label:'Star Power! 🌟'};
+  if(accuracy>=75) return {stars:4, label:'Great pitch control!'};
+  if(accuracy>=60) return {stars:3, label:'Solid singing!'};
+  if(accuracy>=40) return {stars:2, label:'Getting there — keep practicing!'};
+  return {stars:1, label:'Everyone starts somewhere 🎤'};
+}
+
 function updateTuner(note, freq){
   if(!note){ $('tunerNote').textContent='—'; $('tunerNote').className='tuner-note';
     $('tunerMsg').textContent='listening…'; $('tunerNeedle').style.background='#fff'; return; }
@@ -1234,6 +1749,10 @@ function updateTuner(note, freq){
   $('tunerNeedle').style.background=inTune?'var(--ok)':'var(--amber)';
   $('tunerMsg').textContent = inTune? 'on pitch ✓'
     : (cents>0? 'a little sharp — ease down' : 'a little flat — lift up');
+
+  scoreFrames++;
+  if(inTune){ scoreInTune++; scoreStreak++; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
+  else{ scoreStreak=0; }
 }
 
 // ---- live monitor volume sliders ------------------------------------------
@@ -1260,12 +1779,22 @@ let pendingContinueAt=null;   // set when user picks "continue from here"
 function showRecUI(on){
   $('lamp').classList.toggle('on',on);
   $('rec').disabled=on; $('stop').disabled=!on; $('play').disabled=on;
-  if(on) $('stopChoice').style.display='none';
+  if(on){ $('stopChoice').style.display='none'; $('scoreCard').classList.add('hidden'); }
 }
 function offerContinueOrKeep(){
   const at=window._recEndMusicPos||0;
   $('choiceMsg').textContent='Sang up to '+fmt(at)+'. Continue from here, keep it, or redo?';
   $('stopChoice').style.display='flex';
+  renderScoreCard(window._lastPitchScore);
+}
+function renderScoreCard(score){
+  if(!score){ $('scoreCard').classList.add('hidden'); return; }
+  const tier=scoreTier(score.accuracy);
+  $('scoreStars').textContent='⭐'.repeat(tier.stars)+'☆'.repeat(5-tier.stars);
+  $('scoreLabel').textContent=tier.label;
+  const streakSec=(score.bestStreak/60).toFixed(1);
+  $('scoreDetail').textContent=score.accuracy+'% on pitch · best streak ~'+streakSec+'s';
+  $('scoreCard').classList.remove('hidden');
 }
 $('continueBtn').addEventListener('click',()=>{
   pendingContinueAt=window._recEndMusicPos||0;   // next take begins where this ended
@@ -1301,7 +1830,8 @@ async function saveCurrentTakeToHistory(kind){
   const b64=await blobToB64(window._lastVocalWav);
   let r; try{
     r=await fetch('/take',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:kind||'lead', fx_snapshot:collectFx()})});
+      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:kind||'lead', fx_snapshot:collectFx(),
+        pitch_score:window._lastPitchScore})});
   }catch(e){ toast('Could not save that take.','error'); return; }
   const d=await r.json();
   if(!r.ok){ toast(d.error||'Could not save that take.','error'); return; }
@@ -1351,9 +1881,10 @@ function renderTakeStrip(){
   takes.forEach((t,i)=>{
     const card=document.createElement('div');
     card.className='takecard'+(t.id===activeTakeId?' active':'');
+    const scoreBadge=t.pitch_score? '<span class="takeScoreBadge" title="Pitch accuracy">'+t.pitch_score.accuracy+'%</span>' : '';
     card.innerHTML=
       '<div class="takecard-top">'+
-        '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+'</span>'+
+        '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+scoreBadge+'</span>'+
         '<span class="takex" title="Delete this take">✕</span>'+
       '</div>'+
       '<div class="takedur">'+fmt(t.duration||0)+'</div>'+
@@ -1576,6 +2107,10 @@ async function loadPhoneSyncInfo(){
       txt.textContent=j.phone_url;
       box.style.display='';
       status.textContent='Pair your phone:';
+      const qr=$('phoneQrImg');
+      qr.onload=()=>qr.classList.remove('hidden');
+      qr.onerror=()=>qr.classList.add('hidden');  // qrencode not installed — the link/copy button still work
+      qr.src='/qr.png?data='+encodeURIComponent(j.phone_url);
     }else{
       status.textContent="Couldn't detect a LAN address — make sure you're on WiFi.";
     }
@@ -1625,6 +2160,11 @@ document.addEventListener('keydown',e=>{
   if(/(INPUT|SELECT|TEXTAREA)/.test(e.target.tagName)) return;
   if(e.code==='Space'){ e.preventDefault(); recording?stopRec():(!$('rec').disabled&&startRec()); }
   if(e.key==='p'||e.key==='P'){ e.preventDefault(); if(!$('play').disabled) toggleMusic(); }
+  if(e.key==='Enter'){
+    if($('stopChoice').style.display!=='none' && !$('keepBtn').disabled){
+      e.preventDefault(); $('keepBtn').click();
+    }
+  }
   if(e.key==='m'||e.key==='M'){ e.preventDefault();
     $('clickRecToggle').checked=!$('clickRecToggle').checked;
     metro.clickOn=$('clickRecToggle').checked; }
@@ -1662,6 +2202,7 @@ async function startRec(){
   // punch-in should stay locked to the song's own beat, not a fresh 4-click.
   if(metro.countIn && !punch) await countIn();
 
+  if(!punch) resetScoreTracking();  // a punch-in continuation keeps the earlier segment's stats too
   recChunks=[];
   recorder=new MediaRecorder(mediaStream,{mimeType:pickMime(),audioBitsPerSecond:512000});
   recorder.ondataavailable=e=>{ if(e.data.size) recChunks.push(e.data); };
@@ -1721,6 +2262,7 @@ function stopRec(){ if(!recording)return;
   }
   recording=false; showRecUI(false); showTuner(false);
   $('play').disabled=false; resetMusicBtn();
+  window._lastPitchScore=computeScore();
 }
 
 async function finishRec(){
@@ -1857,7 +2399,7 @@ function drawWaveform(canvas, peaks, playheadFrac){
   ctx.clearRect(0,0,w,h);
   if(!peaks || !peaks.length) return;
   const cols=peaks.length/2, mid=h/2, colW=w/cols;
-  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--amber2').trim()||'#ff9b3d';
+  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--amber2').trim()||'#00b8cc';
   ctx.globalAlpha=.85;
   for(let x=0;x<cols;x++){
     const min=peaks[x*2], max=peaks[x*2+1];
@@ -2125,11 +2667,11 @@ function enterTestMode(){
       '<span class="tp-note" id="loopInfo"></span>'+
     '</div>'+
     '<div class="looprow" id="fxQuick"></div>'+
-    '<div class="tp-note" style="margin-top:8px">Reverb / EQ / compression / volume preview exactly. '+
-      'Pitch fix previews approximately here — the precise version is applied when you render.</div>';
+    '<div class="tp-note" style="margin-top:8px">EQ / compression / de-ess / reverb send / volume preview approximately here. '+
+      'Saturation, the delay send, and pitch fix only apply exactly when you render.</div>';
   $('takePlayer').appendChild(p);
   // quick FX toggles that mirror the rack
-  const quick=[['reverb','Reverb'],['eq','EQ'],['compress','Compress'],['pitch','Pitch fix'],['deess','De-ess'],['denoise','De-noise']];
+  const quick=[['pro','Pro chain'],['pitch','Pitch fix'],['denoise','De-noise']];
   const fxq=p.querySelector('#fxQuick');
   quick.forEach(([key,label])=>{
     const b=document.createElement('button'); b.className='tp-btn'+(fxOn[key]?' on':''); b.textContent=label;
@@ -2179,26 +2721,30 @@ function takePos(){
 }
 
 function buildTakeGraphNodes(){
-  // Studio-smooth vocal chain:
-  //   src → hp → deHarsh → eqLow → eqMid → eqHigh → deEss → comp → dry/wet(reverb) → vocalGain
-  // comp smooths the "throw" (loud pushes); deEss/deHarsh tame harsh S & 3kHz bite.
-  const hp=audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=80; hp.Q.value=0.7;
-  const deHarsh=audioCtx.createBiquadFilter(); deHarsh.type='peaking'; deHarsh.frequency.value=3000; deHarsh.Q.value=1.4; deHarsh.gain.value=-2.5;
-  const eqLow=audioCtx.createBiquadFilter(); eqLow.type='lowshelf'; eqLow.frequency.value=200;
-  const eqMid=audioCtx.createBiquadFilter(); eqMid.type='peaking'; eqMid.frequency.value=1500; eqMid.Q.value=1;
-  const eqHigh=audioCtx.createBiquadFilter(); eqHigh.type='highshelf'; eqHigh.frequency.value=6000;
-  const deEss=audioCtx.createBiquadFilter(); deEss.type='highshelf'; deEss.frequency.value=7000; deEss.gain.value=-3;
+  // Approximate live preview of the pro vocal chain (exact version applies at
+  // render time via ffmpeg — see audio_fx.build_pro_chain_filter_complex):
+  //   src → hp → dip → nasal → tone1 → tone2 → air → deEss → comp → comp2 →
+  //   dry/wet(reverb) → vocalGain
+  // Saturation and the delay send aren't previewed live (WebAudio has no
+  // built-in soft-clipper/parallel-mix primitive worth the complexity here).
+  const hp=audioCtx.createBiquadFilter(); hp.type='highpass';
+  const dip=audioCtx.createBiquadFilter(); dip.type='peaking';
+  const nasal=audioCtx.createBiquadFilter(); nasal.type='peaking';
+  const tone1=audioCtx.createBiquadFilter(); tone1.type='peaking';
+  const tone2=audioCtx.createBiquadFilter(); tone2.type='peaking';
+  const air=audioCtx.createBiquadFilter(); air.type='highshelf';
+  const deEss=audioCtx.createBiquadFilter(); deEss.type='highshelf';
   const comp=audioCtx.createDynamicsCompressor();
-  comp.threshold.value=-22; comp.knee.value=26; comp.ratio.value=3.2; comp.attack.value=0.006; comp.release.value=0.18;
+  const comp2=audioCtx.createDynamicsCompressor();
   const dry=audioCtx.createGain(), wet=audioCtx.createGain();
   const conv=audioCtx.createConvolver(); conv.buffer=makeImpulse(2.2,2.0);
   const vocalGain=audioCtx.createGain();
-  hp.connect(deHarsh); deHarsh.connect(eqLow); eqLow.connect(eqMid); eqMid.connect(eqHigh);
-  eqHigh.connect(deEss); deEss.connect(comp);
-  comp.connect(dry); comp.connect(conv); conv.connect(wet);
+  hp.connect(dip); dip.connect(nasal); nasal.connect(tone1); tone1.connect(tone2);
+  tone2.connect(air); air.connect(deEss); deEss.connect(comp); comp.connect(comp2);
+  comp2.connect(dry); comp2.connect(conv); conv.connect(wet);
   dry.connect(vocalGain); wet.connect(vocalGain); vocalGain.connect(audioCtx.destination);
   const musicGainNode=audioCtx.createGain(); musicGainNode.connect(audioCtx.destination);
-  takeGraph={hp,deHarsh,eqLow,eqMid,eqHigh,deEss,comp,dry,wet,vocalGain,musicGainNode};
+  takeGraph={hp,dip,nasal,tone1,tone2,air,deEss,comp,comp2,dry,wet,vocalGain,musicGainNode};
   applyLiveFx();
   return {hp, vocalGain, musicGainNode};
 }
@@ -2281,26 +2827,53 @@ function applyMusicMonitorVol_graph(){
   }
 }
 // Reflect FX-rack + mix settings into the live take graph.
+function clampParam(param, min, max, v){ param.value = Math.max(min, Math.min(max, v)); }
+
+// Reflect the pro-chain sliders (+ mix gain) into the live take graph. This is
+// an approximation for audition — the exact chain (incl. saturation and the
+// delay send) is only applied by ffmpeg at render time.
 function applyLiveFx(){
   if(!takeGraph) return;
-  const eq=fxOn.eq?{low:+$('eqlow').value,mid:+$('eqmid').value,high:+$('eqhigh').value}:{low:0,mid:0,high:0};
-  if(takeGraph.eqLow) takeGraph.eqLow.gain.value=eq.low;
-  if(takeGraph.eqMid) takeGraph.eqMid.gain.value=eq.mid;
-  if(takeGraph.eqHigh) takeGraph.eqHigh.gain.value=eq.high;
-  const rev=fxOn.reverb?(+$('reverb').value)/100:0;
-  if(takeGraph.wet) takeGraph.wet.gain.value=rev*0.9;
-  if(takeGraph.dry) takeGraph.dry.gain.value=1-rev*0.4;
-  const vdb=+$('vgain').value; if(takeGraph.vocalGain) takeGraph.vocalGain.gain.value=Math.pow(10,vdb/20);
-  // smoothing chain: compression (throw), de-ess, de-harsh — scale by toggle+amount
+  const pv=PRO_CHAIN_VALUES, on=!!fxOn.pro;
+  const nyq=(audioCtx.sampleRate||48000)/2 - 1;
+
+  if(takeGraph.hp) clampParam(takeGraph.hp.frequency, 10, nyq, on?pv.hpf_freq:10);
+  if(takeGraph.dip){ clampParam(takeGraph.dip.frequency,10,nyq,pv.dip_freq); takeGraph.dip.Q.value=pv.dip_q;
+    takeGraph.dip.gain.value = on?pv.dip_gain:0; }
+  if(takeGraph.nasal){ clampParam(takeGraph.nasal.frequency,10,nyq,pv.nasal_freq); takeGraph.nasal.Q.value=pv.nasal_q;
+    takeGraph.nasal.gain.value = on?pv.nasal_gain:0; }
+  if(takeGraph.tone1){ clampParam(takeGraph.tone1.frequency,10,nyq,pv.tone1_freq); takeGraph.tone1.Q.value=pv.tone1_q;
+    takeGraph.tone1.gain.value = on?pv.tone1_gain:0; }
+  if(takeGraph.tone2){ clampParam(takeGraph.tone2.frequency,10,nyq,pv.tone2_freq); takeGraph.tone2.Q.value=pv.tone2_q;
+    takeGraph.tone2.gain.value = on?pv.tone2_gain:0; }
+  if(takeGraph.air){ clampParam(takeGraph.air.frequency,10,nyq,pv.air_freq);
+    takeGraph.air.gain.value = on?pv.air_gain:0; }
+  if(takeGraph.deEss){ clampParam(takeGraph.deEss.frequency,10,nyq,pv.deess_freq);
+    takeGraph.deEss.gain.value = on ? -(pv.deess_intensity/100)*8 : 0; }
   if(takeGraph.comp){
-    const c=fxOn.compress?(+$('compress').value)/100:0;
-    // more compression → lower threshold + higher ratio → smoother pushes
-    takeGraph.comp.threshold.value = -12 - c*24;      // -12..-36 dB
-    takeGraph.comp.ratio.value     = 1.5 + c*4;       // 1.5..5.5:1
-    takeGraph.comp.knee.value      = 24;
+    clampParam(takeGraph.comp.threshold,-100,0, on?pv.fast_threshold_db:0);
+    takeGraph.comp.knee.value=6; clampParam(takeGraph.comp.ratio,1,20, on?pv.fast_ratio:1);
+    clampParam(takeGraph.comp.attack,0,1, (on?pv.fast_attack:0)/1000);
+    clampParam(takeGraph.comp.release,0,1, (on?pv.fast_release:10)/1000);
   }
-  if(takeGraph.deEss) takeGraph.deEss.gain.value = fxOn.deess ? -6 : -2;   // always a touch, more when on
-  if(takeGraph.deHarsh) takeGraph.deHarsh.gain.value = -2.5;               // gentle de-harsh always on
+  if(takeGraph.comp2){
+    clampParam(takeGraph.comp2.threshold,-100,0, on?pv.smooth_threshold_db:0);
+    takeGraph.comp2.knee.value=8; clampParam(takeGraph.comp2.ratio,1,20, on?pv.smooth_ratio:1);
+    clampParam(takeGraph.comp2.attack,0,1, (on?pv.smooth_attack:0)/1000);
+    clampParam(takeGraph.comp2.release,0,1, (on?pv.smooth_release:10)/1000);
+  }
+  // reverb send: regenerate the impulse if the decay time changed meaningfully
+  if(takeGraph.conv){
+    const targetDecay=on?pv.verb_decay:0.01;
+    if(Math.abs((takeGraph._verbDecay||0)-targetDecay)>0.05){
+      takeGraph.conv.buffer=makeImpulse(Math.max(0.05,targetDecay),2.0);
+      takeGraph._verbDecay=targetDecay;
+    }
+  }
+  const wetGain = on ? Math.pow(10, pv.verb_send_db/20) : 0;
+  if(takeGraph.wet) takeGraph.wet.gain.value=wetGain;
+  if(takeGraph.dry) takeGraph.dry.gain.value=1;
+  const vdb=+$('vgain').value; if(takeGraph.vocalGain) takeGraph.vocalGain.gain.value=Math.pow(10,vdb/20);
   applyMusicMonitorVol_graph();
 }
 
@@ -2321,12 +2894,8 @@ $('render').addEventListener('click',doRender);
 function collectFx(){
   return {
     pitch: fxOn.pitch?{enabled:true,key:$('pkey').value,scale:$('pscale').value,strength:(+$('pstr').value)/100}:{enabled:false},
-    reverb: fxOn.reverb?(+$('reverb').value)/100:0,
-    echo: fxOn.echo?(+$('echo').value)/100:0,
-    eq: fxOn.eq?{low:+$('eqlow').value,mid:+$('eqmid').value,high:+$('eqhigh').value}:{},
-    compress: fxOn.compress?(+$('compress').value)/100:0,
+    pro: Object.assign({enabled:!!fxOn.pro}, PRO_CHAIN_VALUES),
     denoise: fxOn.denoise?(+$('denoise').value)/100:0,
-    deess: !!fxOn.deess,
   };
 }
 async function doRender(){
@@ -2420,10 +2989,6 @@ function blobToB64(blob){ return new Promise(res=>{const fr=new FileReader();
 // (runs LAST, after every declaration exists, to avoid temporal-dead-zone errors)
 (function autoload(){
   const sid=new URLSearchParams(location.search).get('sid');
-  if(!sid) return;
-  SID=sid;
-  fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
-    if(j && (j.status==='ready'||j.stage==='ready')) onReady(j);
-  }).catch(()=>{});
+  if(sid) resumeSession(sid);
 })();
 </script>
