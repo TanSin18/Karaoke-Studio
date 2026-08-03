@@ -1976,15 +1976,39 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   h1{font-size:24px;margin:0 0 4px;color:var(--amber);text-shadow:var(--glow-amber);
     display:flex;align-items:center;gap:12px}
   .sub{color:var(--muted);margin:0 0 20px}
-  /* room code uses .marquee-sign (theme.css) for the bulb-letter signature —
-     see the class comment there. Sized up here since this is the app's
-     single biggest "moment": the reveal when a party starts. */
-  .code.marquee-sign span{width:56px;height:76px;font-size:56px}
-  .join{color:var(--muted);font-size:14px}
+
+  /* pre-start "attract mode": this screen gets projected on a TV before
+     anyone's joined, so a small left-aligned block over a mostly-empty page
+     reads as unfinished at room scale. Center it full-viewport instead, with
+     the back-link/theme-toggle pulled out to fixed corners so they don't
+     constrain the centering, and size text for across-the-room legibility. */
+  .backLink{position:fixed;top:16px;left:16px;color:var(--muted);font-size:13px;
+    text-decoration:none;z-index:50}
+  #start{min-height:calc(100vh - 48px);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;gap:22px}
+  #start h1{font-size:48px;text-shadow:var(--glow-amber)}
+  #start .sub{font-size:18px;margin:0;max-width:520px}
+  #start .eq-bars{font-size:44px}
+
+  /* room code + QR: the single biggest "moment" on this screen — give it a
+     proper banner treatment instead of a plain inline row, and size it for
+     TV viewing distance rather than desktop reading distance. */
+  .codeRow{display:flex;align-items:center;justify-content:center;gap:32px;
+    padding:22px 30px;border-radius:20px;margin-bottom:20px;
+    background:var(--glass-fill);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);
+    border:1px solid var(--glass-border);box-shadow:0 10px 40px rgba(0,0,0,.5)}
+  .code.marquee-sign span{width:64px;height:88px;font-size:64px}
+  .join{color:var(--muted);font-size:15px}
   .join b{color:var(--ink)}
-  .grid{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-top:20px}
-  #stage{aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden}
+  .grid{display:grid;grid-template-columns:2fr 1fr;gap:20px}
+  #stage{aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;position:relative}
   #stage iframe,#ytplayer{width:100%;height:100%}
+  /* idle "nobody queued yet" visual: a plain black box reads as broken on a
+     TV screen — give it the same equalizer-bar attract motion as the
+     pre-start screen so the empty state still looks alive. */
+  #stage .idleStage{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;color:var(--dim)}
+  #stage .idleStage .eq-bars{font-size:40px}
   .nowSingers{font-size:28px;font-weight:700;margin:14px 0 2px}
   .nowTitle{color:var(--muted)}
   .upnext{list-style:none;margin:0;padding:0}
@@ -1997,8 +2021,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .upnext .what{color:var(--muted);font-size:14px}
   .rowBtns{position:absolute;right:0;top:8px;display:flex;gap:6px}
   .empty{color:var(--dim);padding:20px 0}
-  .codeRow{display:flex;align-items:center;gap:20px}
-  #qrImg{width:120px;height:120px;background:#fff;border-radius:10px;padding:6px;
+  #qrImg{width:140px;height:140px;background:#fff;border-radius:10px;padding:6px;
     border:2px solid var(--pink2);box-shadow:var(--glow-pink)}
   .challenges{margin-top:20px}
   .challenges h3{display:flex;align-items:center;gap:8px;margin-top:0}
@@ -2022,15 +2045,16 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
 <button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme"><svg class="icon"><use href="#i-moon"/></svg></button>
 
+<a href="/" class="backLink">← Back to Studio</a>
+
 <div id="start">
-  <a href="/" style="color:var(--muted);font-size:13px;text-decoration:none">← Back to Studio</a>
   <h1><svg class="icon"><use href="#i-mic"/></svg> Karaoke Party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
   <p class="sub">Start a room, then have guests join from their phones on the same WiFi.</p>
+  <span class="eq-bars"><i></i><i></i><i></i><i></i></span>
   <button class="btn amber" id="startBtn">Start Party</button>
 </div>
 
 <div id="live" class="hidden">
-  <h1><svg class="icon"><use href="#i-mic"/></svg> Karaoke Party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
   <div class="codeRow">
     <div>
       <div class="code marquee-sign" id="roomCode"></div>
@@ -2041,7 +2065,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   </div>
   <div class="grid">
     <div class="card">
-      <div id="stage"><div class="empty">Nobody queued yet — waiting for guests to join and add songs.</div></div>
+      <div id="stage"><div class="idleStage"><span class="eq-bars"><i></i><i></i><i></i><i></i></span>Nobody queued yet — waiting for guests to join and add songs.</div></div>
       <div class="nowSingers" id="singers"></div>
       <div class="nowTitle" id="songTitle"></div>
       <div style="margin-top:14px"><button class="btn pink" id="nextBtn">Next ▶</button></div>
@@ -2283,10 +2307,30 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 </script>
 <style>
   *{-webkit-tap-highlight-color:transparent}
-  #themeToggle{position:fixed;top:calc(14px + env(safe-area-inset-top));right:16px;z-index:50}
+  /* width:auto overrides this page's blanket .btn{width:100%} (meant for
+     full-width mobile action buttons) — without it, a fixed-position element
+     stretches to its containing block's width, which becomes very visible
+     once body itself establishes that containing block (see the
+     backdrop-filter media query below). */
+  #themeToggle{position:fixed;top:calc(14px + env(safe-area-inset-top));right:16px;z-index:50;width:auto}
   body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
     font:16px/1.4 -apple-system,system-ui,sans-serif;
     padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-width:480px;margin:0 auto}
+  /* this page is built for a phone screen and stays that width even on a
+     wide desktop browser (real usage is always a phone that scanned the QR)
+     — but when it IS opened wide, frame it as an intentional phone-shaped
+     card in the ambient backdrop instead of a website that forgot to use
+     its space. No effect on an actual phone viewport. */
+  @media (min-width:620px){
+    body{margin-top:36px;padding:28px 28px calc(28px + env(safe-area-inset-bottom));
+      border-radius:24px;background:var(--glass-fill);backdrop-filter:blur(24px) saturate(160%);
+      -webkit-backdrop-filter:blur(24px) saturate(160%);border:1px solid var(--glass-border);
+      box-shadow:0 24px 70px rgba(0,0,0,.5)}
+    /* nudge down to stay aligned with the card's top edge instead of the
+       bare viewport corner, since #themeToggle is fixed (viewport-relative)
+       and body just gained a 36px top margin above. */
+    #themeToggle{top:50px}
+  }
   h1{font-size:20px;color:var(--amber);text-shadow:var(--glow-amber);margin:6px 0 14px;
     display:flex;align-items:center;gap:10px}
   label{display:block;font-size:13px;color:var(--muted);margin:14px 0 6px}
@@ -2650,7 +2694,24 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
     font:16px/1.4 -apple-system,system-ui,sans-serif;
     padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-width:480px;margin:0 auto}
-  #themeToggle{position:fixed;top:calc(14px + env(safe-area-inset-top));right:16px;z-index:50}
+  /* same reasoning as JOIN_HTML: frame it as an intentional phone-shaped
+     card when opened wide, no effect on an actual phone viewport. */
+  @media (min-width:620px){
+    body{margin-top:36px;padding:28px 28px calc(28px + env(safe-area-inset-bottom));
+      border-radius:24px;background:var(--glass-fill);backdrop-filter:blur(24px) saturate(160%);
+      -webkit-backdrop-filter:blur(24px) saturate(160%);border:1px solid var(--glass-border);
+      box-shadow:0 24px 70px rgba(0,0,0,.5)}
+    /* nudge down to stay aligned with the card's top edge instead of the
+       bare viewport corner, since #themeToggle is fixed (viewport-relative)
+       and body just gained a 36px top margin above. */
+    #themeToggle{top:50px}
+  }
+  /* width:auto overrides this page's blanket .btn{width:100%} (meant for
+     full-width mobile action buttons) — without it, a fixed-position element
+     stretches to its containing block's width, which becomes very visible
+     once body itself establishes that containing block (see the
+     backdrop-filter media query below). */
+  #themeToggle{position:fixed;top:calc(14px + env(safe-area-inset-top));right:16px;z-index:50;width:auto}
   h1{font-size:20px;color:var(--amber);text-shadow:var(--glow-amber);margin:6px 0 4px;
     display:flex;align-items:center;gap:10px}
   .sub{color:var(--muted);font-size:13px;margin-bottom:14px}

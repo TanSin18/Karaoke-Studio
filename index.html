@@ -14,6 +14,26 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     padding:20px;
   }
   .wrap{max-width:1180px;margin:0 auto}
+
+  /* idle landing (no song loaded yet): vertically center the search card
+     in the remaining viewport instead of letting it float at the top of an
+     otherwise empty page. Only applied while .centered is present — see
+     enterSessionMode()/npChangeBtn, which toggle it in lockstep with
+     step1Card's own hidden class so a loaded session doesn't inherit a
+     tall empty flex box. */
+  .landingHero.centered{display:flex;flex-direction:column;align-items:center;
+    justify-content:center;min-height:calc(100vh - 170px);gap:26px;text-align:center}
+  .landingHero.centered #step1Card{width:100%}
+  .landingTagline{font-family:var(--display);font-size:22px;font-weight:400;
+    color:var(--muted)}
+  .landingTagline b{font-weight:400}
+  .landingAmbient{display:flex;align-items:center;gap:14px;color:var(--dim)}
+  .landingAmbient .eq-bars{font-size:34px}
+  /* the ambient tagline only belongs to the idle centered state — once a
+     song loads and .centered comes off landingHero, hide it too instead of
+     leaving it sitting above the now-playing bar in plain document flow. */
+  .landingHero:not(.centered) .landingAmbient{display:none}
+
   header{display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;
     padding:14px 20px;border-radius:20px;position:sticky;top:12px;z-index:40;
     background:var(--glass-fill);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);
@@ -47,6 +67,25 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   /* One full-width step at a time (tab-switched) once a song is loaded,
      rather than a 2-column layout that made you scroll past everything. */
   .grid{display:block}
+
+  /* on wide viewports, give the session view a persistent right rail
+     (live self-view + quick reference) that stays visible across all four
+     tabs instead of being buried inside the Record tab only — otherwise
+     desktop screens just leave that whole side of the page empty while
+     .grid sits capped at .wrap's max-width. Collapses back under .grid on
+     narrower/mobile viewports, where a side-by-side rail has no room. */
+  .sessionLayout{display:block}
+  .sessionRail{display:flex;flex-direction:column;gap:14px;margin-top:16px}
+  @media (min-width:980px){
+    .sessionLayout{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start}
+    .sessionRail{margin-top:0;position:sticky;top:100px}
+  }
+  .sessionRail .selfView{width:100%;height:auto;aspect-ratio:4/3}
+  .railCard{background:var(--glass-fill);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
+    border:1px solid var(--glass-border);border-radius:14px;padding:14px}
+  .railCard h3{margin:0 0 8px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);font-weight:600}
+  .railCard .hint{margin:0}
 
   .npRow{display:flex;align-items:center;gap:14px}
   .npRow img{width:80px;height:45px;object-fit:cover;border-radius:8px;flex:none;background:var(--well)}
@@ -457,6 +496,17 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <a class="btn pink" id="partyLink" href="/party" style="text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones"><svg class="icon"><use href="#i-sparkle"/></svg> Party mode</a>
   </header>
 
+  <!-- idle landing: centered while no song is loaded (see .landingHero.centered
+       CSS + enterSessionMode()/npChangeBtn, which toggle the class). Once a
+       song loads, step1Card gets .hidden and this wrapper goes back to plain
+       flow so the loaded session doesn't inherit a tall empty flex box. -->
+  <div class="landingHero centered" id="landingHero">
+    <div class="landingAmbient">
+      <span class="eq-bars"><i></i><i></i><i></i><i></i></span>
+      <span class="landingTagline">Find a song. <span class="neon-title">Sing your heart out.</span></span>
+      <span class="eq-bars"><i></i><i></i><i></i><i></i></span>
+    </div>
+
   <!-- STEP 1: find a song -->
   <div class="card" id="step1Card" style="margin-bottom:16px">
     <h2>1 · Find a song</h2>
@@ -532,6 +582,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       <div class="queuelist" id="queueList"></div>
     </div>
   </div>
+  </div>
 
   <!-- shown once a song is loaded, replacing the search UI above so the
        session gets the screen instead of competing with it for space -->
@@ -553,6 +604,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <button class="sessionTab" data-step="mixCard"><svg class="icon"><use href="#i-download"/></svg> Export</button>
   </div>
 
+  <div class="sessionLayout">
   <div class="grid">
     <!-- LEFT: stage + transport + recorder -->
     <div>
@@ -665,12 +717,6 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <button id="rec" class="btn rec" disabled title="Start recording (Space)">● Record</button>
           <button id="stop" class="btn" disabled title="Stop recording (Space)">■ Stop</button>
           <button id="playtake" class="btn" disabled title="Hear your take over the music">▶ Play take</button>
-          <!-- live self-view from a paired phone camera (WebRTC, muted — audio
-               comes from the app's own mix, not the phone) -->
-          <div class="selfView hidden" id="selfViewBox" title="Live view from your phone">
-            <video id="phoneSelfView" autoplay muted playsinline></video>
-            <span class="selfViewLabel"><svg class="icon"><use href="#i-phone"/></svg> live</span>
-          </div>
         </div>
 
         <!-- pitch-STEADINESS score: aggregates the live tuner's in-tune/off-pitch
@@ -871,6 +917,24 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <div class="err" id="rendererr"></div>
       </div>
     </div>
+  </div>
+
+  <!-- persistent right rail: stays visible across all four session tabs
+       instead of being buried inside the Record tab only (see .sessionRail
+       CSS). Hidden by default, shown/hidden in lockstep with sessionNav. -->
+  <aside class="sessionRail hidden" id="sessionRail">
+    <div class="selfView hidden" id="selfViewBox" title="Live view from your phone">
+      <video id="phoneSelfView" autoplay muted playsinline></video>
+      <span class="selfViewLabel"><svg class="icon"><use href="#i-phone"/></svg> live</span>
+    </div>
+    <div class="railCard">
+      <h3>Quick reference</h3>
+      <div class="hint">
+        <kbd>Space</kbd> record · <kbd>P</kbd> play/pause · <kbd>Enter</kbd> keep take.
+        Wear headphones so your mic captures only your voice.
+      </div>
+    </div>
+  </aside>
   </div>
 </div>
 
@@ -1637,8 +1701,10 @@ let VIDEO_ID=null;
 // session (tab-switched, one full-width panel at a time) the whole screen. --
 function enterSessionMode(title, videoId){
   $('step1Card').classList.add('hidden');
+  $('landingHero').classList.remove('centered');
   $('nowPlayingBar').classList.remove('hidden');
   $('sessionNav').classList.remove('hidden');
+  $('sessionRail').classList.remove('hidden');
   $('npTitle').textContent=title||'Karaoke';
   const thumb=$('npThumb');
   if(videoId){ thumb.src='https://i.ytimg.com/vi/'+videoId+'/hqdefault.jpg'; thumb.style.display=''; }
@@ -1652,8 +1718,10 @@ function switchSessionTab(stepId){
 document.querySelectorAll('.sessionTab').forEach(b=>b.addEventListener('click',()=>switchSessionTab(b.dataset.step)));
 $('npChangeBtn').addEventListener('click',()=>{
   $('step1Card').classList.remove('hidden');
+  $('landingHero').classList.add('centered');
   $('nowPlayingBar').classList.add('hidden');
   $('sessionNav').classList.add('hidden');
+  $('sessionRail').classList.add('hidden');
   ['stageCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.remove('active'));
   $('step1Card').scrollIntoView({behavior:'smooth', block:'start'});
 });
