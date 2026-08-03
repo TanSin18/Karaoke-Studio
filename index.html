@@ -117,7 +117,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .railCard{background:var(--glass-fill);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
     border:1px solid var(--glass-border);border-radius:14px;padding:14px}
   .railCard h3{margin:0 0 8px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--muted);font-weight:600}
+    text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
   .railCard .hint{margin:0}
 
   .npRow{display:flex;align-items:center;gap:14px}
@@ -302,6 +302,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .takecard{flex:none;width:132px;background:var(--well);border:1px solid var(--edge);border-radius:10px;
     padding:9px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
   .takecard.active{border-color:var(--amber2);box-shadow:var(--glow-amber)}
+  .takecard.previewing{border-color:var(--pink2);box-shadow:var(--glow-pink)}
   .takecard-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
   .takebadge{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
     color:var(--dim);background:var(--well2);border-radius:4px;padding:2px 5px}
@@ -309,13 +310,18 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .takebadge.harmony{color:var(--amber)}
   .takex{color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:2px}
   .takex:hover{color:var(--rec)}
-  .takedur{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:6px}
-  .takeplay{width:100%;padding:5px;border-radius:6px;border:1px solid var(--edge);
-    background:var(--metal);color:var(--ink);cursor:pointer;font-size:11px}
-  .takeplay:hover{filter:brightness(1.2)}
+  .takedur{font-family:var(--mono);font-size:11px;color:var(--muted)}
   .comprow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;
     background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:10px}
   .comprow select{max-width:150px}
+
+  /* shared saved-take preview bar: one real transport, reused by whichever
+     take card was last clicked, instead of a bare fire-and-forget "Play"
+     button per card with no pause/stop/seek. */
+  .takePreviewBar{display:flex;align-items:center;gap:8px;margin:10px 0;padding:8px 10px;
+    background:var(--well);border:1px solid var(--pink2);border-radius:10px;box-shadow:var(--glow-pink)}
+  .takePreviewBar input[type=range]{flex:1;min-width:60px}
+  .tpbTime{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
 
   /* local-file import drop zone */
   .dropzone{border:2px dashed var(--edge);border-radius:12px;padding:36px 20px;text-align:center;
@@ -366,9 +372,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     letter-spacing:.08em;color:var(--muted);text-transform:uppercase;cursor:pointer}
   .tunertog input{accent-color:var(--amber2)}
   /* continue/keep choice bar */
-  .choice{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px;padding:12px;
+  .choice{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:12px;
     background:linear-gradient(180deg,#20242e,#191c23);border:1px solid var(--amber2);border-radius:10px}
-  .choice-msg{font-family:var(--mono);font-size:12px;color:var(--amber);flex:1;min-width:160px}
+  .choice-msg{font-family:var(--mono);font-size:12px;color:var(--amber)}
   .scoreCard{margin-top:12px;padding:14px;border-radius:12px;text-align:center;
     background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--pink2);box-shadow:var(--glow-pink)}
   .scoreStars{font-size:24px;letter-spacing:5px}
@@ -494,6 +500,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
   <symbol id="i-mail" viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22 6 12 13 2 6"/></symbol>
+  <symbol id="i-takes" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" class="filled"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" class="filled"/><rect x="14" y="4" width="4" height="16" class="filled"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1" class="filled"/></symbol>
+  <symbol id="i-rewind" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5 11 19" class="filled"/><polygon points="21 19 12 12 21 5 21 19" class="filled"/></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
 </svg>
 
 <div id="toasts" class="toaststack"></div>
@@ -625,6 +637,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
   <div class="sessionNav hidden" id="sessionNav">
     <button class="sessionTab active" data-step="stageCard"><svg class="icon"><use href="#i-mic"/></svg> Record</button>
+    <button class="sessionTab" data-step="takesCard"><svg class="icon"><use href="#i-takes"/></svg> Takes</button>
     <button class="sessionTab" data-step="fxCard"><svg class="icon"><use href="#i-sliders"/></svg> Effects</button>
     <button class="sessionTab" data-step="duetCard"><svg class="icon"><use href="#i-music"/></svg> Duet</button>
     <button class="sessionTab" data-step="mixCard"><svg class="icon"><use href="#i-download"/></svg> Export</button>
@@ -742,7 +755,6 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <div class="reclamp" id="lamp"></div>
           <button id="rec" class="btn rec" disabled title="Start recording (Space)">● Record</button>
           <button id="stop" class="btn" disabled title="Stop recording (Space)">■ Stop</button>
-          <button id="playtake" class="btn" disabled title="Hear your take over the music">▶ Play take</button>
         </div>
 
         <!-- pitch-STEADINESS score: aggregates the live tuner's in-tune/off-pitch
@@ -761,12 +773,18 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <div class="scoreNote" id="scoreNote">Measures pitch steadiness — how cleanly you land on notes — not whether they match the song's melody.</div>
         </div>
 
-        <!-- after-stop choice: continue from here, or keep what I sang -->
+        <!-- after-stop choice: continue from here, or keep what I sang. A plain
+             native <audio controls> preview (not the full rich player, which
+             now lives in the Takes tab) so you can hear it before deciding —
+             play/pause/seek for free from the browser. -->
         <div class="choice" id="stopChoice" style="display:none">
           <span class="choice-msg" id="choiceMsg"></span>
-          <button class="btn" id="continueBtn" title="Re-sing from where you stopped, keeping the earlier part">▶ Continue from here</button>
-          <button class="btn" id="keepBtn" title="Keep this take as it is (Enter)">✓ Keep as-is</button>
-          <button class="btn" id="redoBtn" title="Throw this take away and sing again from the start">↺ Redo all</button>
+          <audio id="stopChoicePreview" controls style="width:100%;margin:8px 0"></audio>
+          <div class="row" style="flex-wrap:wrap">
+            <button class="btn" id="continueBtn" title="Re-sing from where you stopped, keeping the earlier part">▶ Continue from here</button>
+            <button class="btn" id="keepBtn" title="Keep this take as it is (Enter)">✓ Keep as-is</button>
+            <button class="btn" id="redoBtn" title="Throw this take away and sing again from the start">↺ Redo all</button>
+          </div>
         </div>
 
         <div class="hint">
@@ -775,47 +793,46 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <kbd>Space</kbd> record · <kbd>P</kbd> play/pause · <kbd>Enter</kbd> keep take.
         </div>
 
-        <!-- phone camera pairing: film with your phone, synced to this app's audio -->
-        <details class="drawer">
-          <summary><svg class="icon"><use href="#i-phone"/></svg> Phone camera sync (optional)</summary>
-          <div class="drawer-body">
-            <div class="hint" id="phonePairPanel">
-              <span id="phoneStatusText">Loading phone-pairing link…</span>
-              <div id="phoneUrlBox" style="display:none;margin-top:8px">
-                <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
-                  <img id="phoneQrImg" class="hidden" alt="Scan with your phone to pair">
-                  <div style="min-width:0">
-                    <code id="phoneUrlText" style="user-select:all;word-break:break-all"></code>
-                    <div class="mt"><button class="btn" id="phoneCopyBtn" type="button">Copy link</button></div>
-                  </div>
-                </div>
-                <div style="opacity:.8;margin-top:8px">Scan the code, or open the link on your phone (same
-                  WiFi). Works on iPhone and Android — your phone's browser will warn "not secure" the
-                  first time (that's the local self-signed cert, not a real problem); tap Advanced/Details
-                  → Proceed to continue.</div>
-              </div>
-            </div>
-          </div>
-        </details>
+      </div>
+    </div>
 
-        <!-- your recorded take: full play/pause/stop/seek, appears after recording -->
-        <div class="player" id="takePlayer" style="display:none"></div>
+    <!-- Takes: review/manage everything you've recorded, separate from the
+         act of recording itself. The rich player (mixer/test-effects/
+         re-record) always reflects the latest take; older saved takes get
+         a simple shared preview player + "Use this take" to promote them
+         into the rich player above. -->
+    <div class="card step" id="takesCard">
+      <h2>3 · Takes</h2>
+      <div class="hint mt" id="noTakesHint">Record a take on the Record tab and it'll show up here.</div>
 
-        <!-- take history: every take you've kept, pick one (or a comp) to render -->
-        <div id="takeHistory" style="display:none;margin-top:12px">
-          <div class="metlabel" style="display:flex;align-items:center">
-            <span>YOUR TAKES <span style="color:var(--dim)">— click one to use it for render</span></span>
-            <button id="undoDeleteBtn" class="ksmall" style="width:auto;padding:0 8px;margin-left:auto;display:none" title="Restore the take you just deleted">↺ Undo delete</button>
-          </div>
-          <div class="takestrip" id="takeStrip"></div>
-          <div class="comprow" id="compRow" style="display:none">
-            <select id="compHead"></select>
-            <span class="klabel">JOIN AT</span>
-            <input type="text" id="compPunch" value="0" style="width:56px;padding:6px 8px" title="Seconds into the head take where the tail take should take over">
-            <span class="klabel">s WITH</span>
-            <select id="compTail"></select>
-            <button class="btn" id="compBtn">↳ Join takes</button>
-          </div>
+      <!-- your recorded take: full play/pause/stop/seek, appears after recording -->
+      <div class="player" id="takePlayer" style="display:none"></div>
+
+      <!-- take history: every take you've kept, pick one (or a comp) to render -->
+      <div id="takeHistory" style="display:none;margin-top:12px">
+        <div class="metlabel" style="display:flex;align-items:center">
+          <span>SAVED TAKES <span style="color:var(--dim)">— click one to use it for render</span></span>
+          <button id="undoDeleteBtn" class="ksmall" style="width:auto;padding:0 8px;margin-left:auto;display:none" title="Restore the take you just deleted">↺ Undo delete</button>
+        </div>
+        <!-- shared preview: one simple play/pause/stop/seek transport for
+             whichever saved take is selected, instead of a bare fire-and-
+             forget "Play" button per card with no other controls. -->
+        <div class="takePreviewBar hidden" id="takePreviewBar">
+          <button class="btn small" id="tpbRewind" title="Back to start"><svg class="icon"><use href="#i-rewind"/></svg></button>
+          <button class="btn small amber" id="tpbPlayPause" title="Play/pause"><svg class="icon"><use href="#i-play"/></svg></button>
+          <button class="btn small" id="tpbStop" title="Stop"><svg class="icon"><use href="#i-stop"/></svg></button>
+          <input type="range" id="tpbSeek" min="0" max="1000" value="0" step="1">
+          <span class="tpbTime" id="tpbTime">0:00 / 0:00</span>
+          <button class="btn small ghost" id="tpbUseTake" title="Load into the rich player above with the mixer and effects preview">Use this take</button>
+        </div>
+        <div class="takestrip" id="takeStrip"></div>
+        <div class="comprow" id="compRow" style="display:none">
+          <select id="compHead"></select>
+          <span class="klabel">JOIN AT</span>
+          <input type="text" id="compPunch" value="0" style="width:56px;padding:6px 8px" title="Seconds into the head take where the tail take should take over">
+          <span class="klabel">s WITH</span>
+          <select id="compTail"></select>
+          <button class="btn" id="compBtn">↳ Join takes</button>
         </div>
       </div>
     </div>
@@ -823,7 +840,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <!-- RIGHT: fx rack + mixer + export -->
     <div>
       <div class="card step" id="fxCard">
-        <h2>3 · Voice FX rack
+        <h2>4 · Voice FX rack
           <span style="margin-left:auto;display:flex;gap:6px">
             <button id="fxUndoBtn" class="ksmall" style="width:auto;padding:0 8px" title="Undo last FX change (Ctrl/Cmd+Z)" disabled>↺ Undo</button>
             <button id="fxRedoBtn" class="ksmall" style="width:auto;padding:0 8px" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↻ Redo</button>
@@ -875,8 +892,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       </div>
 
       <div class="card step mt" id="duetCard" style="margin-top:16px">
-        <h2>4 · Duet / harmony</h2>
-        <div class="status" id="duetHint">Keep at least one take (Step 2) to sing a harmony against it.</div>
+        <h2>5 · Duet / harmony</h2>
+        <div class="status" id="duetHint">Keep at least one take (see the Takes tab) to sing a harmony against it.</div>
         <div class="row mt" id="duetPicker" style="display:none">
           <select id="duetLead" style="flex:1"></select>
           <button id="duetRecBtn" class="btn rec">● Record harmony</button>
@@ -886,7 +903,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       </div>
 
       <div class="card step mt" id="mixCard" style="margin-top:16px">
-        <h2>5 · Mix &amp; export</h2>
+        <h2>6 · Mix &amp; export</h2>
         <div class="mixrow">
           <div class="fxname">Vocal</div>
           <input type="range" id="vgain" min="-12" max="12" value="0">
@@ -958,6 +975,29 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       <div class="hint">
         <kbd>Space</kbd> record · <kbd>P</kbd> play/pause · <kbd>Enter</kbd> keep take.
         Wear headphones so your mic captures only your voice.
+      </div>
+    </div>
+
+    <!-- phone camera sync: right below Quick reference so the rail's spare
+         vertical space is doing something, instead of pairing info being
+         buried in a drawer down inside the Record tab. Visible across every
+         session tab, not just Record, since pairing status stays relevant
+         throughout. -->
+    <div class="railCard">
+      <h3><svg class="icon"><use href="#i-phone"/></svg> Phone camera sync</h3>
+      <div class="hint" id="phonePairPanel">
+        <span id="phoneStatusText">Loading phone-pairing link…</span>
+        <div id="phoneUrlBox" style="display:none;margin-top:8px">
+          <img id="phoneQrImg" class="hidden" alt="Scan with your phone to pair" style="width:100%;max-width:160px;border-radius:8px">
+          <div class="mt" style="min-width:0">
+            <code id="phoneUrlText" style="user-select:all;word-break:break-all;font-size:11px"></code>
+            <div class="mt"><button class="btn small" id="phoneCopyBtn" type="button">Copy link</button></div>
+          </div>
+          <div style="opacity:.8;margin-top:8px;font-size:11px">Scan the code, or open the link on your phone (same
+            WiFi). Works on iPhone and Android — your phone's browser will warn "not secure" the
+            first time (that's the local self-signed cert, not a real problem); tap Advanced/Details
+            → Proceed to continue.</div>
+        </div>
       </div>
     </div>
   </aside>
@@ -1766,8 +1806,9 @@ function resetForNewSong(){
   keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
   $('undoDeleteBtn').style.display='none';
   $('takePlayer').innerHTML=''; $('takePlayer').style.display='none';
-  $('playtake').disabled=true; $('playtake').style.display='';
   $('takeHistory').style.display='none';
+  $('noTakesHint').style.display='';
+  stopSavedTakePreview(); $('takePreviewBar').classList.add('hidden'); takePreviewTakeId=null;
   $('result').innerHTML=''; $('rendererr').textContent='';
 }
 function playNext(){
@@ -1862,7 +1903,11 @@ function enterSessionMode(title, videoId){
   switchSessionTab('stageCard');
 }
 function switchSessionTab(stepId){
-  ['stageCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.toggle('active', id===stepId));
+  // leaving a tab stops whatever it was playing — otherwise switching away
+  // from, say, a playing take in Takes leaves audio running with no player
+  // in view to stop it from.
+  if(!recording) stopAllPlayback();
+  ['stageCard','takesCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.toggle('active', id===stepId));
   document.querySelectorAll('.sessionTab').forEach(b=>b.classList.toggle('active', b.dataset.step===stepId));
 }
 document.querySelectorAll('.sessionTab').forEach(b=>b.addEventListener('click',()=>switchSessionTab(b.dataset.step)));
@@ -1872,7 +1917,7 @@ $('npChangeBtn').addEventListener('click',()=>{
   $('nowPlayingBar').classList.add('hidden');
   $('sessionNav').classList.add('hidden');
   $('sessionRail').classList.add('hidden');
-  ['stageCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.remove('active'));
+  ['stageCard','takesCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.remove('active'));
   $('step1Card').scrollIntoView({behavior:'smooth', block:'start'});
 });
 
@@ -2295,7 +2340,8 @@ function showRecUI(on){
   $('lamp').classList.toggle('on',on);
   $('rec').disabled=on; $('stop').disabled=!on; $('play').disabled=on;
   $('liveScoreBar').classList.toggle('hidden',!(on && tunerOn));
-  if(on){ $('stopChoice').style.display='none'; $('scoreCard').classList.add('hidden'); updateLiveScoreBar(null); }
+  if(on){ $('stopChoice').style.display='none'; $('scoreCard').classList.add('hidden'); updateLiveScoreBar(null);
+    try{ $('stopChoicePreview').pause(); }catch(_){} }
 }
 function offerContinueOrKeep(){
   const at=window._recEndMusicPos||0;
@@ -2321,7 +2367,7 @@ $('keepBtn').addEventListener('click',()=>{ $('stopChoice').style.display='none'
 $('redoBtn').addEventListener('click',()=>{
   keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
   pendingContinueAt=null; $('stopChoice').style.display='none';
-  $('playtake').disabled=true; $('takePlayer').style.display='none'; $('playtake').style.display='';
+  $('takePlayer').style.display='none';
   $('renderstatus').textContent='Cleared. Record again from the start.';
   startRec();
 });
@@ -2331,7 +2377,7 @@ $('redoBtn').addEventListener('click',()=>{
 // instead of the old model where only the single most recent take existed.
 // `activeTakeId` (if set) is rendered by reference (take_id) instead of
 // re-uploading inline audio — see doRender().
-let takes=[], activeTakeId=null, takePreviewAudio=null;
+let takes=[], activeTakeId=null, takePreviewAudio=null, isPreviewingSavedTake=false;
 
 async function loadTakes(){
   if(!SID) return;
@@ -2354,7 +2400,7 @@ async function saveCurrentTakeToHistory(kind){
   takes.push(d.take);
   activeTakeId=d.take.id;
   renderTakeStrip();
-  toast('Take saved.','ok',2000);
+  toast('Take saved — see it in the Takes tab.','ok',2500);
 }
 
 function selectTake(tid){ activeTakeId=tid; renderTakeStrip(); }
@@ -2384,30 +2430,96 @@ $('undoDeleteBtn').addEventListener('click', async()=>{
   toast('Take restored.','ok',2000);
 });
 
-function playTakePreview(tid){
-  if(takePreviewAudio){ takePreviewAudio.pause(); takePreviewAudio=null; }
-  const a=new Audio('/take_audio?id='+SID+'&take='+tid+'&t='+Date.now());
-  takePreviewAudio=a; a.play().catch(()=>{});
+// ---- shared saved-take preview bar: ONE real <audio> element with real
+// play/pause/stop/rewind(=replay) controls, shared by every take card —
+// selecting a different card just repoints this element's src instead of
+// spawning a new overlapping audio source per click. ----------------------
+let takePreviewTakeId=null;
+function ensureTakePreviewAudio(){
+  if(takePreviewAudio) return takePreviewAudio;
+  takePreviewAudio=new Audio();
+  takePreviewAudio.addEventListener('timeupdate', paintTakePreviewBar);
+  takePreviewAudio.addEventListener('loadedmetadata', paintTakePreviewBar);
+  takePreviewAudio.addEventListener('ended', ()=>setTakePreviewPlaying(false));
+  return takePreviewAudio;
 }
+function setTakePreviewPlaying(playing){
+  $('tpbPlayPause').innerHTML='<svg class="icon"><use href="#i-'+(playing?'pause':'play')+'"/></svg>';
+}
+function stopSavedTakePreview(){
+  if(takePreviewAudio) takePreviewAudio.pause();
+  setTakePreviewPlaying(false);
+}
+function paintTakePreviewBar(){
+  if(!takePreviewAudio) return;
+  const dur=takePreviewAudio.duration||0, pos=takePreviewAudio.currentTime||0;
+  $('tpbSeek').max=Math.max(1,Math.floor(dur*10));
+  $('tpbSeek').value=Math.floor(pos*10);
+  $('tpbTime').textContent=fmt(pos)+' / '+fmt(dur);
+}
+function loadTakeIntoPreviewBar(tid){
+  takePreviewTakeId=tid;
+  stopAllPlayback();
+  const a=ensureTakePreviewAudio();
+  a.src='/take_audio?id='+SID+'&take='+tid+'&t='+Date.now();
+  a.currentTime=0;
+  $('takePreviewBar').classList.remove('hidden');
+  setTakePreviewPlaying(false);
+  paintTakePreviewBar();
+}
+$('tpbPlayPause').addEventListener('click',()=>{
+  const a=ensureTakePreviewAudio();
+  if(a.paused){ stopAllPlayback(); a.play().catch(()=>{}); setTakePreviewPlaying(true); }
+  else{ a.pause(); setTakePreviewPlaying(false); }
+});
+$('tpbStop').addEventListener('click',()=>{
+  const a=ensureTakePreviewAudio(); a.pause(); a.currentTime=0; setTakePreviewPlaying(false); paintTakePreviewBar();
+});
+// rewind doubles as "replay": jumps to the start, and if it was already
+// playing, keeps playing from there instead of just parking at 0.
+$('tpbRewind').addEventListener('click',()=>{
+  const a=ensureTakePreviewAudio(); const wasPlaying=!a.paused;
+  a.currentTime=0; paintTakePreviewBar();
+  if(wasPlaying) a.play().catch(()=>{});
+});
+$('tpbSeek').addEventListener('input',()=>{
+  const a=ensureTakePreviewAudio(); if(!a.duration) return;
+  a.currentTime=(+$('tpbSeek').value)/10;
+});
+$('tpbUseTake').addEventListener('click', async()=>{
+  if(!takePreviewTakeId) return;
+  const t=takes.find(x=>x.id===takePreviewTakeId); if(!t) return;
+  stopAllPlayback();
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
+    const r=await fetch('/take_audio?id='+SID+'&take='+takePreviewTakeId+'&t='+Date.now());
+    const buf=await ctx.decodeAudioData(await r.arrayBuffer());
+    buildTakeAudio(buf, (TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' — vocals locked to the music');
+    toast('Loaded above — mixer and effects preview available.','ok',2500);
+  }catch(e){ toast('Could not load that take.','error'); }
+});
 
 const TAKE_KIND_LABEL={lead:'take',comp:'comp',harmony:'harmony'};
 function renderTakeStrip(){
   $('takeHistory').style.display = takes.length? 'block':'none';
+  $('noTakesHint').style.display = (takes.length||window._lastVocalBuffer) ? 'none':'';
   const box=$('takeStrip'); box.innerHTML='';
   takes.forEach((t,i)=>{
     const card=document.createElement('div');
-    card.className='takecard'+(t.id===activeTakeId?' active':'');
+    card.className='takecard'+(t.id===activeTakeId?' active':'')+(t.id===takePreviewTakeId?' previewing':'');
     const scoreBadge=t.pitch_score? '<span class="takeScoreBadge" title="Pitch steadiness — % of this take spent landing cleanly on a note, not a check against the song\'s actual melody">'+t.pitch_score.accuracy+'%</span>' : '';
     card.innerHTML=
       '<div class="takecard-top">'+
         '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+scoreBadge+'</span>'+
         '<span class="takex" title="Delete this take">✕</span>'+
       '</div>'+
-      '<div class="takedur">'+fmt(t.duration||0)+'</div>'+
-      '<button class="takeplay">▶ Play</button>';
-    card.addEventListener('click',e=>{ if(e.target.classList.contains('takex')||e.target.classList.contains('takeplay')) return; selectTake(t.id); });
+      '<div class="takedur">'+fmt(t.duration||0)+'</div>';
+    card.addEventListener('click',e=>{
+      if(e.target.classList.contains('takex')) return;
+      loadTakeIntoPreviewBar(t.id);
+      selectTake(t.id);
+    });
     card.querySelector('.takex').addEventListener('click',e=>{ e.stopPropagation(); deleteTakeFromHistory(t.id); });
-    card.querySelector('.takeplay').addEventListener('click',e=>{ e.stopPropagation(); playTakePreview(t.id); });
     box.appendChild(card);
   });
   // comp controls: need at least 2 takes to join
@@ -2446,6 +2558,7 @@ function refreshDuetUI(){
 
 $('duetRecBtn').addEventListener('click', async()=>{
   const leadId=$('duetLead').value; if(!leadId) return;
+  stopAllPlayback();
   if(!mediaStream){ await primeMic(); if(!mediaStream) return; }
   if(audioCtx.state==='suspended') await audioCtx.resume();
   harmonyLeadAudio=new Audio('/take_audio?id='+SID+'&take='+leadId+'&t='+Date.now());
@@ -2517,15 +2630,14 @@ function keyLabel(k){ return k===0?'original':(k>0?'+'+k:''+k)+' semitone'+(Math
 // If there's no video (fallback), we drive the audio directly.
 $('play').addEventListener('click',toggleMusic);
 async function toggleMusic(){
-  if(previewing) stopPreview();
   if(ytReady){
     if(videoPlaying()){ ytPlayer.pauseVideo(); }
-    else { ytPlayer.playVideo(); }   // onVideoState handles audio + button
+    else { stopAllPlayback(); ytPlayer.playVideo(); }   // onVideoState handles audio + button
     return;
   }
   // no-video fallback: audio is master
   if(!backingAudio) return;
-  if(backingAudio.paused){ await backingAudio.play().catch(()=>{});
+  if(backingAudio.paused){ stopAllPlayback(); await backingAudio.play().catch(()=>{});
     $('play').textContent='❚❚ Pause music'; $('play').classList.add('amber'); }
   else { backingAudio.pause();
     $('play').textContent='▶ Play music'; $('play').classList.remove('amber'); }
@@ -2535,7 +2647,7 @@ function resetMusicBtn(){ $('play').textContent='▶ Play music'; $('play').clas
 // ---- stop music: halt + rewind to the start (video master, audio follows) --
 $('stopmusic').addEventListener('click',stopMusic);
 function stopMusic(){
-  if(previewing) stopPreview();
+  stopAllPlayback();
   if(ytReady){ try{ ytPlayer.pauseVideo(); ytPlayer.seekTo(0,true); }catch(_){} }
   if(backingAudio){ try{ backingAudio.pause(); backingAudio.currentTime=0; }catch(_){} }
   resetMusicBtn();
@@ -2788,7 +2900,7 @@ function pickMime(){
 let recStartCtxTime=0, musicPosAtRecStart=0;
 
 async function startRec(){
-  if(previewing) stopPreview();
+  stopAllPlayback();
   if(!mediaStream){ await primeMic(); if(!mediaStream) return; }
   if(audioCtx.state==='suspended') await audioCtx.resume();
 
@@ -2902,8 +3014,33 @@ async function finishRec(){
 
   applyAlignmentAndFinish(ctx);
   offerContinueOrKeep();
-  if($('takePlayer').style.display==='block'){ buildTakeAudio(); }
-  else { $('playtake').style.display=''; }
+  populateStopChoicePreview();
+  // the rich player now lives in the Takes tab (not revealed inline in
+  // Record anymore) and always reflects the latest take once one exists.
+  buildTakeAudio();
+}
+
+// quick native <audio> preview in the stop-choice box — lets you hear the
+// take you just sang before deciding to continue/keep/redo, without the
+// full rich player (mixer/test-effects/re-record), which lives in Takes.
+let stopChoicePreviewWired=false;
+function populateStopChoicePreview(){
+  const a=$('stopChoicePreview');
+  if(window._stopChoicePreviewUrl) URL.revokeObjectURL(window._stopChoicePreviewUrl);
+  const url=URL.createObjectURL(window._lastVocalWav);
+  window._stopChoicePreviewUrl=url;
+  a.src=url;
+  // wired once: playing this (native, browser-controlled) preview should
+  // still stop every OTHER playback source — just not itself, which
+  // stopAllPlayback() would otherwise do since it's mid-'play' already.
+  if(!stopChoicePreviewWired){
+    stopChoicePreviewWired=true;
+    a.addEventListener('play',()=>{
+      stopPreview(); stopSavedTakePreview();
+      if(backingAudio && !recording){ try{ backingAudio.pause(); }catch(_){} resetMusicBtn(); }
+      if(harmonyLeadAudio){ try{ harmonyLeadAudio.pause(); }catch(_){} }
+    });
+  }
 }
 
 // Align the raw take using the current vocal-timing calibration, then commit it
@@ -2930,7 +3067,6 @@ function applyAlignmentAndFinish(ctx){
   keptBuffer=finalBuffer;
   window._lastVocalBuffer=finalBuffer;
   window._lastVocalWav=encodeWav(finalBuffer);
-  $('playtake').disabled=false;
 }
 
 // called live when the vocal-timing slider moves
@@ -3150,7 +3286,6 @@ function buildPlayer(container, audio, opts={}){
 // are sample-accurate, so vocal and music can NEVER drift — this eliminates the
 // "track way ahead of vocals" lag that element-based playback caused.
 let previewing=false;   // takeGraph etc. declared early up top
-$('playtake').addEventListener('click',revealTakePlayer);
 
 let backingBuffer=null, backingBufKey=null, tp=null; // tp = live take-playback state
 
@@ -3172,23 +3307,22 @@ function makeImpulse(seconds, decay){
   return buf;
 }
 
-function revealTakePlayer(){
-  if(!window._lastVocalBuffer || recording) return;
-  $('playtake').style.display='none';
-  $('takePlayer').style.display='block';
-  buildTakeAudio();
-}
-
-// Build the take player UI. Playback position is tracked by us (offset + ctx time).
-function buildTakeAudio(){
+// Build the rich take player UI — lives in the Takes tab now, always shows
+// the latest take once one exists (no more reveal-on-click from Record).
+// Optionally pass an explicit buffer+label to preview an older saved take
+// instead of window._lastVocalBuffer (see selectSavedTake in the Takes tab).
+function buildTakeAudio(overrideBuf, overrideLabel){
+  if(!overrideBuf && !window._lastVocalBuffer) return;
   if(testMode){ testMode=false; const p=$('testPanel'); if(p) p.remove(); }
   stopTakePlayback();
-  const vocalBuf=window._lastVocalBuffer;
+  $('takePlayer').style.display='block';
+  const vocalBuf=overrideBuf||window._lastVocalBuffer;
+  isPreviewingSavedTake=!!overrideBuf;
   const total=Math.max(vocalBuf?vocalBuf.duration:0, dur||0);
-  tp={ playing:false, startCtx:0, startPos:0, pos:0, dur:total, raf:null, nodes:null };
+  tp={ playing:false, startCtx:0, startPos:0, pos:0, dur:total, raf:null, nodes:null, buffer:vocalBuf };
 
   takePlayerUI=buildBufferPlayer($('takePlayer'), {
-    label:'Your take — vocals locked to the music',
+    label:overrideLabel||'Your take — vocals locked to the music',
     buffer:vocalBuf,
     getPos:()=>takePos(), getDur:()=>tp.dur,
     onPlay:(t)=>startTakePlayback(t),
@@ -3222,12 +3356,16 @@ function buildTakeAudio(){
   $('tpMusic').addEventListener('input',()=>{ $('mgain').value=$('tpMusic').value;
     $('tpMusicV').textContent=fmtDb($('tpMusic').value); $('mgainv').textContent=fmtDb($('mgain').value); applyLiveFx(); });
   $('testModeBtn').addEventListener('click',toggleTestMode);
+  // re-record / sing-along only make sense for the take you actually just
+  // sang (they punch into the live recording session's own alignment
+  // state) — hide them while previewing an older saved take instead.
+  rec.style.display=isPreviewingSavedTake?'none':'flex';
   // record from the current scrub position (keeps 0→pos of the existing take)
   $('recFromHere').addEventListener('click',()=>{
     const at=takePos()||0;
     stopTakePlayback();
     pendingContinueAt=at;                 // startRec uses this as the punch point
-    $('takePlayer').style.display='none'; $('playtake').style.display='';
+    switchSessionTab('stageCard');
     startRec();
   });
   // sing-along + auto-continue at the gap
@@ -3256,7 +3394,7 @@ function startSingAlong(){
       const handoff=vocalEnd;
       stopTakePlayback();
       pendingContinueAt=handoff;             // stitch new recording onto the take
-      $('takePlayer').style.display='none'; $('playtake').style.display='';
+      switchSessionTab('stageCard');
       $('renderstatus').textContent='Recording your continuation from '+fmt(handoff)+'…';
       startRec();
       return;
@@ -3374,19 +3512,22 @@ function buildTakeGraphNodes(){
 }
 
 async function startTakePlayback(fromT, loopIt){
-  if(!window._lastVocalBuffer) return;
+  const vocalBuf=(tp&&tp.buffer)||window._lastVocalBuffer;
+  if(!vocalBuf) return;
   if(audioCtx.state==='suspended') await audioCtx.resume();
   if(!backingBuffer){ await decodeBackingBuffer(musicKey); }
   stopSources();
-  // mSrc below is the only backing-track source take playback should ever
-  // have running — if "Play music" was left going before switching to
-  // "Play take", silence it here so it can't double up with mSrc.
+  // this graph is the only vocal/music source that should ever be running —
+  // silence every OTHER playback path so nothing can double up with it.
   try{ backingAudio&&backingAudio.pause(); }catch(_){}
+  stopSavedTakePreview();
+  try{ $('stopChoicePreview').pause(); }catch(_){}
+  if(harmonyLeadAudio){ try{ harmonyLeadAudio.pause(); }catch(_){} }
   const g=buildTakeGraphNodes();
   const looping = !!loopIt && testMode && loopB>loopA;
   const at=looping ? loopA : ((fromT!=null?fromT:tp.pos)||0);
 
-  const vSrc=audioCtx.createBufferSource(); vSrc.buffer=window._lastVocalBuffer;
+  const vSrc=audioCtx.createBufferSource(); vSrc.buffer=vocalBuf;
   vSrc.connect(g.hp);
   let mSrc=null;
   if(backingBuffer){ mSrc=audioCtx.createBufferSource(); mSrc.buffer=backingBuffer;
@@ -3450,6 +3591,30 @@ function tickTake(){ if(!tp||!tp.playing) return; takePlayerUI&&takePlayerUI.pai
   if(testMode){ const lp=$('loopplay'); if(lp && tp.dur){ lp.style.left=(takePos()/tp.dur*100)+'%'; } }
   tp.raf=requestAnimationFrame(tickTake); }
 function stopPreview(){ stopTakePlayback(); tp&&(tp.pos=0); }
+
+// ---- unified playback coordinator ------------------------------------
+// Starting any ONE of these — practice music, the rich take player, the
+// shared saved-take preview bar, or the stop-choice quick preview — stops
+// all the others first, so two audio sources are never audible at once.
+// Duet's own lead+harmony pair (played together on purpose while recording
+// a harmony) is a self-contained combo that's stopped BY this, but doesn't
+// stop itself.
+function stopAllPlayback(){
+  stopPreview();
+  stopSavedTakePreview();
+  try{ $('stopChoicePreview').pause(); }catch(_){}
+  if(!recording){
+    // when a video is loaded, IT drives audible playback (backingAudio is
+    // kept in sync but isn't necessarily what you're hearing) — pausing
+    // only backingAudio while leaving the YouTube player running was why
+    // switching tabs didn't actually stop the music (caught by watching
+    // the practice-mode timer keep advancing after navigating away).
+    if(ytReady && videoPlaying()){ try{ ytPlayer.pauseVideo(); }catch(_){} }
+    if(backingAudio){ try{ backingAudio.pause(); }catch(_){} }
+    resetMusicBtn();
+  }
+  if(harmonyLeadAudio){ try{ harmonyLeadAudio.pause(); }catch(_){} }
+}
 
 function applyMusicMonitorVol_graph(){
   // music level during playback = the export Music (mgain) balance in dB,

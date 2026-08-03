@@ -110,7 +110,15 @@ body{font-family:var(--body)}
    platforms and carry no relationship to the rest of the visual system. */
 .icon{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:2;
   stroke-linecap:round;stroke-linejoin:round;vertical-align:-0.15em;flex:none}
-.icon.filled{fill:currentColor;stroke:none}
+/* .filled marks specific shapes WITHIN a <symbol> (dice pips, a play
+   triangle) that need a solid fill instead of the default stroke-only
+   look — it has to be a plain class, not `.icon.filled` scoped to the
+   outer <svg>, because <use> clones the symbol's children into a shadow
+   tree where the class lives on the shape itself, not on an ancestor
+   carrying .icon. Scoping it to the ancestor left every "filled" shape
+   silently rendering as a hollow stroke instead (caught by literally
+   rendering the dice icon and seeing rings where solid pips should be). */
+.filled{fill:currentColor;stroke:none}
 
 /* headings/hero text/tab labels take the display face; body copy, inputs,
    and long-form text stay on --body for readability at small sizes */
