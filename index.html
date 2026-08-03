@@ -1437,6 +1437,15 @@ $('npChangeBtn').addEventListener('click',()=>{
 });
 
 function onReady(j){
+  // Stop the PREVIOUS song's backing track before loading a new one.
+  // Reassigning `backingAudio` below doesn't stop the old <audio> element —
+  // it keeps playing in the background with no on-screen reference to it,
+  // which is exactly the "old song keeps playing, new song looks stuck" bug.
+  if(backingAudio){
+    try{ backingAudio.pause(); backingAudio.src=''; backingAudio.load(); }catch(_){}
+  }
+  if(ytPlayer){ try{ ytPlayer.destroy(); }catch(_){} ytPlayer=null; ytReady=false; }
+  if(syncTimer){ clearInterval(syncTimer); syncTimer=null; }
   $('load').disabled=false; $('searchBtn').disabled=false;
   document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
   $('loadstatus').textContent='Loaded: '+(j.title||'track');
