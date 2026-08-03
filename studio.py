@@ -1137,6 +1137,45 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"cmd": j.get("phone_cmd"), "seq": j.get("phone_cmd_seq", 0)})
             return
 
+        # ---- WebRTC signaling for the live phone-camera self-view -----------
+        # The server only relays these small SDP/ICE messages (poll-based,
+        # same pattern as /phone/poll above) — the actual video never touches
+        # it, it flows peer-to-peer once the connection is up. The phone
+        # (sender, has the camera) creates the offer; the desktop (receiver)
+        # answers. webrtc_gen lets either side detect a fresh phone
+        # connection and rebuild its peer connection instead of reusing one
+        # tied to a camera stream that no longer exists.
+        if p.path == "/webrtc/offer":
+            jid = (parse_qs(p.query).get("id") or [""])[0]
+            j = get_job(jid)
+            if not j:
+                self._json(404, {"error": "unknown session"})
+                return
+            self._json(200, {"gen": j.get("webrtc_gen") or 0, "offer": j.get("webrtc_offer")})
+            return
+
+        if p.path == "/webrtc/answer":
+            jid = (parse_qs(p.query).get("id") or [""])[0]
+            j = get_job(jid)
+            if not j:
+                self._json(404, {"error": "unknown session"})
+                return
+            self._json(200, {"gen": j.get("webrtc_gen") or 0, "answer": j.get("webrtc_answer")})
+            return
+
+        if p.path == "/webrtc/ice":
+            q = parse_qs(p.query)
+            jid = (q.get("id") or [""])[0]
+            src = (q.get("from") or [""])[0]
+            since = int((q.get("since") or ["0"])[0] or 0)
+            j = get_job(jid)
+            if not j or src not in ("phone", "desktop"):
+                self._json(404, {"error": "unknown session"})
+                return
+            candidates = j.get("webrtc_ice_" + src) or []
+            self._json(200, {"gen": j.get("webrtc_gen") or 0, "candidates": candidates[since:], "total": len(candidates)})
+            return
+
         if p.path == "/takes":
             jid = (parse_qs(p.query).get("id") or [""])[0]
             self._json(200, {"takes": list_takes(jid)})
@@ -1406,12 +1445,20 @@ class Handler(BaseHTTPRequestHandler):
         if p.path == "/phone/register":
             body = self._read_body()
             jid = body.get("id")
-            if not job_or_disk(jid):
+            j = job_or_disk(jid)
+            if not j:
                 self._json(404, {"error": "unknown session"})
                 return
+            # Bump webrtc_gen so the desktop's live self-view knows this is a
+            # fresh phone connection (new camera stream, or a reload/re-scan)
+            # and tears down + rebuilds its peer connection instead of trying
+            # to reuse one tied to a camera that no longer exists.
+            gen = (j.get("webrtc_gen") or 0) + 1
             set_job(jid, phone_paired=True, phone_status="paired",
-                    phone_cmd=None, phone_cmd_seq=0, phone_last_seen=time.time())
-            self._json(200, {"ok": True})
+                    phone_cmd=None, phone_cmd_seq=0, phone_last_seen=time.time(),
+                    webrtc_gen=gen, webrtc_offer=None, webrtc_answer=None,
+                    webrtc_ice_phone=[], webrtc_ice_desktop=[])
+            self._json(200, {"ok": True, "webrtc_gen": gen})
             return
 
         if p.path == "/phone/cmd":
@@ -1455,6 +1502,42 @@ class Handler(BaseHTTPRequestHandler):
                 return
             set_job(jid, phone_status="uploaded",
                     phone_video_file=os.path.basename(video_path))
+            self._json(200, {"ok": True})
+            return
+
+        if p.path == "/webrtc/offer":
+            body = self._read_body()
+            jid = body.get("id")
+            j = get_job(jid)
+            if not j:
+                self._json(404, {"error": "unknown session"})
+                return
+            set_job(jid, webrtc_offer=body.get("sdp"))
+            self._json(200, {"ok": True})
+            return
+
+        if p.path == "/webrtc/answer":
+            body = self._read_body()
+            jid = body.get("id")
+            j = get_job(jid)
+            if not j:
+                self._json(404, {"error": "unknown session"})
+                return
+            set_job(jid, webrtc_answer=body.get("sdp"))
+            self._json(200, {"ok": True})
+            return
+
+        if p.path == "/webrtc/ice":
+            body = self._read_body()
+            jid = body.get("id")
+            src = body.get("from")
+            j = get_job(jid)
+            if not j or src not in ("phone", "desktop"):
+                self._json(404, {"error": "unknown session"})
+                return
+            key = "webrtc_ice_" + src
+            candidates = (j.get(key) or []) + [body.get("candidate")]
+            set_job(jid, **{key: candidates})
             self._json(200, {"ok": True})
             return
 
@@ -1745,17 +1828,86 @@ async function startCamera(){
   }
 }
 
+// Swap the camera in place (new getUserMedia + replaceTrack on both the
+// recorder's stream and the live WebRTC sender) rather than tearing down
+// and re-registering — a full re-register would bump webrtc_gen and force
+// the desktop to rebuild its peer connection, causing a visible glitch in
+// the live self-view every time you just want to flip front/back camera.
 async function flipCamera(){
   facing = facing === 'environment' ? 'user' : 'environment';
-  if(stream) stream.getTracks().forEach(t=>t.stop());
-  await startCamera();
+  let newStream;
+  try{
+    newStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width: {ideal:1280}, height: {ideal:720} }, audio: true });
+  }catch(e){ showErr((e && e.message) || String(e)); return; }
+  const oldStream = stream;
+  stream = newStream;
+  video.srcObject = stream;
+  if(pc){
+    const sender = pc.getSenders().find(s=>s.track && s.track.kind==='video');
+    const newVideoTrack = stream.getVideoTracks()[0];
+    if(sender && newVideoTrack){ try{ await sender.replaceTrack(newVideoTrack); }catch(_){} }
+  }
+  if(oldStream) oldStream.getTracks().forEach(t=>t.stop());
 }
 
 async function register(){
   try{
-    await fetch('/phone/register', {method:'POST',
+    const r = await fetch('/phone/register', {method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({id})});
+    if(r.ok){
+      const j = await r.json();
+      startWebRTC(j.webrtc_gen || 1);
+    }
+  }catch(_){}
+}
+
+// ---- WebRTC live self-view: phone is the sender (it has the camera), the
+// desktop is the receiver. The server only relays the small SDP/ICE
+// signaling messages below (poll-based, same pattern as the start/stop
+// commands) — actual video goes peer-to-peer once connected, never through
+// the server. No STUN/TURN configured: both sides are on the same LAN, so
+// direct host candidates are expected to work.
+let pc = null, answerApplied = false, iceRecvCount = 0;
+async function startWebRTC(gen){
+  if(pc){ try{ pc.close(); }catch(_){} pc = null; }
+  answerApplied = false; iceRecvCount = 0;
+  pc = new RTCPeerConnection({iceServers: []});
+  stream.getVideoTracks().forEach(t=>pc.addTrack(t, stream));
+  pc.onicecandidate = (e)=>{ if(e.candidate) postIce(e.candidate.toJSON()); };
+  try{
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await fetch('/webrtc/offer', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id, sdp:{type:pc.localDescription.type, sdp:pc.localDescription.sdp}})});
+  }catch(_){}
+}
+async function postIce(candidate){
+  try{
+    await fetch('/webrtc/ice', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id, from:'phone', candidate})});
+  }catch(_){}
+}
+async function pollWebRTC(){
+  if(!pc) return;
+  try{
+    if(!answerApplied){
+      const r = await fetch('/webrtc/answer?id='+encodeURIComponent(id));
+      if(r.ok){
+        const j = await r.json();
+        if(j.answer && pc.signalingState==='have-local-offer'){
+          await pc.setRemoteDescription(j.answer);
+          answerApplied = true;
+        }
+      }
+    }
+    const r2 = await fetch('/webrtc/ice?id='+encodeURIComponent(id)+'&from=desktop&since='+iceRecvCount);
+    if(r2.ok){
+      const j2 = await r2.json();
+      for(const c of (j2.candidates||[])){ if(c){ try{ await pc.addIceCandidate(c); }catch(_){} } }
+      iceRecvCount = j2.total;
+    }
   }catch(_){}
 }
 
@@ -1829,6 +1981,7 @@ async function pollLoop(){
         }
       }
     }catch(_){}
+    await pollWebRTC();
     await new Promise(r=>setTimeout(r, 300));
   }
 }
