@@ -52,7 +52,13 @@
 
 *{box-sizing:border-box}
 
-.hidden{display:none}
+/* !important is deliberate: this is a shared utility class loaded before
+   every page's own <style> block, so any same-specificity page rule that
+   also sets display on the same element (e.g. `.pickerOverlay{display:flex}`)
+   would otherwise win the cascade tie by source order and stay visible even
+   with .hidden applied — which is exactly the bug that made the song-picker
+   overlay show permanently on page load instead of only when opened. */
+.hidden{display:none !important}
 
 /* ---- buttons ---------------------------------------------------------- */
 .btn{padding:12px 20px;border:1px solid var(--edge);border-radius:14px;cursor:pointer;

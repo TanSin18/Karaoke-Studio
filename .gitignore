@@ -1,6 +1,7 @@
 # Session data — downloaded audio, recordings, renders. Never commit (large, per-user).
 sessions/
 downloads/
+profiles/
 
 # Python
 __pycache__/

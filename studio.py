@@ -1788,7 +1788,7 @@ let currentEntryId=null, ytPlayer=null, ytReady=false, backingAudio=null, syncTi
 
 $('startBtn').addEventListener('click',async()=>{
   const r=await fetch('/room/start',{method:'POST'}); const j=await r.json();
-  $('start').style.display='none'; $('live').style.display='block';
+  $('start').classList.add('hidden'); $('live').classList.remove('hidden');
   $('roomCode').innerHTML=[...j.code].map(c=>`<span>${esc(c)}</span>`).join('');
   $('joinUrl').textContent=j.join_url||'(no LAN IP found — check WiFi)';
   $('hostUrl').textContent=j.host_url||'(no LAN IP found — check WiFi)';
