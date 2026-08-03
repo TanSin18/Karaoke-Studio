@@ -15,8 +15,23 @@
     text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:12px}
   .logo b{color:var(--amber);text-shadow:var(--glow-amber)}
 
-  .grid{display:grid;grid-template-columns:1.35fr .95fr;gap:16px}
-  @media(max-width:1100px){.grid{grid-template-columns:1fr}}
+  /* One full-width step at a time (tab-switched) once a song is loaded,
+     rather than a 2-column layout that made you scroll past everything. */
+  .grid{display:block}
+
+  .npRow{display:flex;align-items:center;gap:14px}
+  .npRow img{width:80px;height:45px;object-fit:cover;border-radius:8px;flex:none;background:#0a0b0e}
+  .npInfo{flex:1;min-width:0}
+  .npTitle{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .npSub{font-family:var(--mono);font-size:11px;color:var(--ok);letter-spacing:.06em;margin-top:2px}
+
+  .sessionNav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .sessionTab{flex:1;min-width:120px;padding:12px 14px;border-radius:14px;border:1px solid var(--edge);
+    background:var(--metal);color:var(--muted);font-weight:650;font-size:13px;cursor:pointer;
+    text-align:center;transition:filter .12s,box-shadow .12s,transform .08s,color .12s}
+  .sessionTab:hover{filter:brightness(1.15);transform:translateY(-1px)}
+  .sessionTab.active{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#fff;
+    border-color:var(--pink2);box-shadow:var(--glow-pink)}
 
   .card h2{margin:0 0 12px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;
     text-transform:uppercase;color:var(--muted);font-weight:600;
@@ -242,8 +257,8 @@
     text-transform:uppercase;margin-bottom:8px}
   .pwave{width:100%;height:64px;display:block;border-radius:6px;background:var(--track);
     border:1px solid var(--edge);margin-bottom:10px;cursor:pointer}
-  .step{opacity:.4;pointer-events:none;transition:opacity .3s}
-  .step.active{opacity:1;pointer-events:auto}
+  .step{display:none}
+  .step.active{display:block}
   .bar{height:6px;background:#0a0b0e;border-radius:4px;overflow:hidden;border:1px solid #000;margin-top:8px}
   .bar .fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber2),var(--amber));transition:width .3s}
 
@@ -287,7 +302,7 @@
   </header>
 
   <!-- STEP 1: find a song -->
-  <div class="card" style="margin-bottom:16px">
+  <div class="card" id="step1Card" style="margin-bottom:16px">
     <h2>1 · Find a song</h2>
     <div class="tabs">
       <button class="tab on" id="tabSearch">Search YouTube</button>
@@ -337,6 +352,26 @@
       </div>
       <div class="queuelist" id="queueList"></div>
     </div>
+  </div>
+
+  <!-- shown once a song is loaded, replacing the search UI above so the
+       session gets the screen instead of competing with it for space -->
+  <div class="card hidden" id="nowPlayingBar" style="margin-bottom:16px">
+    <div class="npRow">
+      <img id="npThumb" alt="">
+      <div class="npInfo">
+        <div class="npTitle" id="npTitle"></div>
+        <div class="npSub">● loaded and ready</div>
+      </div>
+      <button class="btn ghost small" id="npChangeBtn">🔄 Change song</button>
+    </div>
+  </div>
+
+  <div class="sessionNav hidden" id="sessionNav">
+    <button class="sessionTab active" data-step="stageCard">🎤 Record</button>
+    <button class="sessionTab" data-step="fxCard">🎛 Effects</button>
+    <button class="sessionTab" data-step="duetCard">🎵 Duet</button>
+    <button class="sessionTab" data-step="mixCard">📤 Export</button>
   </div>
 
   <div class="grid">
@@ -1054,6 +1089,32 @@ async function checkLoad(){
 }
 
 let VIDEO_ID=null;
+// ---- session mode: once a song is loaded, stop competing for space with
+// the search UI — collapse it into a compact bar and give the recording
+// session (tab-switched, one full-width panel at a time) the whole screen. --
+function enterSessionMode(title, videoId){
+  $('step1Card').classList.add('hidden');
+  $('nowPlayingBar').classList.remove('hidden');
+  $('sessionNav').classList.remove('hidden');
+  $('npTitle').textContent=title||'Karaoke';
+  const thumb=$('npThumb');
+  if(videoId){ thumb.src='https://i.ytimg.com/vi/'+videoId+'/hqdefault.jpg'; thumb.style.display=''; }
+  else { thumb.style.display='none'; }
+  switchSessionTab('stageCard');
+}
+function switchSessionTab(stepId){
+  ['stageCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.toggle('active', id===stepId));
+  document.querySelectorAll('.sessionTab').forEach(b=>b.classList.toggle('active', b.dataset.step===stepId));
+}
+document.querySelectorAll('.sessionTab').forEach(b=>b.addEventListener('click',()=>switchSessionTab(b.dataset.step)));
+$('npChangeBtn').addEventListener('click',()=>{
+  $('step1Card').classList.remove('hidden');
+  $('nowPlayingBar').classList.add('hidden');
+  $('sessionNav').classList.add('hidden');
+  ['stageCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.remove('active'));
+  $('step1Card').scrollIntoView({behavior:'smooth', block:'start'});
+});
+
 function onReady(j){
   $('load').disabled=false; $('searchBtn').disabled=false;
   document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
@@ -1070,7 +1131,7 @@ function onReady(j){
   backingAudio.preload='auto';
   wireBacking(backingAudio);
   decodeBackingBuffer(0);   // decode to an AudioBuffer for sample-accurate take playback
-  ['stageCard','fxCard','duetCard','mixCard'].forEach(c=>$(c).classList.add('active'));
+  enterSessionMode(window._title, VIDEO_ID);
   // enable transport controls
   $('rec').disabled=false; $('render').disabled=false; $('play').disabled=false;
   $('stopmusic').disabled=false;
