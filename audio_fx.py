@@ -198,8 +198,10 @@ PRO_CHAIN_DEFAULTS = {
     "air_freq": 10500, "air_gain": 2.5,
     # 6.6 tube/tape saturation (parallel blend)
     "sat_drive_db": 8, "sat_mix": 12,
-    # AUX 1: plate reverb send
-    "verb_decay": 1.8, "verb_predelay": 35, "verb_lowcut": 200, "verb_highcut": 6000, "verb_send_db": -3,
+    # AUX 1: plate reverb send. -3dB (~71% linear) was too hot for a default —
+    # it washed vocals out rather than just adding polish; -9dB (~35%) is a
+    # much safer "gold standard" amount of ambience out of the box.
+    "verb_decay": 1.8, "verb_predelay": 35, "verb_lowcut": 200, "verb_highcut": 6000, "verb_send_db": -9,
     # AUX 2: slap/echo delay send (time is absolute ms — the app doesn't
     # detect song tempo, so this isn't beat-synced like "1/8 dotted")
     "delay_time_ms": 350, "delay_feedback": 13, "delay_lowcut": 300, "delay_highcut": 4000, "delay_send_db": -20,

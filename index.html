@@ -95,8 +95,13 @@
   /* fx rack — brushed metal + glass panel face */
   .rack{background:var(--glass),var(--rack);border:1px solid #000;border-radius:10px;padding:14px;
     box-shadow:inset 0 2px 10px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05)}
-  .fxrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed #23262e;flex-wrap:wrap}
+  .fxrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed #23262e;flex-wrap:wrap;min-width:0}
   .fxrow:last-child{border-bottom:none}
+  .fxrow input[type=range]{min-width:0;flex:1 1 120px}
+  .infoBtn{background:none;border:1px solid var(--edge);color:var(--dim);border-radius:50%;
+    width:18px;height:18px;line-height:1;font-size:11px;cursor:pointer;flex:none;padding:0}
+  .infoBtn:hover{color:var(--pink);border-color:var(--pink2)}
+  .fxdesc{font-size:11.5px;color:var(--muted);line-height:1.5;padding:0 0 10px 46px}
   .fxname{min-width:90px;width:118px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
   .fxname.on{color:var(--amber);text-shadow:var(--glow-amber)}
   .fxgroup{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--dim);
@@ -513,8 +518,8 @@
           <div class="fxrow">
             <div style="width:34px"></div>
             <div class="fxname">↳ strength</div>
-            <input type="range" id="pstr" min="0" max="100" value="80">
-            <div class="val" id="pstrv">80%</div>
+            <input type="range" id="pstr" min="0" max="100" value="30">
+            <div class="val" id="pstrv">30%</div>
           </div>
           <!-- pro vocal chain: clean EQ -> fast/smooth comp -> de-esser ->
                tone EQ -> saturation -> reverb/delay sends. All stages are
@@ -614,7 +619,11 @@ let backingAudio=null, recording=false, startT=0, dur=0, rafMeter=null;
 let takeAudio=null, takePlayerUI=null, takeGraph=null;
 
 // ---- FX toggle state ----
-const fxOn = {pitch:true, pro:true, denoise:false};
+// Pitch correction defaults OFF: it snaps to a chosen key/scale (C major
+// unless changed), and most songs aren't in C major — for someone who
+// doesn't know their song's key, leaving this on by default risks badly
+// mangling the pitch rather than helping it. Opt in once you know the key.
+const fxOn = {pitch:false, pro:true, denoise:false};
 
 // ---- pro vocal chain: Clean EQ -> Fast/Smooth Comp -> De-esser -> Tone EQ ->
 // Saturation -> Reverb/Delay sends. Defaults here MUST match
@@ -622,59 +631,99 @@ const fxOn = {pitch:true, pro:true, denoise:false};
 // the backend's copy via /pro_chain_defaults so the two can never drift for
 // long, but the initial render uses this local copy to avoid a fetch race
 // before the rack can be shown.
+// Each field can carry `essential:true` to show up in the always-visible rack
+// instead of the "More studio controls" drawer, and a plain-language `desc`
+// so a non-engineer understands what turning it up/down actually does.
 const PRO_CHAIN_FIELDS = [
-  {group:'Clean EQ', fields:[
-    {key:'hpf_freq', label:'HPF freq', min:20, max:200, step:1, unit:'Hz', dp:0, def:85},
-    {key:'dip_freq', label:'Low-mid dip freq', min:100, max:500, step:1, unit:'Hz', dp:0, def:250},
-    {key:'dip_gain', label:'Low-mid dip gain', min:-12, max:0, step:0.1, unit:'dB', dp:1, def:-2.5},
-    {key:'dip_q', label:'Low-mid dip Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.4},
-    {key:'nasal_freq', label:'Nasal cut freq', min:500, max:1500, step:1, unit:'Hz', dp:0, def:900},
-    {key:'nasal_gain', label:'Nasal cut gain', min:-12, max:0, step:0.1, unit:'dB', dp:1, def:-1.5},
-    {key:'nasal_q', label:'Nasal cut Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:2.0},
+  {group:'Clean EQ', desc:'Corrective EQ that runs first — cleans up rumble and muddiness before anything else touches your voice. You usually don’t need to touch this.', fields:[
+    {key:'hpf_freq', label:'HPF freq', min:20, max:200, step:1, unit:'Hz', dp:0, def:85,
+      desc:'Cuts everything below this frequency — removes low rumble (breath pops, mic stand noise) without touching your voice.'},
+    {key:'dip_freq', label:'Low-mid dip freq', min:100, max:500, step:1, unit:'Hz', dp:0, def:250,
+      desc:'Where the "mud-reducing" dip below is centered.'},
+    {key:'dip_gain', label:'Low-mid dip gain', min:-12, max:0, step:0.1, unit:'dB', dp:1, def:-2.5,
+      desc:'How much boxy/muddy low-mid tone to cut. More negative = clearer but thinner.'},
+    {key:'dip_q', label:'Low-mid dip Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.4,
+      desc:'How narrow the mud-cut is. Higher = a tighter, more surgical cut.'},
+    {key:'nasal_freq', label:'Nasal cut freq', min:500, max:1500, step:1, unit:'Hz', dp:0, def:900,
+      desc:'Where the "nasal-reducing" cut below is centered.'},
+    {key:'nasal_gain', label:'Nasal cut gain', min:-12, max:0, step:0.1, unit:'dB', dp:1, def:-1.5,
+      desc:'How much honky/nasal tone to cut. More negative = less nasal.'},
+    {key:'nasal_q', label:'Nasal cut Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:2.0,
+      desc:'How narrow the nasal-cut is. Higher = a tighter, more surgical cut.'},
   ]},
-  {group:'Fast compressor', fields:[
-    {key:'fast_ratio', label:'Ratio', min:1, max:20, step:0.1, unit:':1', dp:1, def:4},
-    {key:'fast_attack', label:'Attack', min:0.1, max:50, step:0.1, unit:'ms', dp:1, def:1},
-    {key:'fast_release', label:'Release', min:10, max:500, step:1, unit:'ms', dp:0, def:80},
-    {key:'fast_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-18},
+  {group:'Fast compressor', desc:'Catches sudden loud peaks (a shouted note, a mic bump) fast enough to stop them clipping. Works together with the smooth compressor below.', fields:[
+    {key:'fast_ratio', label:'Ratio', min:1, max:20, step:0.1, unit:':1', dp:1, def:4,
+      desc:'How hard peaks get squashed once they cross the threshold. Higher = more aggressive limiting.'},
+    {key:'fast_attack', label:'Attack', min:0.1, max:50, step:0.1, unit:'ms', dp:1, def:1,
+      desc:'How quickly it reacts to a peak. Lower = catches sharper transients, but can sound clampy if too fast.'},
+    {key:'fast_release', label:'Release', min:10, max:500, step:1, unit:'ms', dp:0, def:80,
+      desc:'How quickly it lets go after a peak passes. Faster = more natural, slower = smoother but can "breathe".'},
+    {key:'fast_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-18,
+      desc:'The volume level where compression kicks in. Lower = catches more of your voice, not just the loudest peaks.'},
   ]},
-  {group:'Smooth compressor', fields:[
-    {key:'smooth_ratio', label:'Ratio', min:1, max:20, step:0.1, unit:':1', dp:1, def:3},
-    {key:'smooth_attack', label:'Attack', min:1, max:200, step:1, unit:'ms', dp:0, def:25},
-    {key:'smooth_release', label:'Release', min:50, max:2000, step:10, unit:'ms', dp:0, def:500},
-    {key:'smooth_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20},
+  {group:'Smooth compressor', desc:'A slower, gentler compressor that evens out overall loudness across the whole take, so quiet and loud lines sit closer together.', fields:[
+    {key:'smooth_ratio', label:'Ratio', min:1, max:20, step:0.1, unit:':1', dp:1, def:3,
+      desc:'How much the overall level gets evened out. Higher = flatter, more consistent volume.'},
+    {key:'smooth_attack', label:'Attack', min:1, max:200, step:1, unit:'ms', dp:0, def:25,
+      desc:'How quickly it starts reacting. Slower keeps more natural dynamics.'},
+    {key:'smooth_release', label:'Release', min:50, max:2000, step:10, unit:'ms', dp:0, def:500,
+      desc:'How slowly it eases back off. Longer = smoother, more "glued" sound.'},
+    {key:'smooth_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20,
+      desc:'The volume level where evening-out starts.'},
   ]},
-  {group:'De-esser', fields:[
-    {key:'deess_freq', label:'Frequency', min:2000, max:10000, step:100, unit:'Hz', dp:0, def:6000},
-    {key:'deess_intensity', label:'Intensity', min:0, max:100, step:1, unit:'%', dp:0, def:40},
+  {group:'De-esser', desc:null, fields:[
+    {key:'deess_freq', label:'Frequency', min:2000, max:10000, step:100, unit:'Hz', dp:0, def:6000,
+      desc:'Which frequency range counts as a harsh "s"/"sh" sound to tame.'},
+    {key:'deess_intensity', label:'Intensity', min:0, max:100, step:1, unit:'%', dp:0, def:40, essential:true,
+      label2:'De-ess', desc:'Tames harsh "s"/"sh" sounds. Turn up if esses sound piercing; too high can make speech sound lispy.'},
   ]},
-  {group:'Tone EQ', fields:[
-    {key:'tone1_freq', label:'Chest warmth freq', min:80, max:400, step:1, unit:'Hz', dp:0, def:180},
-    {key:'tone1_gain', label:'Chest warmth gain', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:1.0},
-    {key:'tone1_q', label:'Chest warmth Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.0},
-    {key:'tone2_freq', label:'Presence freq', min:2000, max:6000, step:10, unit:'Hz', dp:0, def:3800},
-    {key:'tone2_gain', label:'Presence gain', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:2.0},
-    {key:'tone2_q', label:'Presence Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.2},
-    {key:'air_freq', label:'Air shelf freq', min:6000, max:16000, step:100, unit:'Hz', dp:0, def:10500},
-    {key:'air_gain', label:'Air shelf gain', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:2.5},
+  {group:'Tone EQ', desc:'Boosts (rather than cuts) specific tonal qualities to shape your voice’s character, applied after the corrective EQ above.', fields:[
+    {key:'tone1_freq', label:'Chest warmth freq', min:80, max:400, step:1, unit:'Hz', dp:0, def:180,
+      desc:'Where the warmth boost below is centered.'},
+    {key:'tone1_gain', label:'Warmth', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:1.0, essential:true,
+      desc:'Boosts low-chest fullness. Turn up for a warmer, richer tone; down if it sounds boomy or muddy.'},
+    {key:'tone1_q', label:'Chest warmth Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.0,
+      desc:'How narrow the warmth boost is.'},
+    {key:'tone2_freq', label:'Presence freq', min:2000, max:6000, step:10, unit:'Hz', dp:0, def:3800,
+      desc:'Where the presence boost below is centered.'},
+    {key:'tone2_gain', label:'Presence', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:2.0, essential:true,
+      desc:'Boosts clarity in the range where vocals cut through a mix. Turn up to sound more upfront and present.'},
+    {key:'tone2_q', label:'Presence Q', min:0.3, max:5, step:0.1, unit:'', dp:1, def:1.2,
+      desc:'How narrow the presence boost is.'},
+    {key:'air_freq', label:'Air shelf freq', min:6000, max:16000, step:100, unit:'Hz', dp:0, def:10500,
+      desc:'Where the air/brightness boost below starts.'},
+    {key:'air_gain', label:'Air / brightness', min:-6, max:6, step:0.1, unit:'dB', dp:1, def:2.5, essential:true,
+      desc:'Boosts the very top end for a bright, airy sheen. Turn up for sparkle; down if it sounds sibilant or thin.'},
   ]},
-  {group:'Saturation', fields:[
-    {key:'sat_drive_db', label:'Drive', min:0, max:20, step:0.5, unit:'dB', dp:1, def:8},
-    {key:'sat_mix', label:'Mix', min:0, max:100, step:1, unit:'%', dp:0, def:12},
+  {group:'Saturation', desc:null, fields:[
+    {key:'sat_drive_db', label:'Drive', min:0, max:20, step:0.5, unit:'dB', dp:1, def:8,
+      desc:'How hard the signal is pushed into saturation before blending back in — shapes the character of the grit.'},
+    {key:'sat_mix', label:'Warmth saturation', min:0, max:100, step:1, unit:'%', dp:0, def:12, essential:true,
+      desc:'Blends in a touch of analog-style warmth and harmonic richness. Higher = grittier, more "vintage".'},
   ]},
-  {group:'Reverb send', fields:[
-    {key:'verb_decay', label:'Decay (RT60)', min:0.2, max:4, step:0.1, unit:'s', dp:1, def:1.8},
-    {key:'verb_predelay', label:'Pre-delay', min:0, max:100, step:1, unit:'ms', dp:0, def:35},
-    {key:'verb_lowcut', label:'Low cut', min:50, max:500, step:10, unit:'Hz', dp:0, def:200},
-    {key:'verb_highcut', label:'High cut', min:2000, max:12000, step:100, unit:'Hz', dp:0, def:6000},
-    {key:'verb_send_db', label:'Send level', min:-24, max:0, step:0.5, unit:'dB', dp:1, def:-3},
+  {group:'Reverb send', desc:null, fields:[
+    {key:'verb_decay', label:'Decay (RT60)', min:0.2, max:4, step:0.1, unit:'s', dp:1, def:1.8,
+      desc:'How long the reverb tail rings out. Longer = a bigger, more cavernous space.'},
+    {key:'verb_predelay', label:'Pre-delay', min:0, max:100, step:1, unit:'ms', dp:0, def:35,
+      desc:'A short gap before the reverb starts, so your dry voice stays clear before the room sound arrives.'},
+    {key:'verb_lowcut', label:'Low cut', min:50, max:500, step:10, unit:'Hz', dp:0, def:200,
+      desc:'Removes low rumble from the reverb itself, keeping it from sounding muddy.'},
+    {key:'verb_highcut', label:'High cut', min:2000, max:12000, step:100, unit:'Hz', dp:0, def:6000,
+      desc:'Removes harsh top-end from the reverb, keeping it from sounding hissy.'},
+    {key:'verb_send_db', label:'Reverb amount', min:-24, max:0, step:0.5, unit:'dB', dp:1, def:-9, essential:true,
+      desc:'How much room/space ambience is blended in. Turn up for a bigger, more "live" sound; down for a drier, more intimate vocal.'},
   ]},
-  {group:'Delay send', fields:[
-    {key:'delay_time_ms', label:'Time', min:50, max:800, step:5, unit:'ms', dp:0, def:350},
-    {key:'delay_feedback', label:'Feedback', min:0, max:80, step:1, unit:'%', dp:0, def:13},
-    {key:'delay_lowcut', label:'Low cut', min:50, max:1000, step:10, unit:'Hz', dp:0, def:300},
-    {key:'delay_highcut', label:'High cut', min:1000, max:8000, step:100, unit:'Hz', dp:0, def:4000},
-    {key:'delay_send_db', label:'Send level', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20},
+  {group:'Delay send', desc:null, fields:[
+    {key:'delay_time_ms', label:'Time', min:50, max:800, step:5, unit:'ms', dp:0, def:350,
+      desc:'The gap between your voice and its echo. This app doesn’t detect the song’s tempo, so it’s a fixed time, not a beat-synced fraction.'},
+    {key:'delay_feedback', label:'Feedback', min:0, max:80, step:1, unit:'%', dp:0, def:13,
+      desc:'How many repeats the echo makes before fading out. Higher = more, longer-lasting repeats.'},
+    {key:'delay_lowcut', label:'Low cut', min:50, max:1000, step:10, unit:'Hz', dp:0, def:300,
+      desc:'Removes low rumble from the echo repeats.'},
+    {key:'delay_highcut', label:'High cut', min:1000, max:8000, step:100, unit:'Hz', dp:0, def:4000,
+      desc:'Removes harsh top-end from the echo repeats, so they sit further back than your main voice.'},
+    {key:'delay_send_db', label:'Echo amount', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20, essential:true,
+      desc:'How much slap-back echo is blended in — adds depth and a classic vocal-doubling effect. Turn down for a cleaner, drier sound.'},
   ]},
 ];
 const PRO_CHAIN_IDS = [];
@@ -684,27 +733,68 @@ function fmtProVal(v, f){
   const n=Number(v).toFixed(f.dp);
   return (f.unit==='dB' && v>=0 ? '+':'') + n + (f.unit?' '+f.unit:'');
 }
+// Builds one .fxrow for a field, plus (if it has a `desc`) a small ⓘ button
+// that toggles the plain-language explanation instead of showing it inline —
+// keeps ~30 technical parameters from turning into a wall of paragraphs.
+// Built with DOM methods rather than innerHTML so descriptions containing
+// quotes (e.g. the De-esser's "s"/"sh") never risk breaking an attribute.
+function buildProChainRow(f){
+  PRO_CHAIN_VALUES[f.key]=f.def;
+  const id='pc_'+f.key;
+  PRO_CHAIN_IDS.push(id);
+
+  const row=document.createElement('div'); row.className='fxrow';
+  row.appendChild(document.createElement('div')).style.width='34px';
+  const nm=document.createElement('div'); nm.className='fxname'; nm.textContent=f.label2||f.label;
+  row.appendChild(nm);
+
+  let desc=null;
+  if(f.desc){
+    const info=document.createElement('button');
+    info.type='button'; info.className='infoBtn'; info.textContent='ⓘ';
+    info.setAttribute('aria-label','What does '+(f.label2||f.label)+' do?');
+    row.appendChild(info);
+    desc=document.createElement('div'); desc.className='fxdesc hidden'; desc.textContent=f.desc;
+    info.addEventListener('click',()=>desc.classList.toggle('hidden'));
+  }
+
+  const input=document.createElement('input');
+  Object.assign(input,{type:'range',id,min:f.min,max:f.max,step:f.step,value:f.def,disabled:true});
+  row.appendChild(input);
+  const out=document.createElement('div'); out.className='val'; out.id=id+'v';
+  row.appendChild(out);
+
+  const upd=()=>{ PRO_CHAIN_VALUES[f.key]=+input.value; out.textContent=fmtProVal(input.value,f); liveFxIfPlaying(); };
+  input.addEventListener('input',upd); upd();
+
+  if(!desc) return row;
+  const wrap=document.createElement('div');
+  wrap.appendChild(row); wrap.appendChild(desc);
+  return wrap;
+}
+
 function renderProChainRack(){
   const box=$('proChainRack'); box.innerHTML='';
+
+  // essentials: the handful of controls that are easy to understand and
+  // reach for — everything else lives in the drawer below so ~30 technical
+  // parameters don't dump onto the screen at once.
+  PRO_CHAIN_FIELDS.forEach(grp=>grp.fields.forEach(f=>{
+    if(f.essential) box.appendChild(buildProChainRow(f));
+  }));
+
+  const details=document.createElement('details'); details.className='drawer';
+  const summary=document.createElement('summary'); summary.textContent='More studio controls (EQ, compressors, timing…)';
+  details.appendChild(summary);
+  const body=document.createElement('div'); body.className='rack drawer-body';
   PRO_CHAIN_FIELDS.forEach(grp=>{
     const h=document.createElement('div'); h.className='fxgroup'; h.textContent=grp.group;
-    box.appendChild(h);
-    grp.fields.forEach(f=>{
-      PRO_CHAIN_VALUES[f.key]=f.def;
-      const id='pc_'+f.key;
-      PRO_CHAIN_IDS.push(id);
-      const row=document.createElement('div'); row.className='fxrow';
-      row.innerHTML=
-        '<div style="width:34px"></div>'+
-        '<div class="fxname">'+f.label+'</div>'+
-        '<input type="range" id="'+id+'" min="'+f.min+'" max="'+f.max+'" step="'+f.step+'" value="'+f.def+'" disabled>'+
-        '<div class="val" id="'+id+'v"></div>';
-      box.appendChild(row);
-      const el=row.querySelector('input'), out=row.querySelector('.val');
-      const upd=()=>{ PRO_CHAIN_VALUES[f.key]=+el.value; out.textContent=fmtProVal(el.value,f); liveFxIfPlaying(); };
-      el.addEventListener('input',upd); upd();
-    });
+    if(grp.desc) h.title=grp.desc;
+    body.appendChild(h);
+    grp.fields.forEach(f=>body.appendChild(buildProChainRow(f)));
   });
+  details.appendChild(body);
+  box.appendChild(details);
 }
 renderProChainRack();
 
