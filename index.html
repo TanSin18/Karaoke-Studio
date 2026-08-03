@@ -2340,10 +2340,16 @@ function pickVideoMime(){
 async function uploadPhoneVideoFromDesktop(){
   phoneVideoUploading=true;
   try{
+    if(!phoneVideoChunks.length) throw new Error('no video data captured');
     const blob=new Blob(phoneVideoChunks, {type: phoneVideoRecorder.mimeType || 'video/webm'});
-    await fetch('/phone/upload?id='+encodeURIComponent(SID)+'&mime='+encodeURIComponent(blob.type),
+    if(!blob.size) throw new Error('captured video was empty');
+    const r=await fetch('/phone/upload?id='+encodeURIComponent(SID)+'&mime='+encodeURIComponent(blob.type),
       {method:'POST', body: blob});
-  }catch(_){}
+    if(!r.ok) throw new Error('server rejected upload (HTTP '+r.status+')');
+  }catch(e){
+    console.error('Phone video upload failed:', e);
+    toast('📱 Phone video upload failed: '+(e.message||e),'warn',5000);
+  }
   phoneVideoUploading=false;
 }
 
@@ -2538,15 +2544,30 @@ async function startRec(){
   // design where the phone recorded+uploaded independently, using a sync
   // chirp its own mic would pick up through a real speaker — silently
   // broken for anyone monitoring on headphones.
+  // Check the actual track state, not just that srcObject is a truthy
+  // object — a <video> element can keep showing its last rendered frame
+  // for a moment even after the underlying track has ended (phone camera
+  // backgrounded, permission revoked, connection dropped), so a plain
+  // truthy check here would silently try to record a dead stream.
   const phoneStream=$('phoneSelfView').srcObject;
-  const videoThisTake=phonePaired && !punch && phoneStream;
+  const phoneStreamLive=!!(phoneStream && phoneStream.getVideoTracks().some(t=>t.readyState==='live'));
+  const videoThisTake=phonePaired && !punch && phoneStreamLive;
+  if(phonePaired && !punch && !phoneStreamLive){
+    toast('📱 No live phone video right now — this take won\'t include it.','warn',4000);
+  }
   if(videoThisTake){
-    phoneVideoChunks=[];
-    phoneVideoRecorder=new MediaRecorder(phoneStream,
-      {mimeType:pickVideoMime(), videoBitsPerSecond:8000000});
-    phoneVideoRecorder.ondataavailable=e=>{ if(e.data.size) phoneVideoChunks.push(e.data); };
-    phoneVideoRecorder.onstop=uploadPhoneVideoFromDesktop;
-    window._videoRecordedThisTake=true;
+    try{
+      phoneVideoChunks=[];
+      phoneVideoRecorder=new MediaRecorder(phoneStream,
+        {mimeType:pickVideoMime(), videoBitsPerSecond:8000000});
+      phoneVideoRecorder.ondataavailable=e=>{ if(e.data.size) phoneVideoChunks.push(e.data); };
+      phoneVideoRecorder.onstop=uploadPhoneVideoFromDesktop;
+      window._videoRecordedThisTake=true;
+    }catch(e){
+      console.error('Phone video recording failed to start:', e);
+      phoneVideoRecorder=null;
+      toast('📱 Could not record phone video this take: '+(e.message||e),'warn',5000);
+    }
   }
   recorder.onstart=()=>{
     recStartCtxTime=audioCtx.currentTime;
@@ -2556,7 +2577,14 @@ async function startRec(){
   // A timeslice arg (periodic chunks) rather than a single final blob avoids
   // a known Chrome quirk where a WebM recorded with no timeslice can end up
   // with wrong/estimated duration metadata in the container.
-  if(videoThisTake) phoneVideoRecorder.start(1000);
+  if(window._videoRecordedThisTake){
+    try{ phoneVideoRecorder.start(1000); }
+    catch(e){
+      console.error('Phone video recorder.start() failed:', e);
+      window._videoRecordedThisTake=false;
+      toast('📱 Phone video recording failed to start: '+(e.message||e),'warn',5000);
+    }
+  }
   if(metro.clickOn) startMetroScheduler();
 
   $('play').textContent='❚❚ Pause music'; $('play').classList.add('amber');
