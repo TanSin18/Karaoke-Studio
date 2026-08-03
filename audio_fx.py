@@ -583,141 +583,27 @@ def stitch_vocals(head_wav, tail_wav, out_wav, punch_sec, crossfade_ms=40):
     sf.write(out_wav, out.astype(np.float32), sr)
 
 
-# ---- Phone-camera sync: chirp alignment + mux --------------------------------
+# ---- Phone-camera video: mux -------------------------------------------------
 #
-# A phone (paired over the LAN) records its own video, remote-triggered close
-# to when the app starts its own recording. Network trigger timing is sloppy
-# (up to ~1s of jitter), so instead of relying on it we play a short synthetic
-# "chirp" (a frequency sweep, not a flat beep — sweeps give a much sharper,
-# more noise-robust matched-filter peak than a pure tone) through the computer
-# speakers at the instant our own recording starts. The phone's own mic (kept
-# on purely as a sync reference, its audio is never used in the final output)
-# picks that chirp up. Afterward we matched-filter the phone's captured audio
-# against a synthetic copy of the exact same chirp to find precisely when it
-# happened in the phone's timeline, then trim + mux the phone's video against
-# the app's finished audio mix.
+# The desktop records the phone's live WebRTC video stream itself, started in
+# the same tick as the vocal recording — both are on one clock from t=0, so
+# there's no separate alignment step needed here, just muxing the video
+# against the finished audio mix. (An earlier design had the phone record
+# and upload independently, using a synthetic audio "chirp" the phone's own
+# mic would pick up through a real speaker to find the offset after the
+# fact — dropped because it silently failed for anyone monitoring through
+# headphones, and the necessary full-length upload from the phone was
+# unreliable at real recording sizes.)
 
-CHIRP_F0 = 800.0          # Hz, sweep start
-CHIRP_F1 = 3200.0         # Hz, sweep end
-CHIRP_DUR = 0.12          # seconds
-CHIRP_ANALYSIS_SR = 44100
-CHIRP_CONFIDENCE_MIN = 0.15  # NCC peak in [-1,1]; empirically noise floor is ~0.06-0.08
-                              # (200-trial test), real chirps score 0.2+ even when quiet
-
-
-def _generate_chirp(sr=CHIRP_ANALYSIS_SR, f0=CHIRP_F0, f1=CHIRP_F1, dur=CHIRP_DUR):
-    """Synthesize the reference linear-sweep chirp used as the matched-filter
-    template. Windowed with raised-cosine on/off ramps so the on/off clicks
-    don't smear the correlation peak."""
-    n = int(sr * dur)
-    t = np.arange(n) / sr
-    k = (f1 - f0) / dur
-    phase = 2 * np.pi * (f0 * t + 0.5 * k * t * t)
-    sig = np.sin(phase).astype(np.float64)
-    ramp = max(1, int(0.1 * n))
-    win = np.ones(n)
-    win[:ramp] = 0.5 * (1 - np.cos(np.pi * np.arange(ramp) / ramp))
-    win[-ramp:] = win[:ramp][::-1]
-    return sig * win
-
-
-def _extract_audio_for_align(video_path, out_wav, sr=CHIRP_ANALYSIS_SR):
-    """Pull the phone's captured audio track out of its video container as
-    mono WAV, band-limited to roughly the chirp's sweep range so room noise,
-    hum, and singing don't create spurious correlation peaks."""
-    cmd = ["ffmpeg", "-y", "-i", video_path, "-vn", "-ac", "1", "-ar", str(sr),
-           "-af", "highpass=f=500,lowpass=f=4000", out_wav]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError("phone audio extraction failed: " + r.stderr[-500:])
-
-
-def _find_chirp_offset(audio, sr):
-    """FFT-based matched filter: cross-correlate `audio` against a synthetic
-    reference chirp, then NORMALIZE by local signal energy at each candidate
-    lag to get a proper normalized cross-correlation (NCC) in [-1, 1] — the
-    standard technique for this (cf. cv2.matchTemplate TM_CCOEFF_NORMED).
-
-    A raw-correlation peak/median ratio is NOT a valid confidence measure
-    here: taking a max over hundreds of thousands of noise samples produces
-    a peak that's reliably 6-8x the median from extreme-value statistics
-    alone, with no real chirp present at all. NCC fixes this because it's a
-    bounded, physically meaningful quantity (1.0 = perfect match) regardless
-    of how large the search space is.
-
-    Returns (offset_sec, confidence) where confidence is the NCC peak value.
-    """
-    ref = _generate_chirp(sr=sr)
-    n_ref = len(ref)
-    n_audio = len(audio)
-    valid_starts = n_audio - n_ref + 1
-    if valid_starts <= 0:
-        return -1.0, 0.0
-
-    n = n_audio + n_ref - 1
-    nfft = 1 << (n - 1).bit_length()
-    A = np.fft.rfft(audio, nfft)
-    R = np.fft.rfft(ref[::-1], nfft)  # time-reversed ref: convolution == correlation
-    corr = np.fft.irfft(A * R, nfft)[:n]
-    # only lags where the reference window fully overlaps the audio
-    corr_valid = corr[n_ref - 1: n_ref - 1 + valid_starts]
-
-    # sliding-window local energy at each candidate start (O(N) via cumsum)
-    csum = np.concatenate(([0.0], np.cumsum(audio.astype(np.float64) ** 2)))
-    local_energy = csum[n_ref:n_ref + valid_starts] - csum[:valid_starts]
-    ref_norm = float(np.sqrt(np.sum(ref ** 2)))
-    ncc = corr_valid / (ref_norm * np.sqrt(np.maximum(local_energy, 1e-12)) + 1e-9)
-
-    peak_idx = int(np.argmax(ncc))
-    offset_sec = peak_idx / sr
-    confidence = float(ncc[peak_idx])
-    return offset_sec, confidence
-
-
-def align_and_mux_video(phone_video_path, final_audio_path, out_video_path,
-                         chirp_music_pos_sec, tmp_dir):
-    """
-    1. Extract the phone's own captured audio (contains the sync chirp).
-    2. Matched-filter it to find when the chirp happened in the PHONE's own
-       timeline (`offset_sec`).
-    3. `chirp_music_pos_sec` is where the chirp landed in the finished mix's
-       timeline (song time, captured client-side when the chirp was played).
-    4. Trim the phone's video to start at `offset_sec` AND trim the finished
-       mix to start at `chirp_music_pos_sec`, then mux. Trimming only the
-       video (and leaving the full-length mix) would leave a constant sync
-       error equal to chirp_music_pos_sec — trimming both is what actually
-       removes it.
-    """
-    os.makedirs(tmp_dir, exist_ok=True)
-    extracted = os.path.join(tmp_dir, "phone_audio_for_align.wav")
-    _extract_audio_for_align(phone_video_path, extracted)
-
-    sr = CHIRP_ANALYSIS_SR
-    audio, _ = sf.read(extracted, dtype="float64")
-    if audio.ndim > 1:
-        audio = audio.mean(axis=1)
-
-    offset_sec, confidence = _find_chirp_offset(audio, sr)
-    if offset_sec < 0 or confidence < CHIRP_CONFIDENCE_MIN:
-        raise RuntimeError(
-            f"Couldn't confidently locate the sync chirp in the phone's audio "
-            f"(offset={offset_sec:.3f}s, confidence={confidence:.1f}). "
-            f"The phone video may be too quiet/noisy to sync automatically."
-        )
-
-    music_pos = max(0.0, float(chirp_music_pos_sec))
-    # Frame-accurate trimming (needed for the chirp alignment above to
-    # actually land on the right instant) requires re-encoding rather than a
-    # stream copy, which would only be able to cut at the nearest keyframe.
-    # This runs once, after recording, in a background thread — nothing here
-    # is real-time — so there's no reason to keep the old "veryfast"/crf 20
-    # settings that traded quality for encode speed; "slow"/crf 18 is a
-    # meaningfully better encode for the same source and still finishes in a
-    # reasonable time for a single song-length clip.
+def mux_video(phone_video_path, final_audio_path, out_video_path):
+    # Frame-accurate output benefits from re-encoding rather than a stream
+    # copy. This runs once, after recording, in a background thread — no
+    # real-time constraint — so "slow"/crf 18 is worth it over faster,
+    # lower-quality presets.
     cmd = [
         "ffmpeg", "-y",
-        "-ss", f"{offset_sec:.3f}", "-i", phone_video_path,
-        "-ss", f"{music_pos:.3f}", "-i", final_audio_path,
+        "-i", phone_video_path,
+        "-i", final_audio_path,
         "-map", "0:v:0", "-map", "1:a:0",
         "-c:v", "libx264", "-preset", "slow", "-crf", "18",
         "-c:a", "aac", "-b:a", "256k",
