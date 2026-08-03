@@ -16,6 +16,14 @@
   --purple:#b026ff; --green:#39ff8a;               /* extra party accents */
   --rec:#ff3b47; --ok:#39ff8a;
   --fader:#4a3a70; --track:#120820;
+  --field:#120820;                                 /* text-input/select fill — separate from
+                                                       --track so we can flip it in light mode
+                                                       without also relighting the mixing-console
+                                                       sliders, which stay dark on purpose */
+  --well:#0a0b0e; --well2:#141821;                 /* sunken content panels — result cards, queue
+                                                       rows, take strip, tuner, player chrome —
+                                                       as opposed to --rack/--fader/--metal which
+                                                       are the deliberately-always-dark "hardware" */
   --mono:'SF Mono',ui-monospace,Menlo,monospace;
 
   --glow-amber: 0 0 6px rgba(0,229,255,.6), 0 0 16px rgba(0,229,255,.32);
@@ -29,18 +37,23 @@
   --bg: radial-gradient(1200px 600px at 70% -10%, #2c1d4a 0%, transparent 60%), #0d0618;
 }
 
-/* Light mode: only the page chrome (cards, body, text) flips — "hardware"
-   surfaces (the FX rack, sliders, meters, text inputs, buttons — anything
-   using --track/--rack/--fader/--metal) intentionally stay dark in both
-   themes, like a mixing console, so they don't need their own parallel set
-   of ink/muted/dim tokens. Respects the OS preference by default; an
-   explicit data-theme attribute (set by the toggle in index.html) overrides it. */
+/* Light mode: everything flips, including the "hardware" tokens
+   (--track/--field/--well/--rack/--metal). Text colors (--ink/--muted/--dim)
+   already flip, and they're used on top of these surfaces all over the app
+   (button labels, FX rack labels, tab bars) — so if the surface itself
+   stayed dark-only, that text would go dark-on-dark and become unreadable.
+   Only --fader is exempt: it's just a small 3D bevel highlight on the
+   slider thumb, never holds text, so it can safely stay a fixed dark tone
+   in both themes. Respects the OS preference by default; an explicit
+   data-theme attribute (set by the toggle in index.html) overrides it. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
     --panel:#ffffff; --panel2:#f4f1fb; --edge:#ddd6ef;
     --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
     --bg: radial-gradient(1200px 600px at 70% -10%, #efe9fb 0%, transparent 60%), #f8f6fc;
     --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
+    --field:#ffffff; --well:#f1ecfb; --well2:#e7ddf7;
+    --rack:#ece4fa; --metal: linear-gradient(180deg,#f5f2fb,#e6ddf6);
   }
 }
 :root[data-theme="light"]{
@@ -48,6 +61,8 @@
   --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
   --bg: radial-gradient(1200px 600px at 70% -10%, #efe9fb 0%, transparent 60%), #f8f6fc;
   --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
+  --field:#ffffff; --well:#f1ecfb; --well2:#e7ddf7;
+  --rack:#ece4fa; --metal: linear-gradient(180deg,#f5f2fb,#e6ddf6);
 }
 
 *{box-sizing:border-box}
@@ -89,10 +104,10 @@
 
 /* ---- inputs --------------------------------------------------------- */
 input[type=text]{width:100%;padding:11px 13px;border-radius:10px;border:1px solid var(--edge);
-  background:var(--track);color:var(--ink);font-size:13px;outline:none;font-family:var(--mono);
+  background:var(--field);color:var(--ink);font-size:13px;outline:none;font-family:var(--mono);
   transition:border-color .15s,box-shadow .15s}
 input[type=text]:focus{border-color:var(--pink2);box-shadow:var(--glow-pink)}
-select{padding:8px 10px;border-radius:9px;border:1px solid var(--edge);background:var(--track);
+select{padding:8px 10px;border-radius:9px;border:1px solid var(--edge);background:var(--field);
   color:var(--ink);font-size:12px;font-family:var(--mono);outline:none}
 select:focus{border-color:var(--amber2)}
 
@@ -119,7 +134,7 @@ input[type=range]:disabled::-webkit-slider-thumb{background:#453c4f;box-shadow:n
   background:#f0e9f5;transition:left .15s}
 .tog.on::after{left:16px}
 
-kbd{font-family:var(--mono);background:var(--track);border:1px solid var(--edge);border-radius:5px;
+kbd{font-family:var(--mono);background:var(--well2);border:1px solid var(--edge);border-radius:5px;
   padding:1px 6px;font-size:11px;color:var(--amber)}
 
 /* ---- marquee bulbs: the jukebox/arcade motif ----------------------------

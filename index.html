@@ -16,12 +16,23 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .wrap{max-width:1180px;margin:0 auto}
   header{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
   .profileChip{position:relative}
-  .profileMenu{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:220px;
+  .profileMenu{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:260px;
     background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
     border:1px solid var(--edge);border-radius:12px;padding:12px;
     box-shadow:0 10px 30px rgba(0,0,0,.5)}
   .profileMenu input[type=text]{margin-bottom:8px}
   .profileMenu .btn{width:100%;margin-bottom:4px}
+  .profileMenuLabel{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--dim);
+    text-transform:uppercase;margin:10px 0 6px}
+  .acctRow{display:flex;align-items:center;gap:6px;padding:4px 0}
+  .acctRow .acctName{flex:1;background:none;border:none;color:var(--ink);font-size:13px;
+    text-align:left;cursor:pointer;padding:4px 2px;border-radius:6px}
+  .acctRow .acctName:hover{color:var(--amber)}
+  .acctRow .acctName.active{color:var(--pink);font-weight:650}
+  .acctIcon{background:none;border:1px solid var(--edge);color:var(--dim);border-radius:6px;
+    width:22px;height:22px;font-size:11px;cursor:pointer;flex:none;padding:0}
+  .acctIcon:hover{color:var(--amber);border-color:var(--amber2)}
+  .acctIcon.danger:hover{color:var(--rec);border-color:var(--rec)}
   .profileList{max-height:160px;overflow-y:auto;margin-top:8px;display:flex;flex-direction:column;gap:4px}
   .profileList button{width:100%;text-align:left;background:none;border:none;color:var(--muted);
     padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12.5px}
@@ -35,7 +46,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .grid{display:block}
 
   .npRow{display:flex;align-items:center;gap:14px}
-  .npRow img{width:80px;height:45px;object-fit:cover;border-radius:8px;flex:none;background:#0a0b0e}
+  .npRow img{width:80px;height:45px;object-fit:cover;border-radius:8px;flex:none;background:var(--well)}
   .npInfo{flex:1;min-width:0}
   .npTitle{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .npSub{font-family:var(--mono);font-size:11px;color:var(--ok);letter-spacing:.06em;margin-top:2px}
@@ -90,7 +101,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .vf-note{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--amber);text-transform:uppercase}
   .vf-title{font-size:16px;font-weight:650;color:var(--ink);max-width:80%}
   .vf-clock{font-family:var(--mono);font-size:44px;font-weight:700;color:var(--amber);letter-spacing:.04em;line-height:1}
-  .vf-link{text-decoration:none;background:linear-gradient(180deg,#3a3f4c,#2b2f39);border:1px solid var(--edge);
+  .vf-link{text-decoration:none;background:var(--metal);border:1px solid var(--edge);
     color:var(--ink);padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:600}
   .vf-link:hover{filter:brightness(1.15)}
   .vf-hint{font-family:var(--mono);font-size:11px;color:var(--dim);max-width:82%;line-height:1.6}
@@ -100,11 +111,11 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .seekwrap{display:flex;align-items:center;gap:12px}
   #seek{flex:1}
   #seek:disabled{opacity:.4}
-  .keybox{display:flex;align-items:center;gap:8px;background:#0a0b0e;border:1px solid var(--edge);
+  .keybox{display:flex;align-items:center;gap:8px;background:var(--well);border:1px solid var(--edge);
     border-radius:8px;padding:5px 10px}
   .klabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim)}
   .kval{font-family:var(--mono);font-size:14px;color:var(--amber);min-width:26px;text-align:center;font-weight:700}
-  .ksmall{width:24px;height:24px;border-radius:6px;border:1px solid var(--edge);background:linear-gradient(180deg,#3a3f4c,#2b2f39);
+  .ksmall{width:24px;height:24px;border-radius:6px;border:1px solid var(--edge);background:var(--metal);
     color:var(--ink);cursor:pointer;font-size:15px;line-height:1;font-weight:700;padding:0}
   .ksmall:hover{filter:brightness(1.2)} .ksmall:disabled{opacity:.4;cursor:default}
   .keyhint{font-family:var(--mono);font-size:11px;color:var(--dim)}
@@ -156,14 +167,20 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .rsave.saved{opacity:1;color:var(--pink);border-color:var(--pink2)}
   .rremove{position:absolute;top:6px;right:6px;background:rgba(10,11,14,.85);color:var(--dim);
     border:1px solid var(--edge);border-radius:6px;font-size:12px;padding:3px 7px;cursor:pointer;
-    opacity:0;transition:opacity .12s}
+    opacity:.7;transition:opacity .12s}
   .rcard:hover .rremove{opacity:1}
   .rremove:hover{border-color:var(--rec);color:var(--rec)}
+  .redit{position:absolute;top:6px;right:32px;background:rgba(10,11,14,.85);color:var(--dim);
+    border:1px solid var(--edge);border-radius:6px;font-size:12px;padding:3px 7px;cursor:pointer;
+    opacity:.7;transition:opacity .12s}
+  .rcard:hover .redit{opacity:1}
+  .redit:hover{border-color:var(--amber2);color:var(--amber)}
+  .rtitle input[type=text]{padding:2px 5px;font-size:12.5px;border-radius:5px}
 
   /* queue */
-  .queuepanel{margin-top:14px;background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
+  .queuepanel{margin-top:14px;background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
   .queuelist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
-  .queueitem{display:flex;align-items:center;gap:8px;background:#141821;border:1px solid var(--edge);
+  .queueitem{display:flex;align-items:center;gap:8px;background:var(--well2);border:1px solid var(--edge);
     border-radius:8px;padding:6px 8px}
   .queueitem img{width:44px;height:25px;object-fit:cover;border-radius:4px;flex:none}
   .queuetitle{flex:1;font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -173,12 +190,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
   /* take history strip */
   .takestrip{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 8px}
-  .takecard{flex:none;width:132px;background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;
+  .takecard{flex:none;width:132px;background:var(--well);border:1px solid var(--edge);border-radius:10px;
     padding:9px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
   .takecard.active{border-color:var(--amber2);box-shadow:var(--glow-amber)}
   .takecard-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
   .takebadge{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
-    color:var(--dim);background:#1a1d24;border-radius:4px;padding:2px 5px}
+    color:var(--dim);background:var(--well2);border-radius:4px;padding:2px 5px}
   .takebadge.comp{color:var(--ok)}
   .takebadge.harmony{color:var(--amber)}
   .takex{color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:2px}
@@ -188,12 +205,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     background:var(--metal);color:var(--ink);cursor:pointer;font-size:11px}
   .takeplay:hover{filter:brightness(1.2)}
   .comprow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;
-    background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px}
+    background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:10px}
   .comprow select{max-width:150px}
 
   /* local-file import drop zone */
   .dropzone{border:2px dashed var(--edge);border-radius:12px;padding:36px 20px;text-align:center;
-    background:#0a0b0e;transition:border-color .15s,box-shadow .15s}
+    background:var(--well);transition:border-color .15s,box-shadow .15s}
   .dropzone.drag{border-color:var(--amber2);box-shadow:var(--glow-amber)}
   .dz-icon{font-size:32px;color:var(--dim);margin-bottom:8px}
   .dz-text{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px;letter-spacing:.03em}
@@ -203,13 +220,13 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .tab{background:transparent;border:1px solid var(--edge);color:var(--muted);font-family:var(--mono);
     font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:7px 14px;border-radius:8px;cursor:pointer;
     transition:box-shadow .15s,color .15s,border-color .15s}
-  .tab.on{background:linear-gradient(180deg,#2b2f39,#232730);color:var(--amber);border-color:var(--amber2);
+  .tab.on{background:var(--metal);color:var(--amber);border-color:var(--amber2);
     text-shadow:var(--glow-amber)}
   .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:14px}
-  .rcard{display:flex;flex-direction:column;background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;
+  .rcard{display:flex;flex-direction:column;background:var(--well);border:1px solid var(--edge);border-radius:10px;
     overflow:hidden;cursor:pointer;transition:border-color .12s,transform .12s}
   .rcard:hover{border-color:var(--amber2);transform:translateY(-2px)}
-  .rthumb{position:relative;width:100%;aspect-ratio:16/9;background:#111;object-fit:cover;display:block}
+  .rthumb{position:relative;width:100%;aspect-ratio:16/9;background:var(--well);object-fit:cover;display:block}
   .rdur{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.82);color:#fff;font-family:var(--mono);
     font-size:10px;padding:2px 5px;border-radius:4px}
   .rmeta{padding:9px 10px}
@@ -219,7 +236,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rcard.loading{opacity:.5;pointer-events:none}
   /* live pitch tuner */
-  .tuner{background:#0a0b0e;border:1px solid var(--edge);border-radius:12px;padding:14px;margin-top:12px;text-align:center}
+  .tuner{background:var(--well);border:1px solid var(--edge);border-radius:12px;padding:14px;margin-top:12px;text-align:center}
   .tuner-note{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--dim);line-height:1;letter-spacing:.02em;transition:color .1s,text-shadow .1s}
   .tuner-note.good{color:var(--ok);text-shadow:var(--glow-ok)} .tuner-note.off{color:var(--amber);text-shadow:var(--glow-amber)}
   .tuner-scale{position:relative;height:26px;margin:10px auto 4px;max-width:340px;
@@ -231,7 +248,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .tuner-msg{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.04em}
   /* live monitor volumes */
   .mons{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;
-    background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
+    background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
   .monrow{display:flex;align-items:center;gap:8px;flex:1;min-width:180px}
   .monlbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;white-space:nowrap}
   .monrow input[type=range]{flex:1}
@@ -251,7 +268,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .takeScoreBadge{font-family:var(--mono);font-size:9px;color:var(--pink);margin-left:4px}
   /* take mini-mixer + test mode */
   .takemix{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;
-    background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
+    background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
   .takemix .monrow{min-width:190px}
   #testModeBtn{margin-left:auto}
   .testpanel{margin-top:12px;padding:14px;border-radius:12px;
@@ -259,14 +276,14 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .testpanel h3{margin:0 0 4px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;
     text-transform:uppercase;color:var(--pink)}
   .testpanel .tp-sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
-  .loopbar{position:relative;height:34px;background:#0a0b0e;border:1px solid #000;border-radius:8px;
+  .loopbar{position:relative;height:34px;background:var(--well);border:1px solid #000;border-radius:8px;
     margin:10px 0;overflow:hidden;cursor:pointer}
   .loopregion{position:absolute;top:0;bottom:0;background:rgba(255,61,129,.22);border-left:2px solid var(--pink);
     border-right:2px solid var(--pink)}
   .loopplay{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.85}
   .looprow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .tp-btn{padding:9px 16px;border:1px solid var(--edge);border-radius:8px;cursor:pointer;font-weight:650;font-size:13px;
-    background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink)}
+    background:var(--metal);color:var(--ink)}
   .tp-btn.on{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#fff;border-color:var(--pink2)}
   .tp-btn:hover{filter:brightness(1.15)}
   .tp-note{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.03em}
@@ -278,10 +295,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .dl{display:inline-block;margin-top:12px;text-decoration:none;background:linear-gradient(180deg,var(--ok),#28b873);
     color:#052012;padding:11px 20px;border-radius:8px;font-weight:700;font-size:13px;box-shadow:var(--glow-ok)}
   /* reusable mini-player control row (used for Play take + final song) */
-  .player{background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:12px;margin-top:12px}
+  .player{background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:12px;margin-top:12px}
   .player .ctrls{display:flex;align-items:center;gap:8px}
   .pbtn{width:38px;height:34px;border-radius:8px;border:1px solid var(--edge);cursor:pointer;
-    background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink);font-size:14px;line-height:1;
+    background:var(--metal);color:var(--ink);font-size:14px;line-height:1;
     display:flex;align-items:center;justify-content:center}
   .pbtn:hover{filter:brightness(1.18)} .pbtn:disabled{opacity:.4;cursor:default}
   .pbtn.play{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#001a1f;border-color:#008494}
@@ -293,7 +310,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     border:1px solid var(--edge);margin-bottom:10px;cursor:pointer}
   .step{display:none}
   .step.active{display:block}
-  .bar{height:6px;background:#0a0b0e;border-radius:4px;overflow:hidden;border:1px solid #000;margin-top:8px}
+  .bar{height:6px;background:var(--well);border-radius:4px;overflow:hidden;border:1px solid #000;margin-top:8px}
   .bar .fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber2),var(--amber));transition:width .3s}
 
   /* ---- toasts (replaces ad-hoc inline error text for transient messages) --- */
@@ -368,8 +385,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <div class="profileChip" id="profileChip" style="margin-left:auto">
       <button class="btn ghost small" id="profileBtn" type="button">👤 <span id="profileNameLabel">Guest</span></button>
       <div class="profileMenu hidden" id="profileMenu">
-        <input type="text" id="profileInput" placeholder="Your name…" maxlength="40">
-        <button class="btn amber small" id="profileSetBtn" type="button">Switch / create</button>
+        <div class="profileMenuLabel">New / switch account</div>
+        <input type="text" id="profileInput" placeholder="Account name…" maxlength="40">
+        <button class="btn amber small" id="profileSetBtn" type="button">Create / switch</button>
+        <div class="profileMenuLabel">Your accounts</div>
         <div id="profileList"></div>
       </div>
     </div>
@@ -1124,6 +1143,10 @@ function setActiveProfile(name){
   activeProfile=(name||'Guest').trim()||'Guest';
   try{ localStorage.setItem(PROFILE_KEY, activeProfile); }catch(e){}
   $('profileNameLabel').textContent=activeProfile;
+  // persist immediately so a brand-new account shows up in "Your accounts"
+  // right away, instead of only appearing once something is saved under it
+  fetch('/profile/ensure',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:activeProfile})}).catch(()=>{});
   refreshLibrary(); refreshRecentSessions();
 }
 $('profileBtn').addEventListener('click',(e)=>{
@@ -1144,11 +1167,61 @@ async function loadProfileList(){
   try{ profiles=(await(await fetch('/profiles')).json()).profiles||[]; }catch(e){}
   const list=$('profileList');
   list.innerHTML = profiles.length
-    ? profiles.map(p=>'<button data-name="'+escapeHtml(p.name)+'">'+escapeHtml(p.name)+'</button>').join('')
-    : '<div class="hint" style="margin:4px 0 0">No saved profiles yet.</div>';
-  list.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
-    setActiveProfile(b.dataset.name); $('profileMenu').classList.add('hidden');
+    ? profiles.map(p=>
+        '<div class="acctRow" data-name="'+escapeHtml(p.name)+'">'+
+          '<button class="acctName'+(p.name===activeProfile?' active':'')+'">'+escapeHtml(p.name)+'</button>'+
+          '<button class="acctIcon" data-act="rename" title="Rename">✎</button>'+
+          '<button class="acctIcon danger" data-act="delete" title="Delete account">✕</button>'+
+        '</div>').join('')
+    : '<div class="hint" style="margin:4px 0 0">No saved accounts yet.</div>';
+  list.querySelectorAll('.acctName').forEach(b=>b.addEventListener('click',()=>{
+    setActiveProfile(b.closest('.acctRow').dataset.name); $('profileMenu').classList.add('hidden');
   }));
+  list.querySelectorAll('[data-act="rename"]').forEach(b=>b.addEventListener('click',()=>{
+    startRenameAccount(b.closest('.acctRow'));
+  }));
+  list.querySelectorAll('[data-act="delete"]').forEach(b=>b.addEventListener('click',()=>{
+    confirmDeleteAccount(b);
+  }));
+}
+function startRenameAccount(row){
+  const oldName=row.dataset.name;
+  const nameBtn=row.querySelector('.acctName');
+  const input=document.createElement('input');
+  input.type='text'; input.maxLength=40; input.value=oldName;
+  input.style.cssText='flex:1;padding:4px 6px;font-size:13px';
+  nameBtn.replaceWith(input);
+  input.focus(); input.select();
+  const commit=async()=>{
+    input.removeEventListener('blur', commit);
+    const next=input.value.trim();
+    if(next && next!==oldName){
+      await fetch('/profile/rename',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({old_name:oldName, new_name:next})});
+      if(activeProfile===oldName) setActiveProfile(next);
+    }
+    loadProfileList();
+  };
+  input.addEventListener('click',e=>e.stopPropagation());
+  input.addEventListener('keydown',e=>{
+    e.stopPropagation();
+    if(e.key==='Enter') input.blur();
+    else if(e.key==='Escape'){ input.value=oldName; input.blur(); }
+  });
+  input.addEventListener('blur', commit);
+}
+function confirmDeleteAccount(btn){
+  if(btn.dataset.armed){
+    const name=btn.closest('.acctRow').dataset.name;
+    fetch('/profile/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name})}).then(()=>{
+        if(activeProfile===name) setActiveProfile('Guest');
+        loadProfileList();
+      });
+    return;
+  }
+  btn.dataset.armed='1'; btn.textContent='Sure?';
+  setTimeout(()=>{ btn.dataset.armed=''; btn.textContent='✕'; }, 3000);
 }
 
 // ---- library: bookmarked songs for the active profile ---------------------
@@ -1167,6 +1240,7 @@ function renderLibrary(){
     card.innerHTML=
       '<div style="position:relative">'+
         '<img class="rthumb" loading="lazy" src="'+v.thumb+'" alt="">'+
+        '<button class="redit" title="Rename">✎</button>'+
         '<button class="rremove" title="Remove from library">✕</button>'+
       '</div>'+
       '<div class="rmeta">'+
@@ -1182,8 +1256,37 @@ function renderLibrary(){
       e.stopPropagation();
       await removeFromLibraryById(v.video_id);
     });
+    card.querySelector('.redit').addEventListener('click',e=>{
+      e.stopPropagation();
+      startEditLibraryTitle(card, v);
+    });
     box.appendChild(card);
   });
+}
+function startEditLibraryTitle(card, v){
+  const titleEl=card.querySelector('.rtitle');
+  const input=document.createElement('input');
+  input.type='text'; input.maxLength=200; input.value=v.title;
+  titleEl.replaceWith(input);
+  input.focus(); input.select();
+  const commit=async()=>{
+    const next=input.value.trim();
+    input.removeEventListener('blur', commit);
+    if(next && next!==v.title){ await renameLibraryEntry(v.video_id, next); }
+    else { renderLibrary(); }
+  };
+  input.addEventListener('keydown',e=>{
+    e.stopPropagation();
+    if(e.key==='Enter') input.blur();
+    else if(e.key==='Escape'){ input.value=v.title; input.blur(); }
+  });
+  input.addEventListener('click',e=>e.stopPropagation());
+  input.addEventListener('blur', commit);
+}
+async function renameLibraryEntry(video_id, title){
+  await fetch('/profile/library/edit',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:activeProfile, video_id, title})});
+  refreshLibrary();
 }
 async function saveToLibrary(v){
   await fetch('/profile/library/add',{method:'POST',headers:{'Content-Type':'application/json'},
