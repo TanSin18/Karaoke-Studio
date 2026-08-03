@@ -1976,8 +1976,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   h1{font-size:24px;margin:0 0 4px;color:var(--amber);text-shadow:var(--glow-amber);
     display:flex;align-items:center;gap:12px}
   .sub{color:var(--muted);margin:0 0 20px}
-  .code{font:700 64px/1 var(--mono);letter-spacing:.1em;color:var(--amber);text-shadow:var(--glow-amber)}
-  .code span:nth-child(2n){color:var(--pink);text-shadow:var(--glow-pink)}
+  /* room code uses .marquee-sign (theme.css) for the bulb-letter signature —
+     see the class comment there. Sized up here since this is the app's
+     single biggest "moment": the reveal when a party starts. */
+  .code.marquee-sign span{width:56px;height:76px;font-size:56px}
   .join{color:var(--muted);font-size:14px}
   .join b{color:var(--ink)}
   .grid{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-top:20px}
@@ -2009,22 +2011,31 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     padding:5px 12px;font-size:13px;color:var(--ink)}
 </style>
 
-<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme">🌙</button>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+</svg>
+
+<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme"><svg class="icon"><use href="#i-moon"/></svg></button>
 
 <div id="start">
   <a href="/" style="color:var(--muted);font-size:13px;text-decoration:none">← Back to Studio</a>
-  <h1>🎤 Karaoke Party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
+  <h1><svg class="icon"><use href="#i-mic"/></svg> Karaoke Party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
   <p class="sub">Start a room, then have guests join from their phones on the same WiFi.</p>
   <button class="btn amber" id="startBtn">Start Party</button>
 </div>
 
 <div id="live" class="hidden">
-  <h1>🎤 Karaoke Party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
+  <h1><svg class="icon"><use href="#i-mic"/></svg> Karaoke Party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
   <div class="codeRow">
     <div>
-      <div class="code" id="roomCode"></div>
+      <div class="code marquee-sign" id="roomCode"></div>
       <div class="join">Guests: join at <b id="joinUrl"></b></div>
-      <div class="join">📱 Run this from your phone: <b id="hostUrl"></b></div>
+      <div class="join"><svg class="icon"><use href="#i-phone"/></svg> Run this from your phone: <b id="hostUrl"></b></div>
     </div>
     <img id="qrImg" class="hidden" alt="Scan to join">
   </div>
@@ -2038,12 +2049,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <div class="card">
       <h3 style="margin-top:0">Up next <span style="font-size:11px;color:var(--dim);font-weight:400">— drag to reorder</span></h3>
       <ul class="upnext" id="upnext"><li class="empty">Queue is empty.</li></ul>
-      <h3>👥 Who's here <span id="guestCount" style="color:var(--dim);font-weight:400"></span></h3>
+      <h3><svg class="icon"><use href="#i-users"/></svg> Who's here <span id="guestCount" style="color:var(--dim);font-weight:400"></span></h3>
       <div class="guestList" id="guestList"><span class="empty">Waiting for guests to join…</span></div>
     </div>
   </div>
   <div class="card challenges hidden" id="challengesCard">
-    <h3>⚡ Challenges <span class="marquee"><i class="bulb"></i><i class="bulb"></i></span></h3>
+    <h3><svg class="icon"><use href="#i-zap"/></svg> Challenges <span class="marquee"><i class="bulb"></i><i class="bulb"></i></span></h3>
     <div id="challengeList"></div>
   </div>
 </div>
@@ -2059,7 +2070,7 @@ function currentTheme(){
   return document.documentElement.dataset.theme ||
     (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 }
-function applyThemeIcon(){ $('themeToggle').textContent = currentTheme()==='light' ? '☀️' : '🌙'; }
+function applyThemeIcon(){ $('themeToggle').innerHTML = '<svg class="icon"><use href="#i-'+(currentTheme()==='light'?'sun':'moon')+'"/></svg>'; }
 applyThemeIcon();
 $('themeToggle').addEventListener('click',()=>{
   const next = currentTheme()==='light' ? 'dark' : 'light';
@@ -2071,7 +2082,7 @@ $('themeToggle').addEventListener('click',()=>{
 $('startBtn').addEventListener('click',async()=>{
   const r=await fetch('/room/start',{method:'POST'}); const j=await r.json();
   $('start').classList.add('hidden'); $('live').classList.remove('hidden');
-  $('roomCode').innerHTML=[...j.code].map(c=>`<span>${esc(c)}</span>`).join('');
+  $('roomCode').innerHTML=[...j.code].map((c,i)=>`<span style="--i:${i}">${esc(c)}</span>`).join('');
   $('joinUrl').textContent=j.join_url||'(no LAN IP found — check WiFi)';
   $('hostUrl').textContent=j.host_url||'(no LAN IP found — check WiFi)';
   if(j.join_url){
@@ -2328,8 +2339,19 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .guestChip.me{color:var(--pink);border-color:var(--pink2)}
 </style>
 
-<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme">🌙</button>
-<h1>🎤 Join the party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 4.9L19 9.5l-4.9 1.8L12 16l-1.8-4.7L5 9.5l5.2-1.6L12 3z"/><path d="M19 14l.9 2.5L22 17.5l-2.1.9L19 21l-.9-2.6L16 17.5l2.1-1L19 14z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+</svg>
+
+<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme"><svg class="icon"><use href="#i-moon"/></svg></button>
+<h1><svg class="icon"><use href="#i-mic"/></svg> Join the party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
 
 <!-- STEP 0: join with a verified name — this is what lets challenge accept/
      decline later confirm "is this really the person being challenged," so
@@ -2344,18 +2366,18 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 </div>
 
 <div id="mainApp" class="hidden">
-  <div class="whoRow">🎉 Joined as <b id="whoLabel"></b> · room <b id="whoRoom"></b>
+  <div class="whoRow"><svg class="icon"><use href="#i-sparkle"/></svg> Joined as <b id="whoLabel"></b> · room <b id="whoRoom"></b>
     <button class="btn ghost small" id="leaveBtn" type="button" style="width:auto;margin-left:auto">Not you?</button></div>
 
   <div class="tabbar">
-    <button class="tabbtn active" id="tabBtnFind" type="button">🔍 Find a song</button>
-    <button class="tabbtn" id="tabBtnQueue" type="button">🎶 Party queue</button>
+    <button class="tabbtn active" id="tabBtnFind" type="button"><svg class="icon"><use href="#i-search"/></svg> Find a song</button>
+    <button class="tabbtn" id="tabBtnQueue" type="button"><svg class="icon"><use href="#i-music"/></svg> Party queue</button>
   </div>
 
   <div class="tabpane" id="tabFind">
     <label>Search for a song</label>
     <input type="text" id="q" placeholder="Search YouTube...">
-    <label class="toggleRow"><input type="checkbox" id="karaokeSuffix" checked> 🎤 Add "karaoke" to search (helps surface lyrics videos)</label>
+    <label class="toggleRow"><input type="checkbox" id="karaokeSuffix" checked> <svg class="icon"><use href="#i-mic"/></svg> Add "karaoke" to search (helps surface lyrics videos)</label>
     <button class="btn amber" id="searchBtn" type="button">Search</button>
     <div class="results" id="results"></div>
 
@@ -2371,7 +2393,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         </div>
         <label>Singing with anyone else? (optional, comma-separated)</label>
         <input type="text" id="duetWith" placeholder="Bob">
-        <label class="toggleRow"><input type="checkbox" id="challengeMode"> 🎯 Challenge someone else to sing this instead</label>
+        <label class="toggleRow"><input type="checkbox" id="challengeMode"> <svg class="icon"><use href="#i-target"/></svg> Challenge someone else to sing this instead</label>
         <input type="text" id="challengeTarget" class="hidden" placeholder="Who are you challenging?" style="margin-top:8px">
         <button class="btn pink" id="addBtn" type="button">Confirm — add to queue ✓</button>
       </div>
@@ -2381,13 +2403,13 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
   <div class="tabpane hidden" id="tabQueue">
     <div class="card" id="queueView">
-      <h3 style="margin-top:0">🎶 Party queue</h3>
+      <h3 style="margin-top:0"><svg class="icon"><use href="#i-music"/></svg> Party queue</h3>
       <div id="qEmpty" style="color:var(--dim);font-size:13px">Nobody's queued yet.</div>
       <ul class="qlist hidden" id="qList"></ul>
       <div id="qChallenges"></div>
     </div>
     <div class="card">
-      <h3 style="margin-top:0">👥 Who's here</h3>
+      <h3 style="margin-top:0"><svg class="icon"><use href="#i-users"/></svg> Who's here</h3>
       <div class="guestList" id="guestList"></div>
     </div>
   </div>
@@ -2404,7 +2426,7 @@ function currentTheme(){
   return document.documentElement.dataset.theme ||
     (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 }
-function applyThemeIcon(){ $('themeToggle').textContent = currentTheme()==='light' ? '☀️' : '🌙'; }
+function applyThemeIcon(){ $('themeToggle').innerHTML = '<svg class="icon"><use href="#i-'+(currentTheme()==='light'?'sun':'moon')+'"/></svg>'; }
 applyThemeIcon();
 $('themeToggle').addEventListener('click',()=>{
   const next = currentTheme()==='light' ? 'dark' : 'light';
@@ -2655,8 +2677,16 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     padding:5px 10px;font-size:12px;color:var(--muted)}
 </style>
 
-<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme">🌙</button>
-<h1>🎤 Party Host <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+</svg>
+
+<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme"><svg class="icon"><use href="#i-moon"/></svg></button>
+<h1><svg class="icon"><use href="#i-mic"/></svg> Party Host <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
 <div class="sub">Remote control for the TV screen — the video stays on the host laptop, but you can run the queue from here.</div>
 
 <div id="noRoom">
@@ -2672,7 +2702,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   </div>
 
   <div class="card" id="challengesCard" style="display:none">
-    <h3 style="margin-top:0">⚡ Challenges</h3>
+    <h3 style="margin-top:0"><svg class="icon"><use href="#i-zap"/></svg> Challenges</h3>
     <div id="challengeList"></div>
   </div>
 
@@ -2682,7 +2712,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   </div>
 
   <div class="card">
-    <h3 style="margin-top:0">👥 Who's here <span id="guestCount" style="color:var(--dim);font-weight:400"></span></h3>
+    <h3 style="margin-top:0"><svg class="icon"><use href="#i-users"/></svg> Who's here <span id="guestCount" style="color:var(--dim);font-weight:400"></span></h3>
     <div class="guestList" id="guestList"><span class="empty">Waiting for guests to join…</span></div>
   </div>
 </div>
@@ -2697,7 +2727,7 @@ function currentTheme(){
   return document.documentElement.dataset.theme ||
     (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 }
-function applyThemeIcon(){ $('themeToggle').textContent = currentTheme()==='light' ? '☀️' : '🌙'; }
+function applyThemeIcon(){ $('themeToggle').innerHTML = '<svg class="icon"><use href="#i-'+(currentTheme()==='light'?'sun':'moon')+'"/></svg>'; }
 applyThemeIcon();
 $('themeToggle').addEventListener('click',()=>{
   const next = currentTheme()==='light' ? 'dark' : 'light';
