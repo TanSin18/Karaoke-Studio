@@ -83,6 +83,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .mt{margin-top:12px}
 
   /* video / lyrics stage */
+  .stageWrap{position:relative}
   .stage{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:16/9;
     border:1px solid #000;box-shadow:inset 0 0 40px rgba(0,0,0,.6)}
   .stage iframe{width:100%;height:100%;border:0;display:block}
@@ -90,11 +91,38 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     flex-direction:column;gap:8px;color:var(--dim);font-family:var(--mono);font-size:12px;letter-spacing:.08em}
   .placeholder .big{font-size:40px;opacity:.4}
   .stage #ytplayer,.stage iframe{width:100%;height:100%}
-  .stage{position:relative}
   .novideo{position:absolute;bottom:8px;right:8px;z-index:5;font-family:var(--mono);font-size:10px;
     letter-spacing:.06em;color:var(--muted);background:rgba(10,11,14,.82);border:1px solid var(--edge);
     border-radius:6px;padding:4px 8px;cursor:pointer}
   .novideo:hover{color:var(--amber);border-color:var(--amber2)}
+
+  /* live cumulative pitch-steadiness "island" — deliberately minimal: just a
+     status dot (live, this-instant feedback) + a running percentage
+     (cumulative for the take so far). Overlaid on stageWrap (not #stage —
+     see the HTML comment above stageWrap) so it survives our own fullscreen
+     mode and mountVideo()/showVideoFallback() rewriting #stage's contents. */
+  .liveScoreBar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:6;
+    display:flex;align-items:center;gap:7px;background:rgba(10,11,14,.72);backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:6px 14px;
+    font-family:var(--mono);font-size:13px;font-weight:700;color:#fff;letter-spacing:.02em;
+    box-shadow:0 4px 18px rgba(0,0,0,.4);transition:opacity .2s}
+  .lsbDot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none;transition:background .1s,box-shadow .1s}
+  .lsbDot.good{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .lsbDot.off{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .stageFsBtn{position:absolute;top:10px;right:10px;z-index:6;background:rgba(10,11,14,.72);
+    border:1px solid rgba(255,255,255,.14);color:#fff;border-radius:8px;width:30px;height:30px;
+    font-size:15px;cursor:pointer;line-height:1}
+  .stageFsBtn:hover{background:rgba(10,11,14,.9)}
+  /* our own fullscreen target is stageWrap — override #stage's normal
+     card-embedded sizing (aspect-ratio box, rounded corners) so the video
+     truly fills the screen instead of staying letterboxed to a 16:9 tile. */
+  .stageWrap:fullscreen{width:100vw;height:100vh;display:flex;align-items:center;
+    justify-content:center;background:#000}
+  .stageWrap:fullscreen .stage{aspect-ratio:auto;border-radius:0;border:0;box-shadow:none;
+    width:100%;height:100%}
+  .stageWrap:fullscreen iframe,.stageWrap:fullscreen #ytplayer{width:100%;height:100%}
+  .stageWrap:fullscreen .liveScoreBar{top:24px;font-size:16px;padding:9px 20px}
+  .stageWrap:fullscreen .stageFsBtn{top:24px;right:24px;width:38px;height:38px;font-size:19px}
   .vfallback{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:12px;text-align:center;padding:22px;
     background:radial-gradient(600px 300px at 50% 0%,#20242e 0%,transparent 70%),#0b0c0f}
@@ -503,8 +531,24 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <div>
       <div class="card step" id="stageCard">
         <h2>2 · Sing along · record vocals</h2>
-        <div class="stage" id="stage">
-          <div class="placeholder"><div class="big">♪</div>load a track to see the video</div>
+        <!-- stageWrap, not #stage itself, is the fullscreen target and the
+             overlay's positioning parent: mountVideo()/showVideoFallback()
+             both do $('stage').innerHTML=... wholesale (swapping between the
+             video iframe and the lyrics-fallback panel), which would wipe out
+             the live-score bar and fullscreen button if they lived inside
+             #stage instead of next to it. -->
+        <div class="stageWrap" id="stageWrap">
+          <div class="stage" id="stage">
+            <div class="placeholder"><div class="big">♪</div>load a track to see the video</div>
+          </div>
+          <!-- overlaid so it's still visible in our own fullscreen mode (see
+               stageFsBtn) — a cross-origin YouTube iframe's OWN fullscreen
+               can't have anything drawn over it, so fs:0 disables that
+               control and this button fullscreens stageWrap instead. -->
+          <div class="liveScoreBar hidden" id="liveScoreBar">
+            <span class="lsbDot" id="lsbDot"></span><span id="lsbPct">--%</span>
+          </div>
+          <button class="stageFsBtn" id="stageFsBtn" type="button" title="Fullscreen (keeps the live score visible)">⛶</button>
         </div>
 
         <!-- seek / scrub bar -->
@@ -1626,8 +1670,12 @@ function mountVideo(vid){
   ytReady=false;
   ytPlayer=new YT.Player('ytplayer',{
     videoId:vid, host:'https://www.youtube.com',
-    playerVars:{ mute:1, rel:0, modestbranding:1, playsinline:1,
+    playerVars:{ mute:1, rel:0, modestbranding:1, playsinline:1, fs:0,
                  iv_load_policy:3, controls:1, origin:window.location.origin },
+                 // fs:0 — a cross-origin iframe's OWN fullscreen can't have our
+                 // live-score bar drawn over it, so the native fullscreen button
+                 // is a dead end here; stageFsBtn (fullscreens #stage itself,
+                 // see CSS) is the only fullscreen path, deliberately.
     events:{
       onReady:(e)=>{ try{e.target.mute();}catch(_){} ytReady=true; startSyncTicker(); },
       onError:(e)=>showVideoFallback('This uploader blocked embedding (code '+e.data+').'),
@@ -1722,6 +1770,15 @@ function showVideoFallback(reason){
     '</div>';
   const tv=$('tryvideo'); if(tv) tv.addEventListener('click',()=>{ if(VIDEO_ID) mountVideo(VIDEO_ID); });
 }
+
+// ---- our own fullscreen (see fs:0 above for why) ---------------------------
+$('stageFsBtn').addEventListener('click',()=>{
+  if(document.fullscreenElement){ document.exitFullscreen(); }
+  else{ $('stageWrap').requestFullscreen().catch(()=>{}); }
+});
+document.addEventListener('fullscreenchange',()=>{
+  $('stageFsBtn').textContent = document.fullscreenElement ? '⤡' : '⛶';
+});
 
 // ---- mic priming: persistent WebAudio graph -------------------------------
 // mic ─┬─▶ monitorGain ─▶ destination   (hear your own voice, adjustable)
@@ -1868,7 +1925,10 @@ function startMeterAndPitch(){
 // ---- tuner (live singing feedback) ----------------------------------------
 let tunerOn=true;
 $('tunerToggle').addEventListener('change',()=>{ tunerOn=$('tunerToggle').checked;
-  if(!tunerOn) showTuner(false); else if(recording) showTuner(true); });
+  if(!tunerOn) showTuner(false); else if(recording) showTuner(true);
+  // the live score bar runs off the same per-frame signal as the tuner
+  // (updateTuner), so it has nothing to show whenever the tuner is off.
+  $('liveScoreBar').classList.toggle('hidden', !(recording && tunerOn)); });
 function showTuner(on){ $('tuner').style.display=on?'':'none'; if(!on){ $('tunerNote').textContent='—';
   $('tunerNote').className='tuner-note'; $('tunerNeedle').style.left='50%'; $('tunerMsg').textContent='sing a note…'; } }
 let tunerSmooth=null;
@@ -1893,7 +1953,8 @@ function scoreTier(accuracy){
 
 function updateTuner(note, freq){
   if(!note){ $('tunerNote').textContent='—'; $('tunerNote').className='tuner-note';
-    $('tunerMsg').textContent='listening…'; $('tunerNeedle').style.background='#fff'; return; }
+    $('tunerMsg').textContent='listening…'; $('tunerNeedle').style.background='#fff';
+    updateLiveScoreBar(null); return; }
   // smooth the cents a bit so the needle doesn't jitter
   tunerSmooth = tunerSmooth==null? note.cents : Math.round(tunerSmooth*0.5+note.cents*0.5);
   const cents=tunerSmooth;
@@ -1910,6 +1971,18 @@ function updateTuner(note, freq){
   scoreFrames++;
   if(inTune){ scoreInTune++; scoreStreak++; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
   else{ scoreStreak=0; }
+  updateLiveScoreBar(inTune);
+}
+
+// live "island" bar: cumulative %-so-far (scoreInTune/scoreFrames, same
+// number the end-of-take score card shows) + a dot for THIS instant's
+// in-tune/off/no-signal state. Deliberately just those two things — see the
+// scoreCard comment elsewhere on why this measures steadiness, not melody.
+function updateLiveScoreBar(inTuneNow){
+  const dot=$('lsbDot'), pct=$('lsbPct');
+  if(!dot||!pct) return;
+  dot.className='lsbDot'+(inTuneNow==null?'':(inTuneNow?' good':' off'));
+  pct.textContent = scoreFrames>0 ? Math.round(100*scoreInTune/scoreFrames)+'%' : '--%';
 }
 
 // ---- live monitor volume sliders ------------------------------------------
@@ -1936,7 +2009,8 @@ let pendingContinueAt=null;   // set when user picks "continue from here"
 function showRecUI(on){
   $('lamp').classList.toggle('on',on);
   $('rec').disabled=on; $('stop').disabled=!on; $('play').disabled=on;
-  if(on){ $('stopChoice').style.display='none'; $('scoreCard').classList.add('hidden'); }
+  $('liveScoreBar').classList.toggle('hidden',!(on && tunerOn));
+  if(on){ $('stopChoice').style.display='none'; $('scoreCard').classList.add('hidden'); updateLiveScoreBar(null); }
 }
 function offerContinueOrKeep(){
   const at=window._recEndMusicPos||0;
