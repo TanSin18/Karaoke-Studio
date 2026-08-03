@@ -348,7 +348,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
 <div class="pickerOverlay hidden" id="pickerOverlay">
   <div class="pickerCard">
-    <div class="pickerTitle">🎲 Picking your song… <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <div class="pickerTitle" id="pickerTitle">🎲 Picking your song… <span class="marquee" id="pickerMarquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
     <div class="pickerGrid" id="pickerGrid"></div>
     <div class="pickerResult hidden" id="pickerResult">
       <img id="pickerThumb" alt="">
@@ -1241,18 +1241,29 @@ function resumeSession(sid){
 }
 
 // ---- random picker: character-select-style spin over the library ----------
-$('surpriseBtn').addEventListener('click',()=>{
-  if(!libraryCache.length){ toast('Save some songs to your library first!','warn',2000); return; }
-  openPicker();
-});
+$('surpriseBtn').addEventListener('click', openPicker);
 function openPicker(){
+  // guarded here too (not just on surpriseBtn) since "Spin again" also
+  // calls this directly — without this, an empty library would make
+  // imgs[i % 0] === imgs[NaN] === undefined, and .classList on that throws,
+  // silently killing the animation with the overlay stuck on "Picking…"
+  if(!libraryCache.length){ toast('Save some songs to your library first!','warn',2000); return; }
+
   $('pickerOverlay').classList.remove('hidden');
   $('pickerResult').classList.add('hidden');
+  $('pickerTitle').firstChild.textContent='🎲 Picking your song… ';
+  $('pickerMarquee').classList.remove('hidden');
   const grid=$('pickerGrid'); grid.innerHTML='';
   const imgs=libraryCache.map(v=>{
     const img=document.createElement('img'); img.src=v.thumb; img.alt=v.title;
     grid.appendChild(img); return img;
   });
+
+  // a single saved song has nothing to "spin" between — skip the fake
+  // suspense and just reveal it, rather than looping a static highlight
+  // on one image for two seconds looking like nothing is happening.
+  if(imgs.length===1){ imgs[0].classList.add('hl'); setTimeout(()=>landOnPick(0), 400); return; }
+
   let i=0, delay=80, elapsed=0;
   const maxTime=1800+Math.random()*800;
   (function tick(){
@@ -1267,9 +1278,12 @@ function openPicker(){
 function landOnPick(idx){
   const v=libraryCache[idx];
   window._pickedVideo=v;
+  $('pickerTitle').firstChild.textContent='🎉 Here\'s your pick!';
+  $('pickerMarquee').classList.add('hidden');
   $('pickerThumb').src=v.thumb;
   $('pickerResultTitle').textContent=v.title;
   $('pickerResult').classList.remove('hidden');
+  $('pickerResult').scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 $('pickerSingBtn').addEventListener('click',()=>{
   const v=window._pickedVideo; if(!v) return;
