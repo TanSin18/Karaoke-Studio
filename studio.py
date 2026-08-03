@@ -251,7 +251,7 @@ def _probe_duration(path):
 # flag) so undo can just un-hide the entry — the file is never removed.
 
 def _add_take(jid, file, duration, kind="lead", fx_snapshot=None,
-              punch_sec=None, source_take_ids=None, tid=None):
+              punch_sec=None, source_take_ids=None, tid=None, pitch_score=None):
     tid = tid or uuid.uuid4().hex[:8]
     meta = _read_meta(jid)
     takes = meta.get("takes") or []
@@ -259,6 +259,7 @@ def _add_take(jid, file, duration, kind="lead", fx_snapshot=None,
         "id": tid, "file": file, "duration": duration, "kind": kind,
         "fx_snapshot": fx_snapshot, "punch_sec": punch_sec,
         "source_take_ids": source_take_ids, "deleted": False,
+        "pitch_score": pitch_score,
     }
     takes.append(take)
     _write_meta(jid, takes=takes)
@@ -1362,6 +1363,7 @@ class Handler(BaseHTTPRequestHandler):
                 fx_snapshot=body.get("fx_snapshot"),
                 punch_sec=body.get("punch_sec"),
                 tid=tid,
+                pitch_score=body.get("pitch_score"),
             )
             self._json(200, {"take": take})
             return

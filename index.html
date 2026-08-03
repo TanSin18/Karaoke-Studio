@@ -243,6 +243,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .choice{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px;padding:12px;
     background:linear-gradient(180deg,#20242e,#191c23);border:1px solid var(--amber2);border-radius:10px}
   .choice-msg{font-family:var(--mono);font-size:12px;color:var(--amber);flex:1;min-width:160px}
+  .scoreCard{margin-top:12px;padding:14px;border-radius:12px;text-align:center;
+    background:linear-gradient(180deg,#241a3a,#1c1030);border:1px solid var(--pink2);box-shadow:var(--glow-pink)}
+  .scoreStars{font-size:24px;letter-spacing:5px}
+  .scoreLabel{font-weight:700;font-size:14.5px;margin-top:4px;color:var(--ink)}
+  .scoreDetail{color:var(--muted);font-size:11.5px;margin-top:4px;font-family:var(--mono)}
+  .takeScoreBadge{font-family:var(--mono);font-size:9px;color:var(--pink);margin-left:4px}
   /* take mini-mixer + test mode */
   .takemix{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;
     background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
@@ -563,6 +569,14 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <button id="rec" class="btn rec" disabled title="Start recording (Space)">● Record</button>
           <button id="stop" class="btn" disabled title="Stop recording (Space)">■ Stop</button>
           <button id="playtake" class="btn" disabled title="Hear your take over the music">▶ Play take</button>
+        </div>
+
+        <!-- pitch-accuracy score: aggregates the live tuner's in-tune/off-pitch
+             judgments over the take into a fun, gamified score -->
+        <div class="scoreCard hidden" id="scoreCard">
+          <div class="scoreStars" id="scoreStars"></div>
+          <div class="scoreLabel" id="scoreLabel"></div>
+          <div class="scoreDetail" id="scoreDetail"></div>
         </div>
 
         <!-- after-stop choice: continue from here, or keep what I sang -->
@@ -1701,6 +1715,25 @@ $('tunerToggle').addEventListener('change',()=>{ tunerOn=$('tunerToggle').checke
 function showTuner(on){ $('tuner').style.display=on?'':'none'; if(!on){ $('tunerNote').textContent='—';
   $('tunerNote').className='tuner-note'; $('tunerNeedle').style.left='50%'; $('tunerMsg').textContent='sing a note…'; } }
 let tunerSmooth=null;
+
+// ---- pitch-accuracy scoring: gamifies the existing live tuner signal by
+// aggregating it over a take instead of adding a separate pitch-detection
+// pass. Reset in startRec(), accumulated here on every in-tune-or-not
+// judgment the tuner already makes, finalized in stopRec(). ---------------
+let scoreFrames=0, scoreInTune=0, scoreStreak=0, scoreBestStreak=0;
+function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scoreBestStreak=0; }
+function computeScore(){
+  if(scoreFrames<10) return null;  // too little signal (mic issue, or barely sang) to judge fairly
+  return { accuracy: Math.round(100*scoreInTune/scoreFrames), bestStreak: scoreBestStreak, frames: scoreFrames };
+}
+function scoreTier(accuracy){
+  if(accuracy>=90) return {stars:5, label:'Star Power! 🌟'};
+  if(accuracy>=75) return {stars:4, label:'Great pitch control!'};
+  if(accuracy>=60) return {stars:3, label:'Solid singing!'};
+  if(accuracy>=40) return {stars:2, label:'Getting there — keep practicing!'};
+  return {stars:1, label:'Everyone starts somewhere 🎤'};
+}
+
 function updateTuner(note, freq){
   if(!note){ $('tunerNote').textContent='—'; $('tunerNote').className='tuner-note';
     $('tunerMsg').textContent='listening…'; $('tunerNeedle').style.background='#fff'; return; }
@@ -1716,6 +1749,10 @@ function updateTuner(note, freq){
   $('tunerNeedle').style.background=inTune?'var(--ok)':'var(--amber)';
   $('tunerMsg').textContent = inTune? 'on pitch ✓'
     : (cents>0? 'a little sharp — ease down' : 'a little flat — lift up');
+
+  scoreFrames++;
+  if(inTune){ scoreInTune++; scoreStreak++; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
+  else{ scoreStreak=0; }
 }
 
 // ---- live monitor volume sliders ------------------------------------------
@@ -1742,12 +1779,22 @@ let pendingContinueAt=null;   // set when user picks "continue from here"
 function showRecUI(on){
   $('lamp').classList.toggle('on',on);
   $('rec').disabled=on; $('stop').disabled=!on; $('play').disabled=on;
-  if(on) $('stopChoice').style.display='none';
+  if(on){ $('stopChoice').style.display='none'; $('scoreCard').classList.add('hidden'); }
 }
 function offerContinueOrKeep(){
   const at=window._recEndMusicPos||0;
   $('choiceMsg').textContent='Sang up to '+fmt(at)+'. Continue from here, keep it, or redo?';
   $('stopChoice').style.display='flex';
+  renderScoreCard(window._lastPitchScore);
+}
+function renderScoreCard(score){
+  if(!score){ $('scoreCard').classList.add('hidden'); return; }
+  const tier=scoreTier(score.accuracy);
+  $('scoreStars').textContent='⭐'.repeat(tier.stars)+'☆'.repeat(5-tier.stars);
+  $('scoreLabel').textContent=tier.label;
+  const streakSec=(score.bestStreak/60).toFixed(1);
+  $('scoreDetail').textContent=score.accuracy+'% on pitch · best streak ~'+streakSec+'s';
+  $('scoreCard').classList.remove('hidden');
 }
 $('continueBtn').addEventListener('click',()=>{
   pendingContinueAt=window._recEndMusicPos||0;   // next take begins where this ended
@@ -1783,7 +1830,8 @@ async function saveCurrentTakeToHistory(kind){
   const b64=await blobToB64(window._lastVocalWav);
   let r; try{
     r=await fetch('/take',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:kind||'lead', fx_snapshot:collectFx()})});
+      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:kind||'lead', fx_snapshot:collectFx(),
+        pitch_score:window._lastPitchScore})});
   }catch(e){ toast('Could not save that take.','error'); return; }
   const d=await r.json();
   if(!r.ok){ toast(d.error||'Could not save that take.','error'); return; }
@@ -1833,9 +1881,10 @@ function renderTakeStrip(){
   takes.forEach((t,i)=>{
     const card=document.createElement('div');
     card.className='takecard'+(t.id===activeTakeId?' active':'');
+    const scoreBadge=t.pitch_score? '<span class="takeScoreBadge" title="Pitch accuracy">'+t.pitch_score.accuracy+'%</span>' : '';
     card.innerHTML=
       '<div class="takecard-top">'+
-        '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+'</span>'+
+        '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+scoreBadge+'</span>'+
         '<span class="takex" title="Delete this take">✕</span>'+
       '</div>'+
       '<div class="takedur">'+fmt(t.duration||0)+'</div>'+
@@ -2153,6 +2202,7 @@ async function startRec(){
   // punch-in should stay locked to the song's own beat, not a fresh 4-click.
   if(metro.countIn && !punch) await countIn();
 
+  if(!punch) resetScoreTracking();  // a punch-in continuation keeps the earlier segment's stats too
   recChunks=[];
   recorder=new MediaRecorder(mediaStream,{mimeType:pickMime(),audioBitsPerSecond:512000});
   recorder.ondataavailable=e=>{ if(e.data.size) recChunks.push(e.data); };
@@ -2212,6 +2262,7 @@ function stopRec(){ if(!recording)return;
   }
   recording=false; showRecUI(false); showTuner(false);
   $('play').disabled=false; resetMusicBtn();
+  window._lastPitchScore=computeScore();
 }
 
 async function finishRec(){
