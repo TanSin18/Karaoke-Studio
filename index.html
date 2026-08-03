@@ -266,10 +266,11 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     background:linear-gradient(180deg,#20242e,#191c23);border:1px solid var(--amber2);border-radius:10px}
   .choice-msg{font-family:var(--mono);font-size:12px;color:var(--amber);flex:1;min-width:160px}
   .scoreCard{margin-top:12px;padding:14px;border-radius:12px;text-align:center;
-    background:linear-gradient(180deg,#241a3a,#1c1030);border:1px solid var(--pink2);box-shadow:var(--glow-pink)}
+    background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--pink2);box-shadow:var(--glow-pink)}
   .scoreStars{font-size:24px;letter-spacing:5px}
   .scoreLabel{font-weight:700;font-size:14.5px;margin-top:4px;color:var(--ink)}
   .scoreDetail{color:var(--muted);font-size:11.5px;margin-top:4px;font-family:var(--mono)}
+  .scoreNote{color:var(--dim);font-size:10.5px;margin-top:8px;line-height:1.5;max-width:320px;margin-left:auto;margin-right:auto}
   .takeScoreBadge{font-family:var(--mono);font-size:9px;color:var(--pink);margin-left:4px}
   /* take mini-mixer + test mode */
   .takemix{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;
@@ -601,12 +602,20 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           </div>
         </div>
 
-        <!-- pitch-accuracy score: aggregates the live tuner's in-tune/off-pitch
-             judgments over the take into a fun, gamified score -->
+        <!-- pitch-STEADINESS score: aggregates the live tuner's in-tune/off-pitch
+             judgments over the take into a fun, gamified score. This is NOT
+             melody-correctness — there's no reference vocal track to compare
+             against (the app downloads instrumental/karaoke versions, which
+             have no isolated vocal to extract a melody from), so it can only
+             judge whether you're landing cleanly on *a* note, not whether
+             it's the *right* note for the song. Say that plainly in the UI
+             (scoreNote below) rather than let "accuracy" imply more than it
+             measures. -->
         <div class="scoreCard hidden" id="scoreCard">
           <div class="scoreStars" id="scoreStars"></div>
           <div class="scoreLabel" id="scoreLabel"></div>
           <div class="scoreDetail" id="scoreDetail"></div>
+          <div class="scoreNote" id="scoreNote">Measures pitch steadiness — how cleanly you land on notes — not whether they match the song's melody.</div>
         </div>
 
         <!-- after-stop choice: continue from here, or keep what I sang -->
@@ -2029,7 +2038,7 @@ function renderTakeStrip(){
   takes.forEach((t,i)=>{
     const card=document.createElement('div');
     card.className='takecard'+(t.id===activeTakeId?' active':'');
-    const scoreBadge=t.pitch_score? '<span class="takeScoreBadge" title="Pitch accuracy">'+t.pitch_score.accuracy+'%</span>' : '';
+    const scoreBadge=t.pitch_score? '<span class="takeScoreBadge" title="Pitch steadiness — % of this take spent landing cleanly on a note, not a check against the song\'s actual melody">'+t.pitch_score.accuracy+'%</span>' : '';
     card.innerHTML=
       '<div class="takecard-top">'+
         '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+scoreBadge+'</span>'+
