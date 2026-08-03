@@ -38,6 +38,39 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     padding:14px 20px;border-radius:20px;position:sticky;top:12px;z-index:40;
     background:var(--glass-fill);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);
     border:1px solid var(--glass-border);box-shadow:0 8px 32px rgba(0,0,0,.35)}
+  /* primary app nav (Home/Library/History) — lives in the sticky glass
+     header, distinct from .sessionTab (which switches record/effects/
+     duet/export within a loaded session, one level down). */
+  .appNav{display:flex;gap:6px}
+  .appTab{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:11px;
+    border:1px solid transparent;background:none;color:var(--muted);font-weight:650;font-size:13px;
+    cursor:pointer;font-family:var(--body);transition:background .12s,color .12s}
+  .appTab:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+  .appTab.active{color:var(--ink);background:var(--glass-fill);border-color:var(--glass-border)}
+  .appTab.active .icon{color:var(--amber)}
+  @media (max-width:760px){.appTab span.navLabel{display:none}}
+
+  /* landing/welcome screen: full-viewport, opaque, sits above everything
+     else regardless of where it lives in the DOM. */
+  #landingScreen{position:fixed;inset:0;z-index:200;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;padding:24px}
+  .landingBox{width:100%;max-width:420px;text-align:center;display:flex;flex-direction:column;gap:14px}
+  .landingBox .logo{font-family:var(--mono);font-weight:700;font-size:22px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .landingSub{color:var(--muted);font-family:var(--display);font-size:20px;margin:0}
+  .landingProfiles{display:flex;flex-direction:column;gap:8px;max-height:240px;overflow-y:auto}
+  .landingProfileBtn{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;
+    border:1px solid var(--glass-border);background:var(--glass-fill);backdrop-filter:blur(18px) saturate(160%);
+    -webkit-backdrop-filter:blur(18px) saturate(160%);color:var(--ink);cursor:pointer;text-align:left;
+    font-size:14px;font-family:var(--body);transition:border-color .12s,transform .12s}
+  .landingProfileBtn:hover{border-color:var(--pink2);transform:translateY(-1px)}
+  .landingProfileBtn .pname{flex:1;font-weight:650}
+  .landingProfileBtn .pemail{color:var(--dim);font-size:12px;font-family:var(--mono)}
+  .landingNew{display:flex;flex-direction:column;gap:8px}
+  .landingDivider{display:flex;align-items:center;gap:10px;color:var(--dim);font-family:var(--mono);
+    font-size:10px;letter-spacing:.12em;text-transform:uppercase}
+  .landingDivider::before,.landingDivider::after{content:"";flex:1;height:1px;background:var(--edge)}
+
   .profileChip{position:relative}
   .profileMenu{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:260px;
     background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
@@ -459,6 +492,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.3" class="filled"/><circle cx="16" cy="8" r="1.3" class="filled"/><circle cx="12" cy="12" r="1.3" class="filled"/><circle cx="8" cy="16" r="1.3" class="filled"/><circle cx="16" cy="16" r="1.3" class="filled"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
   <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22 6 12 13 2 6"/></symbol>
 </svg>
 
 <div id="toasts" class="toaststack"></div>
@@ -482,6 +517,11 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 <div class="wrap">
   <header>
     <div class="logo">KARAOKE <b class="marquee-sign" id="logoStudio"></b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <nav class="appNav" id="appNav">
+      <button class="appTab active" id="navHome" type="button" data-page="home"><svg class="icon"><use href="#i-home"/></svg><span class="navLabel">Home</span></button>
+      <button class="appTab" id="navLibrary" type="button" data-page="library"><svg class="icon"><use href="#i-bookmark"/></svg><span class="navLabel">Library</span></button>
+      <button class="appTab" id="navHistory" type="button" data-page="history"><svg class="icon"><use href="#i-clock"/></svg><span class="navLabel">History</span></button>
+    </nav>
     <div class="profileChip" id="profileChip" style="margin-left:auto">
       <button class="btn ghost small" id="profileBtn" type="button"><svg class="icon"><use href="#i-user"/></svg> <span id="profileNameLabel">Guest</span></button>
       <div class="profileMenu hidden" id="profileMenu">
@@ -490,11 +530,19 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <button class="btn amber small" id="profileSetBtn" type="button">Create / switch</button>
         <div class="profileMenuLabel">Your accounts</div>
         <div id="profileList"></div>
+        <button class="btn ghost small" id="profileSwitchScreenBtn" type="button" style="margin-top:8px"><svg class="icon"><use href="#i-home"/></svg> Switch profile</button>
       </div>
     </div>
     <button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme"><svg class="icon"><use href="#i-moon"/></svg></button>
     <a class="btn pink" id="partyLink" href="/party" style="text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones"><svg class="icon"><use href="#i-sparkle"/></svg> Party mode</a>
   </header>
+
+  <!-- Home: search/paste-link/upload flow, plus the recording session once
+       a song loads. Library and History used to be collapsible drawers
+       inside step1Card — now dedicated pages (see #libraryPage/#historyPage
+       below) reachable from the top nav, so the app has one obvious front
+       door instead of everything living inside "Find a song". -->
+  <div id="homeSection">
 
   <!-- idle landing: centered while no song is loaded (see .landingHero.centered
        CSS + enterSessionMode()/npChangeBtn, which toggle the class). Once a
@@ -510,28 +558,6 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   <!-- STEP 1: find a song -->
   <div class="card" id="step1Card" style="margin-bottom:16px">
     <h2>1 · Find a song</h2>
-
-    <!-- bookmarked songs for the active profile, so you don't have to
-         re-search every time — plus a gamified random pick over them -->
-    <details class="drawer">
-      <summary><svg class="icon"><use href="#i-bookmark"/></svg> My Library <span id="libCount" class="hint" style="margin:0 0 0 6px;display:inline"></span></summary>
-      <div class="drawer-body">
-        <div class="row" style="margin-bottom:10px">
-          <button class="btn purple wide" id="surpriseBtn" type="button"><svg class="icon"><use href="#i-dice"/></svg> Surprise me!</button>
-        </div>
-        <div class="results stagger-in" id="libraryResults"></div>
-        <div class="hint" id="libraryEmpty">Nothing saved yet — hit the ☆ on any search result to add it here.</div>
-      </div>
-    </details>
-
-    <!-- resume a previously-prepared song for this profile, no re-download needed -->
-    <details class="drawer">
-      <summary><svg class="icon"><use href="#i-clock"/></svg> Resume a recent song</summary>
-      <div class="drawer-body">
-        <div class="results stagger-in" id="recentResults"></div>
-        <div class="hint" id="recentEmpty">No recent sessions for this profile yet.</div>
-      </div>
-    </details>
 
     <div class="tabs">
       <button class="tab on" id="tabSearch">Search YouTube</button>
@@ -936,6 +962,55 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     </div>
   </aside>
   </div>
+
+  </div><!-- /homeSection -->
+
+  <!-- Library: saved songs for the active profile, promoted from a drawer
+       inside "Find a song" to its own top-level destination. -->
+  <div class="hidden" id="libraryPage">
+    <div class="card">
+      <h2><svg class="icon"><use href="#i-bookmark"/></svg> Library <span id="libCount" class="hint" style="margin:0 0 0 6px;display:inline"></span></h2>
+      <div class="row" style="margin-bottom:14px">
+        <button class="btn purple wide" id="surpriseBtn" type="button"><svg class="icon"><use href="#i-dice"/></svg> Surprise me!</button>
+      </div>
+      <div class="results stagger-in" id="libraryResults"></div>
+      <div class="hint" id="libraryEmpty">Nothing saved yet — hit the ☆ on any search result to add it here.</div>
+    </div>
+  </div>
+
+  <!-- History: past sessions for the active profile, plus a direct download
+       for any finished audio/video render still on disk — see _session_
+       outputs() in studio.py, which checks the filesystem directly so this
+       survives a server restart instead of depending on in-memory job
+       status. -->
+  <div class="hidden" id="historyPage">
+    <div class="card">
+      <h2><svg class="icon"><use href="#i-clock"/></svg> History</h2>
+      <div class="results stagger-in" id="recentResults"></div>
+      <div class="hint" id="recentEmpty">No recent sessions for this profile yet.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Landing/welcome: shown once, until a profile is explicitly chosen (see
+     hasChosenProfile()/showLandingScreen() below) — after that, localStorage
+     remembers the choice and future visits skip straight to Home. Reachable
+     again anytime via "Switch profile" in the account menu. Full-viewport
+     overlay (position:fixed, high z-index), so it's a sibling of .wrap
+     rather than nested inside its max-width. -->
+<div id="landingScreen" class="hidden">
+  <div class="landingBox">
+    <div class="logo" style="justify-content:center">KARAOKE <b class="marquee-sign" id="landingLogoStudio"></b></div>
+    <p class="landingSub">Who's singing tonight?</p>
+    <div class="landingProfiles" id="landingProfiles"></div>
+    <div class="landingDivider">or</div>
+    <div class="landingNew">
+      <input type="text" id="landingNameInput" placeholder="Your name…" maxlength="40">
+      <input type="text" id="landingEmailInput" placeholder="Email (optional)…" maxlength="120">
+      <button class="btn amber wide" id="landingCreateBtn" type="button"><svg class="icon"><use href="#i-user"/></svg> Get started</button>
+    </div>
+    <button class="btn ghost" id="landingGuestBtn" type="button">Continue as Guest</button>
+  </div>
 </div>
 
 <script>
@@ -1322,21 +1397,72 @@ const PROFILE_KEY='kstudio.profile';
 let activeProfile=(function(){ try{ return localStorage.getItem(PROFILE_KEY)||'Guest'; }catch(e){ return 'Guest'; } })();
 $('profileNameLabel').textContent=activeProfile;
 
-function setActiveProfile(name){
+function setActiveProfile(name, email){
   activeProfile=(name||'Guest').trim()||'Guest';
   try{ localStorage.setItem(PROFILE_KEY, activeProfile); }catch(e){}
   $('profileNameLabel').textContent=activeProfile;
   // persist immediately so a brand-new account shows up in "Your accounts"
-  // right away, instead of only appearing once something is saved under it
+  // right away, instead of only appearing once something is saved under it.
+  // email is optional and only included when explicitly provided (the
+  // landing screen's "create profile" form) — omitting the key on every
+  // other switch call preserves whatever email a profile already has,
+  // per /profile/ensure's own "only touch it if the key is present" rule.
+  const body={name:activeProfile};
+  if(email!=null) body.email=email;
   fetch('/profile/ensure',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name:activeProfile})}).catch(()=>{});
+    body:JSON.stringify(body)}).catch(()=>{});
   refreshLibrary(); refreshRecentSessions();
 }
+
+// ---- landing/welcome screen: a Netflix-style "who's singing tonight"
+// picker shown once, until a profile is explicitly chosen. After that,
+// localStorage remembers the choice and future visits skip straight to
+// Home — "Switch profile" in the account menu brings it back on demand. ---
+function hasChosenProfile(){
+  try{ return localStorage.getItem(PROFILE_KEY)!=null; }catch(e){ return true; }
+}
+async function showLandingScreen(){
+  $('landingScreen').classList.remove('hidden');
+  let profiles=[];
+  try{ profiles=(await(await fetch('/profiles')).json()).profiles||[]; }catch(e){}
+  const box=$('landingProfiles');
+  box.innerHTML = profiles.map(p=>
+    '<button class="landingProfileBtn" data-name="'+escapeHtml(p.name)+'">'+
+      '<svg class="icon"><use href="#i-user"/></svg>'+
+      '<span class="pname">'+escapeHtml(p.name)+'</span>'+
+      (p.email?'<span class="pemail">'+escapeHtml(p.email)+'</span>':'')+
+    '</button>').join('');
+  box.querySelectorAll('.landingProfileBtn').forEach(b=>b.addEventListener('click',()=>{
+    setActiveProfile(b.dataset.name);
+    $('landingScreen').classList.add('hidden');
+  }));
+}
+if(!$('landingLogoStudio').dataset.lit){
+  $('landingLogoStudio').innerHTML=[...'STUDIO'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
+  $('landingLogoStudio').dataset.lit='1';
+}
+$('landingCreateBtn').addEventListener('click',()=>{
+  const name=$('landingNameInput').value.trim();
+  if(!name){ toast('Enter a name to get started.','warn',2000); return; }
+  setActiveProfile(name, $('landingEmailInput').value.trim());
+  $('landingScreen').classList.add('hidden');
+});
+$('landingNameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') $('landingCreateBtn').click(); });
+$('landingGuestBtn').addEventListener('click',()=>{
+  setActiveProfile('Guest');
+  $('landingScreen').classList.add('hidden');
+});
+if(!hasChosenProfile()) showLandingScreen();
+
 $('profileBtn').addEventListener('click',(e)=>{
   e.stopPropagation();
   $('profileMenu').classList.toggle('hidden');
   $('profileInput').value=activeProfile==='Guest'?'':activeProfile;
   loadProfileList();
+});
+$('profileSwitchScreenBtn').addEventListener('click',()=>{
+  $('profileMenu').classList.add('hidden');
+  showLandingScreen();
 });
 $('profileMenu').addEventListener('click',e=>e.stopPropagation());
 document.addEventListener('click',()=>$('profileMenu').classList.add('hidden'));
@@ -1483,25 +1609,36 @@ async function removeFromLibraryById(video_id){
   refreshLibrary();
 }
 
-// ---- resume a recent song: profile-scoped session history -----------------
+// ---- History: profile-scoped session history, resume + saved outputs -----
 async function refreshRecentSessions(){
   let sessions=[];
-  try{ sessions=(await(await fetch('/sessions?profile='+encodeURIComponent(activeProfile))).json()).sessions||[]; }
+  // History shows a lot more than the old 8-item "resume a recent song"
+  // drawer needed — it's a dedicated page now, not a compact panel.
+  try{ sessions=(await(await fetch('/sessions?profile='+encodeURIComponent(activeProfile)+'&limit=40')).json()).sessions||[]; }
   catch(e){}
   $('recentEmpty').style.display=sessions.length?'none':'';
   const box=$('recentResults'); box.innerHTML='';
   sessions.forEach(s=>{
     const card=document.createElement('div'); card.className='rcard';
     const dur=(s.duration!=null)?fmt(s.duration):'';
+    // finished outputs are detected on disk server-side (see
+    // _session_outputs in studio.py) so these links stay valid even after
+    // a server restart, not just within the run that rendered them.
+    const outputs=(s.has_audio||s.has_video)?
+      '<div class="row" style="gap:6px;margin-top:6px">'+
+        (s.has_audio?'<a class="btn small ghost" href="/final?id='+encodeURIComponent(s.id)+'" download onclick="event.stopPropagation()"><svg class="icon"><use href="#i-download"/></svg> Audio</a>':'')+
+        (s.has_video?'<a class="btn small ghost" href="/final_video?id='+encodeURIComponent(s.id)+'" download onclick="event.stopPropagation()"><svg class="icon"><use href="#i-download"/></svg> Video</a>':'')+
+      '</div>' : '';
     card.innerHTML=
       '<div style="position:relative">'+
         (s.thumb?'<img class="rthumb" loading="lazy" src="'+s.thumb+'" alt="">':'<div class="rthumb"></div>')+
         (dur?'<span class="rdur">'+dur+'</span>':'')+
       '</div>'+
-      '<div class="rmeta"><div class="rtitle">'+escapeHtml(s.title)+'</div></div>';
+      '<div class="rmeta"><div class="rtitle">'+escapeHtml(s.title)+'</div>'+outputs+'</div>';
     card.addEventListener('click',()=>{
       document.querySelectorAll('.rcard').forEach(c=>c.classList.remove('loading'));
       card.classList.add('loading');
+      switchAppPage('home');
       resumeSession(s.id);
     });
     box.appendChild(card);
@@ -1694,6 +1831,19 @@ async function checkLoad(){
   if(j.status==='ready'){ clearInterval(poll); poll=null; onReady(j); }
   else if(j.status==='error'){ clearInterval(poll); poll=null; failLoad(j.error||'Load failed.'); }
 }
+
+// ---- primary app nav: Home / Library / History ---------------------------
+// One level up from .sessionTab (which switches record/effects/duet/export
+// within a loaded session) — this switches between the app's three main
+// destinations. Party mode stays a plain link to its own page (/party),
+// same as before.
+function switchAppPage(page){
+  $('homeSection').classList.toggle('hidden', page!=='home');
+  $('libraryPage').classList.toggle('hidden', page!=='library');
+  $('historyPage').classList.toggle('hidden', page!=='history');
+  document.querySelectorAll('.appTab').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
+}
+document.querySelectorAll('.appTab').forEach(b=>b.addEventListener('click',()=>switchAppPage(b.dataset.page)));
 
 let VIDEO_ID=null;
 // ---- session mode: once a song is loaded, stop competing for space with

@@ -233,7 +233,8 @@ def list_profiles():
                 d = json.load(fh)
         except (OSError, ValueError):
             continue
-        out.append({"name": d.get("display_name") or fn[:-5], "slug": fn[:-5]})
+        out.append({"name": d.get("display_name") or fn[:-5], "slug": fn[:-5],
+                     "email": d.get("email") or ""})
     out.sort(key=lambda p: p["name"].lower())
     return out
 
@@ -273,9 +274,28 @@ def _rename_profile(old_name, new_name):
     return prof
 
 
+def _session_outputs(jid):
+    """Which finished render files actually exist on disk for a session.
+    Render completion ("status": "done") only lives in the in-memory JOBS
+    dict (see set_job/get_job) and is lost on a server restart — but the
+    output files themselves are permanent, so this checks the filesystem
+    directly instead, the same way list_recent_sessions already treats
+    backing.wav as the source of truth rather than trusting a status flag."""
+    sdir = os.path.join(SESS_DIR, jid)
+    audio = None
+    for fmt in ("wav", "flac", "mp3"):
+        cand = os.path.join(sdir, f"final.{fmt}")
+        if os.path.isfile(cand):
+            audio = f"final.{fmt}"
+            break
+    video = "final_video.mp4" if os.path.isfile(os.path.join(sdir, "final_video.mp4")) else None
+    return {"audio": audio, "video": video}
+
+
 def list_recent_sessions(profile=None, limit=8):
     """Sessions with a downloaded backing track, newest first, for the
-    'resume a recent song' panel. Survives server restarts (reads meta.json).
+    'resume a recent song' panel and the History page. Survives server
+    restarts (reads meta.json + checks disk for finished outputs directly).
     Optionally filtered to sessions tagged with `profile` (untagged/older
     sessions just won't match a filter — no migration needed)."""
     out = []
@@ -299,6 +319,7 @@ def list_recent_sessions(profile=None, limit=8):
             except OSError:
                 created_at = 0
         vid = meta.get("video_id")
+        outputs = _session_outputs(jid)
         out.append({
             "id": jid,
             "title": meta.get("title") or "Karaoke",
@@ -306,6 +327,8 @@ def list_recent_sessions(profile=None, limit=8):
             "duration": meta.get("duration"),
             "thumb": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg" if vid else None,
             "created_at": created_at,
+            "has_audio": bool(outputs["audio"]),
+            "has_video": bool(outputs["video"]),
         })
     out.sort(key=lambda s: s["created_at"] or 0, reverse=True)
     return out[:limit]
@@ -973,8 +996,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/sessions":
-            profile = (parse_qs(p.query).get("profile") or [""])[0]
-            self._json(200, {"sessions": list_recent_sessions(profile or None)})
+            q = parse_qs(p.query)
+            profile = (q.get("profile") or [""])[0]
+            try:
+                limit = max(1, min(200, int((q.get("limit") or ["8"])[0])))
+            except ValueError:
+                limit = 8
+            self._json(200, {"sessions": list_recent_sessions(profile or None, limit=limit)})
             return
 
         if p.path == "/profiles":
@@ -1025,12 +1053,22 @@ class Handler(BaseHTTPRequestHandler):
         if p.path == "/final":
             jid = (parse_qs(p.query).get("id") or [""])[0]
             j = get_job(jid)
-            if not j or j.get("status") != "done":
-                self._json(404, {"error": "not ready"})
-                return
-            f = os.path.join(SESS_DIR, jid, j["final_file"])
-            self._send_file(f, "application/octet-stream",
-                            j.get("display_name"))
+            final_file = j.get("final_file")
+            display_name = j.get("display_name")
+            if j.get("status") != "done" or not final_file:
+                # in-memory job status doesn't survive a server restart —
+                # fall back to whatever finished output actually exists on
+                # disk (see _session_outputs) so old History entries stay
+                # downloadable across restarts, not just within one run.
+                final_file = _session_outputs(jid)["audio"]
+                if not final_file:
+                    self._json(404, {"error": "not ready"})
+                    return
+                meta = _read_meta(jid)
+                safe_title = re.sub(r'[\\/:*?"<>|\r\n]+', "_", meta.get("title") or "song")[:100].strip() or "song"
+                display_name = f"{safe_title} (karaoke).{final_file.rsplit('.', 1)[-1]}"
+            f = os.path.join(SESS_DIR, jid, final_file)
+            self._send_file(f, "application/octet-stream", display_name)
             return
 
         if p.path == "/final_vocal":
@@ -1042,25 +1080,34 @@ class Handler(BaseHTTPRequestHandler):
             # to anything lossy keeps it at the same quality it was mixed at.
             jid = (parse_qs(p.query).get("id") or [""])[0]
             j = get_job(jid)
-            if not j or j.get("status") != "done":
-                self._json(404, {"error": "not ready"})
-                return
             f = os.path.join(SESS_DIR, jid, "vocal_fx.wav")
             if not os.path.isfile(f):
                 self._json(404, {"error": "vocal stem not found"})
                 return
-            name = (j.get("display_name") or "song").rsplit(".", 1)[0] + " (vocal only).wav"
+            display_name = j.get("display_name")
+            if not display_name:
+                meta = _read_meta(jid)
+                safe_title = re.sub(r'[\\/:*?"<>|\r\n]+', "_", meta.get("title") or "song")[:100].strip() or "song"
+                display_name = safe_title
+            name = display_name.rsplit(".", 1)[0] + " (vocal only).wav"
             self._send_file(f, "audio/wav", name)
             return
 
         if p.path == "/final_video":
             jid = (parse_qs(p.query).get("id") or [""])[0]
             j = get_job(jid)
-            if not j or j.get("video_status") != "done":
-                self._json(404, {"error": "not ready"})
-                return
-            f = os.path.join(SESS_DIR, jid, j["final_video_file"])
-            name = (j.get("display_name") or "karaoke").rsplit(".", 1)[0] + ".mp4"
+            video_file = j.get("final_video_file") if j.get("video_status") == "done" else None
+            if not video_file:
+                video_file = _session_outputs(jid)["video"]
+                if not video_file:
+                    self._json(404, {"error": "not ready"})
+                    return
+            display_name = j.get("display_name")
+            if not display_name:
+                meta = _read_meta(jid)
+                display_name = re.sub(r'[\\/:*?"<>|\r\n]+', "_", meta.get("title") or "karaoke")[:100].strip() or "karaoke"
+            f = os.path.join(SESS_DIR, jid, video_file)
+            name = display_name.rsplit(".", 1)[0] + ".mp4"
             self._send_file(f, "video/mp4", name)
             return
 
@@ -1334,7 +1381,14 @@ class Handler(BaseHTTPRequestHandler):
             if not name:
                 self._json(400, {"error": "Missing account name."})
                 return
-            prof = _write_profile(name)
+            # optional, local-only — just stored for display in the account
+            # menu (e.g. "signed in as alice@example.com"). No verification,
+            # no OAuth, no outbound network call of any kind.
+            email = (body.get("email") or "").strip()[:120]
+            if "email" in body:
+                prof = _write_profile(name, email=email)
+            else:
+                prof = _write_profile(name)
             self._json(200, prof)
             return
 
