@@ -593,6 +593,17 @@ def do_render(jid, vocal_path, fx, mix_opts):
     os.makedirs(tmp, exist_ok=True)
     out_fmt = mix_opts.get("format", "wav")
 
+    trim_start = mix_opts.get("trim_start")
+    trim_end = mix_opts.get("trim_end")
+    try:
+        trim_start = float(trim_start) if trim_start not in (None, "") else None
+    except (TypeError, ValueError):
+        trim_start = None
+    try:
+        trim_end = float(trim_end) if trim_end not in (None, "") else None
+    except (TypeError, ValueError):
+        trim_end = None
+
     try:
         processed_vocal = os.path.join(sdir, "vocal_fx.wav")
         audio_fx.process_vocal(
@@ -617,6 +628,8 @@ def do_render(jid, vocal_path, fx, mix_opts):
             harmony_gain_db=float(mix_opts.get("harmony_gain_db", -3)),
             out_format=out_fmt,
             loudnorm=bool(mix_opts.get("loudnorm", True)),
+            trim_start=trim_start,
+            trim_end=trim_end,
         )
     except Exception as e:
         set_job(jid, status="error", error=str(e)[:400])
@@ -624,9 +637,14 @@ def do_render(jid, vocal_path, fx, mix_opts):
 
     title = get_job(jid).get("title", "song")
     safe = re.sub(r'[\\/:*?"<>|]+', "_", title)[:100].strip() or "song"
+    # trim_start is kept around (not just used above) so do_combine_video can
+    # seek the phone video by the same amount later — the render and the
+    # video combine happen in separate requests/steps, so this is the only
+    # way that later step knows the front of the mix got trimmed.
     set_job(jid, status="done", stage="done",
             final_file=os.path.basename(final),
-            display_name=f"{safe} (karaoke).{out_fmt}")
+            display_name=f"{safe} (karaoke).{out_fmt}",
+            render_trim_start=trim_start)
 
 
 def do_combine_video(jid):
@@ -643,7 +661,8 @@ def do_combine_video(jid):
     final_mix = os.path.join(sdir, j["final_file"])
     out_video = os.path.join(sdir, "final_video.mp4")
     try:
-        audio_fx.mux_video(phone_video, final_mix, out_video)
+        audio_fx.mux_video(phone_video, final_mix, out_video,
+                            trim_start=j.get("render_trim_start"))
     except Exception as e:
         set_job(jid, video_status="error", video_error=str(e)[:400])
         return

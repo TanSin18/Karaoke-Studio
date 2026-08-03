@@ -443,7 +443,8 @@ def process_vocal(in_wav, out_wav, fx, tmpdir, progress=None):
 def mixdown(vocal_path, music_path, out_path,
             vocal_gain_db=0.0, music_gain_db=0.0,
             harmony_path=None, harmony_gain_db=-3.0,
-            out_format="wav", loudnorm=True):
+            out_format="wav", loudnorm=True,
+            trim_start=None, trim_end=None):
     """
     Mix processed vocal + backing music (+ optional harmony vocal) into a
     final high-quality file.
@@ -461,6 +462,20 @@ def mixdown(vocal_path, music_path, out_path,
     glue = "acompressor=threshold=0.1:ratio=2:knee=6:attack=15:release=250:makeup=1"
     post = (glue + ",loudnorm=I=-14:TP=-1.5:LRA=11") if loudnorm else glue
 
+    # Optional trim, applied last (after mixing/mastering) so it's sample-
+    # accurate against the final mix rather than each input separately.
+    # asetpts resets the timestamp base to 0 after cutting the front off —
+    # without it the trimmed file would still carry the original start
+    # offset and downstream tools (players, the video mux step) would see
+    # a file that "starts" at a nonzero timestamp.
+    trim = ""
+    if trim_start is not None or trim_end is not None:
+        start = max(0.0, float(trim_start or 0))
+        bound = f"start={start:.3f}"
+        if trim_end is not None:
+            bound += f":end={max(start, float(trim_end)):.3f}"
+        trim = f",atrim={bound},asetpts=PTS-STARTPTS"
+
     inputs = ["-i", vocal_path, "-i", music_path]
     if harmony_path:
         # Harmony bus: same presence treatment as the lead, sat a little
@@ -476,14 +491,14 @@ def mixdown(vocal_path, music_path, out_path,
             f"[1:a]{m_filter},aresample=48000[m];"
             f"[2:a]{h_filter},aresample=48000[h];"
             f"[v][h][m]amix=inputs=3:duration=longest:normalize=0[mix];"
-            f"[mix]{post}[out]"
+            f"[mix]{post}{trim}[out]"
         )
     else:
         filter_complex = (
             f"[0:a]{v_filter},aresample=48000[v];"
             f"[1:a]{m_filter},aresample=48000[m];"
             f"[v][m]amix=inputs=2:duration=longest:normalize=0[mix];"
-            f"[mix]{post}[out]"
+            f"[mix]{post}{trim}[out]"
         )
 
     codec = {
@@ -595,14 +610,24 @@ def stitch_vocals(head_wav, tail_wav, out_wav, punch_sec, crossfade_ms=40):
 # headphones, and the necessary full-length upload from the phone was
 # unreliable at real recording sizes.)
 
-def mux_video(phone_video_path, final_audio_path, out_video_path):
+def mux_video(phone_video_path, final_audio_path, out_video_path, trim_start=None):
     # Frame-accurate output benefits from re-encoding rather than a stream
     # copy. This runs once, after recording, in a background thread — no
     # real-time constraint — so "slow"/crf 18 is worth it over faster,
     # lower-quality presets.
+    #
+    # trim_start: if the render trimmed the front off the final mix,
+    # final_audio_path's timeline now starts at 0 where the untrimmed
+    # phone video still starts at the original t=0 — seek the video input
+    # forward by the same amount so the two stay aligned. The end doesn't
+    # need separate handling: -shortest already cuts to whichever stream
+    # (now the trimmed, shorter audio) ends first.
+    video_input = ["-i", phone_video_path]
+    if trim_start:
+        video_input = ["-ss", f"{max(0.0, float(trim_start)):.3f}"] + video_input
     cmd = [
         "ffmpeg", "-y",
-        "-i", phone_video_path,
+        *video_input,
         "-i", final_audio_path,
         "-map", "0:v:0", "-map", "1:a:0",
         "-c:v", "libx264", "-preset", "slow", "-crf", "18",
