@@ -1015,6 +1015,26 @@ class Handler(BaseHTTPRequestHandler):
                             j.get("display_name"))
             return
 
+        if p.path == "/final_vocal":
+            # The fully processed vocal-only stem (denoise/EQ/compression/
+            # pitch-correction already applied — the same audio that went
+            # into the mix) is written to disk as vocal_fx.wav during render
+            # and never cleaned up, but was never exposed as a download.
+            # Serving it as-is (uncompressed WAV) rather than re-encoding it
+            # to anything lossy keeps it at the same quality it was mixed at.
+            jid = (parse_qs(p.query).get("id") or [""])[0]
+            j = get_job(jid)
+            if not j or j.get("status") != "done":
+                self._json(404, {"error": "not ready"})
+                return
+            f = os.path.join(SESS_DIR, jid, "vocal_fx.wav")
+            if not os.path.isfile(f):
+                self._json(404, {"error": "vocal stem not found"})
+                return
+            name = (j.get("display_name") or "song").rsplit(".", 1)[0] + " (vocal only).wav"
+            self._send_file(f, "audio/wav", name)
+            return
+
         if p.path == "/final_video":
             jid = (parse_qs(p.query).get("id") or [""])[0]
             j = get_job(jid)
