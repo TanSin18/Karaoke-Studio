@@ -1813,7 +1813,7 @@ if(!id){
 async function startCamera(){
   try{
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facing, width: {ideal:1280}, height: {ideal:720} },
+      video: { facingMode: facing, width: {ideal:1920}, height: {ideal:1080} },
       audio: true,   // kept ON purely as a sync reference (picks up the chirp);
                      // discarded later — final output uses the app's own mix.
     });
@@ -1838,7 +1838,7 @@ async function flipCamera(){
   let newStream;
   try{
     newStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facing, width: {ideal:1280}, height: {ideal:720} }, audio: true });
+      video: { facingMode: facing, width: {ideal:1920}, height: {ideal:1080} }, audio: true });
   }catch(e){ showErr((e && e.message) || String(e)); return; }
   const oldStream = stream;
   stream = newStream;
@@ -1929,9 +1929,14 @@ function pickMime(){
 
 function startPhoneRec(){
   chunks = [];
+  // 8 Mbps matches the bumped 1080p capture target above — 2.5Mbps was sized
+  // for 720p and would have looked visibly blocky stretched over the extra
+  // pixels. The phone's own mic audio here is just a low-bitrate sync
+  // reference (discarded after alignment); the real audio quality comes
+  // from the app's own high-quality mix, muxed in separately at render time.
   recorder = new MediaRecorder(stream, {
     mimeType: pickMime(),
-    videoBitsPerSecond: 2500000,
+    videoBitsPerSecond: 8000000,
     audioBitsPerSecond: 128000,
   });
   recorder.ondataavailable = e=>{ if(e.data.size) chunks.push(e.data); };

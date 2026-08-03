@@ -706,13 +706,21 @@ def align_and_mux_video(phone_video_path, final_audio_path, out_video_path,
         )
 
     music_pos = max(0.0, float(chirp_music_pos_sec))
+    # Frame-accurate trimming (needed for the chirp alignment above to
+    # actually land on the right instant) requires re-encoding rather than a
+    # stream copy, which would only be able to cut at the nearest keyframe.
+    # This runs once, after recording, in a background thread — nothing here
+    # is real-time — so there's no reason to keep the old "veryfast"/crf 20
+    # settings that traded quality for encode speed; "slow"/crf 18 is a
+    # meaningfully better encode for the same source and still finishes in a
+    # reasonable time for a single song-length clip.
     cmd = [
         "ffmpeg", "-y",
         "-ss", f"{offset_sec:.3f}", "-i", phone_video_path,
         "-ss", f"{music_pos:.3f}", "-i", final_audio_path,
         "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:v", "libx264", "-preset", "slow", "-crf", "18",
+        "-c:a", "aac", "-b:a", "256k",
         "-shortest",
         out_video_path,
     ]
