@@ -804,6 +804,33 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <input type="range" id="hgain" min="-18" max="6" value="-3">
           <div class="val" id="hgainv">-3 dB</div>
         </div>
+
+        <!-- trim the exported song (and phone video, if recorded) to a
+             range instead of always exporting the full take -->
+        <details class="drawer mt">
+          <summary>✂️ Trim (optional)</summary>
+          <div class="drawer-body">
+            <div class="row" style="gap:16px;flex-wrap:wrap">
+              <div>
+                <div class="klabel" style="margin-bottom:4px">START</div>
+                <div class="row" style="gap:6px">
+                  <input type="text" id="trimStart" style="width:70px" placeholder="0:00">
+                  <button class="btn small" id="trimStartNow" type="button" title="Use the current playhead position">🎯 Now</button>
+                </div>
+              </div>
+              <div>
+                <div class="klabel" style="margin-bottom:4px">END</div>
+                <div class="row" style="gap:6px">
+                  <input type="text" id="trimEnd" style="width:70px" placeholder="end">
+                  <button class="btn small" id="trimEndNow" type="button" title="Use the current playhead position">🎯 Now</button>
+                </div>
+              </div>
+              <button class="btn ghost small" id="trimClear" type="button" title="Remove trim — export the full song" style="align-self:flex-end">✕ Clear</button>
+            </div>
+            <div class="hint">Cuts the exported song (and video, if you recorded one) to just this range — mm:ss. Leave End blank to keep through the end.</div>
+          </div>
+        </details>
+
         <div class="row mt">
           <select id="ofmt">
             <option value="wav">WAV · 24-bit</option>
@@ -1642,6 +1669,18 @@ function onReady(j){
   loadTakes();
 }
 function fmt(s){ s=Math.max(0,s|0); return String((s/60)|0).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+// Inverse of fmt(): "mm:ss" or plain seconds -> seconds, or null if blank/invalid.
+function parseMMSS(str){
+  str=(str||'').trim();
+  if(!str) return null;
+  const parts=str.split(':').map(Number);
+  if(parts.some(isNaN)) return null;
+  return parts.length===2 ? parts[0]*60+parts[1] : parts[0];
+}
+function currentSongTime(){ return ytReady ? videoTime() : (backingAudio?.currentTime||0); }
+$('trimStartNow').addEventListener('click',()=>{ $('trimStart').value=fmt(currentSongTime()); });
+$('trimEndNow').addEventListener('click',()=>{ $('trimEnd').value=fmt(currentSongTime()); });
+$('trimClear').addEventListener('click',()=>{ $('trimStart').value=''; $('trimEnd').value=''; });
 
 // ---- video as MASTER CLOCK (YouTube IFrame API) ----------------------------
 // The video drives timing. We can control it (play/pause/seek) and read its
@@ -3249,11 +3288,16 @@ function collectFx(){
 }
 async function doRender(){
   if(!window._lastVocalWav && !activeTakeId){ $('rendererr').textContent='Record a vocal take first.'; return; }
+  const trimStart=parseMMSS($('trimStart').value), trimEnd=parseMMSS($('trimEnd').value);
+  if(trimStart!=null && trimEnd!=null && trimEnd<=trimStart){
+    $('rendererr').textContent='Trim end must be after trim start.'; return;
+  }
   $('rendererr').textContent=''; $('result').innerHTML=''; $('render').disabled=true;
   $('renderbar').style.display='block'; $('renderfill').style.width='30%';
   const body={id:SID, fx:collectFx(), mix:{
     vocal_gain_db:+$('vgain').value, music_gain_db:+$('mgain').value,
-    music_key:musicKey, format:$('ofmt').value, loudnorm:true }};
+    music_key:musicKey, format:$('ofmt').value, loudnorm:true,
+    trim_start:trimStart, trim_end:trimEnd }};
   if(activeHarmonyTakeId){
     body.mix.harmony_take_id=activeHarmonyTakeId;
     body.mix.harmony_gain_db=+$('hgain').value;
