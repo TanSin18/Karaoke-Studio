@@ -328,6 +328,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .status{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
   .dl{display:inline-block;margin-top:12px;text-decoration:none;background:linear-gradient(180deg,var(--ok),#28b873);
     color:#052012;padding:11px 20px;border-radius:8px;font-weight:700;font-size:13px;box-shadow:var(--glow-ok)}
+  .dl.ghost{background:var(--metal);color:var(--ink);box-shadow:none;border:1px solid var(--edge)}
   /* reusable mini-player control row (used for Play take + final song) */
   .player{background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:12px;margin-top:12px}
   .player .ctrls{display:flex;align-items:center;gap:8px}
@@ -3254,7 +3255,8 @@ async function checkRender(){
     // cache-bust so a re-render loads the new file, not a stale cached one.
     $('result').innerHTML=
       '<div class="player" id="finalPlayer"></div>'+
-      '<a class="dl" href="/final?id='+SID+'" download>⬇ Download “'+(j.display_name||'song')+'”</a>';
+      '<a class="dl" href="/final?id='+SID+'" download>⬇ Download “'+(j.display_name||'song')+'”</a>'+
+      '<a class="dl ghost" href="/final_vocal?id='+SID+'" download style="margin-left:8px">⬇ Download vocal only (WAV)</a>';
     const fa=new Audio('/final?id='+SID+'&t='+Date.now());
     fa.preload='metadata';
     if(window._finalAudio){ try{window._finalAudio.pause();}catch(_){}}
