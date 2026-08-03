@@ -2,6 +2,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Karaoke Studio</title>
 <link rel="stylesheet" href="/theme.css">
+<script>
+// applied before first paint to avoid a flash of the wrong theme
+try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
+</script>
 <style>
   body{
     margin:0;min-height:100vh;background:var(--bg);
@@ -363,6 +367,7 @@
         <div id="profileList"></div>
       </div>
     </div>
+    <button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme">🌙</button>
     <a class="btn pink" id="partyLink" href="/party" style="text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones">🎉 Party mode</a>
   </header>
 
@@ -1080,6 +1085,20 @@ function renderResults(res){
   });
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---- light/dark theme toggle -----------------------------------------
+function currentTheme(){
+  return document.documentElement.dataset.theme ||
+    (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+}
+function applyThemeIcon(){ $('themeToggle').textContent = currentTheme()==='light' ? '☀️' : '🌙'; }
+applyThemeIcon();
+$('themeToggle').addEventListener('click',()=>{
+  const next = currentTheme()==='light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme=next;
+  try{ localStorage.setItem('kstudio.theme', next); }catch(e){}
+  applyThemeIcon();
+});
 
 // ---- profiles: a display name, not an account — no login. Scopes which
 // sessions/library belong to whom on a shared machine. --------------------

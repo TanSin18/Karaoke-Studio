@@ -29,6 +29,27 @@
   --bg: radial-gradient(1200px 600px at 70% -10%, #2c1d4a 0%, transparent 60%), #0d0618;
 }
 
+/* Light mode: only the page chrome (cards, body, text) flips — "hardware"
+   surfaces (the FX rack, sliders, meters, text inputs, buttons — anything
+   using --track/--rack/--fader/--metal) intentionally stay dark in both
+   themes, like a mixing console, so they don't need their own parallel set
+   of ink/muted/dim tokens. Respects the OS preference by default; an
+   explicit data-theme attribute (set by the toggle in index.html) overrides it. */
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --panel:#ffffff; --panel2:#f4f1fb; --edge:#ddd6ef;
+    --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
+    --bg: radial-gradient(1200px 600px at 70% -10%, #efe9fb 0%, transparent 60%), #f8f6fc;
+    --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
+  }
+}
+:root[data-theme="light"]{
+  --panel:#ffffff; --panel2:#f4f1fb; --edge:#ddd6ef;
+  --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
+  --bg: radial-gradient(1200px 600px at 70% -10%, #efe9fb 0%, transparent 60%), #f8f6fc;
+  --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
+}
+
 *{box-sizing:border-box}
 
 .hidden{display:none}
