@@ -627,9 +627,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
                   </div>
                 </div>
                 <div style="opacity:.8;margin-top:8px">Scan the code, or open the link on your phone (same
-                  WiFi). Android only for now — camera access over a plain link needs a one-time browser
-                  setting; see the
-                  <a href="https://github.com/TanSin18/Karaoke-Studio#readme" target="_blank" rel="noopener">README</a>.</div>
+                  WiFi). Works on iPhone and Android — your phone's browser will warn "not secure" the
+                  first time (that's the local self-signed cert, not a real problem); tap Advanced/Details
+                  → Proceed to continue.</div>
               </div>
             </div>
           </div>
@@ -2224,6 +2224,11 @@ let chirpParams={f0:800,f1:3200,durMs:120};
 window._chirpMusicPos=null;      // song-time when the chirp actually played
 window._combineTriggered=false;
 
+// Shared with checkPhoneStatus() below — both set this same "not yet
+// paired" prompt, so it's a constant rather than two copies that can
+// drift out of sync (the polling one used to silently clobber this one
+// with a shorter, stale string a few hundred ms after page load).
+const PHONE_PAIR_HINT='Pair your phone (it\'ll warn "not secure" once — tap Advanced/Details → Proceed, that\'s expected for the local self-signed cert):';
 async function loadPhoneSyncInfo(){
   try{
     const j=await(await fetch('/phone_sync_info?id='+SID)).json();
@@ -2232,11 +2237,13 @@ async function loadPhoneSyncInfo(){
     if(j.phone_url){
       txt.textContent=j.phone_url;
       box.style.display='';
-      status.textContent='Pair your phone:';
+      status.textContent=PHONE_PAIR_HINT;
       const qr=$('phoneQrImg');
       qr.onload=()=>qr.classList.remove('hidden');
       qr.onerror=()=>qr.classList.add('hidden');  // qrencode not installed — the link/copy button still work
       qr.src='/qr.png?data='+encodeURIComponent(j.phone_url);
+    }else if(j.https_unavailable){
+      status.textContent="Phone camera pairing needs `openssl` installed on this machine (not found) — phones require HTTPS for camera access. Install openssl and restart the app.";
     }else{
       status.textContent="Couldn't detect a LAN address — make sure you're on WiFi.";
     }
@@ -2269,7 +2276,7 @@ function checkPhoneStatus(){
     const status=$('phoneStatusText');
     if(!status) return;
     if(!phonePaired){
-      if($('phoneUrlBox').style.display!=='none') status.textContent='Pair your phone:';
+      if($('phoneUrlBox').style.display!=='none') status.textContent=PHONE_PAIR_HINT;
     }else{
       const labels={paired:'📱 Phone connected — ready',recording:'📱 Recording…',
         stopping:'📱 Stopping…',uploaded:'📱 Video received ✓'};

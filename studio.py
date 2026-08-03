@@ -23,6 +23,7 @@ import queue as pyqueue
 import random
 import re
 import socket
+import ssl
 import subprocess
 import threading
 import time
@@ -83,6 +84,16 @@ os.makedirs(SESS_DIR, exist_ok=True)
 HOST, PORT = "localhost", int(os.environ.get("KARAOKE_PORT", 8770))
 BIND_HOST = "0.0.0.0"
 
+# Phone-camera-sync needs the phone's browser to grant camera/mic access,
+# and browsers only expose getUserMedia on a "secure context" — https:, or
+# http: to localhost specifically. A phone hitting the LAN IP over plain
+# http (which is all the main server above offers) gets `undefined` for
+# navigator.mediaDevices and a cryptic TypeError. So /phone is served from
+# a second, HTTPS-wrapped listener on PHONE_PORT instead; PHONE_HTTPS_READY
+# reports whether that listener actually came up (needs `openssl` on PATH).
+PHONE_PORT = PORT + 1
+PHONE_HTTPS_READY = False
+
 
 def _lan_ip():
     """Best-effort local-network IP, for showing the phone a URL it can reach.
@@ -96,6 +107,36 @@ def _lan_ip():
         return None
     finally:
         s.close()
+
+
+def _ensure_phone_cert(lan_ip):
+    """Generate a fresh self-signed TLS cert (via the `openssl` CLI, same
+    optional-dependency pattern as qrencode/yt-dlp elsewhere here) for the
+    phone-camera HTTPS listener. Regenerated on every start rather than
+    cached to disk, since the LAN IP baked into its subjectAltName can
+    change between runs (DHCP) — a stale IP would fail hostname
+    verification even though the cert is otherwise valid. Returns
+    (cert_path, key_path) in a throwaway temp dir, or (None, None) if
+    openssl isn't available."""
+    if not lan_ip:
+        return None, None
+    cert_dir = os.path.join(os.path.dirname(SESS_DIR), ".certs")
+    os.makedirs(cert_dir, exist_ok=True)
+    cert_path = os.path.join(cert_dir, "phone.crt")
+    key_path = os.path.join(cert_dir, "phone.key")
+    try:
+        subprocess.run(
+            ["openssl", "req", "-x509", "-newkey", "rsa:2048",
+             "-keyout", key_path, "-out", cert_path,
+             "-days", "365", "-nodes",
+             "-subj", "/CN=karaoke-studio-phone",
+             "-addext", f"subjectAltName=IP:{lan_ip}"],
+            check=True, capture_output=True, timeout=15,
+        )
+        return cert_path, key_path
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None, None
+
 
 JOBS = {}
 LOCK = threading.Lock()
@@ -997,10 +1038,15 @@ class Handler(BaseHTTPRequestHandler):
         if p.path == "/phone_sync_info":
             jid = (parse_qs(p.query).get("id") or [""])[0]
             lan = _lan_ip()
+            # Phone browsers refuse camera/mic access on plain http to a LAN
+            # IP (not a "secure context"), so this only offers a phone_url
+            # once the HTTPS listener on PHONE_PORT is actually up.
+            phone_url = f"https://{lan}:{PHONE_PORT}/phone?id={jid}" if (lan and PHONE_HTTPS_READY) else None
             self._json(200, {
                 "lan_ip": lan,
                 "port": PORT,
-                "phone_url": f"http://{lan}:{PORT}/phone?id={jid}" if lan else None,
+                "phone_url": phone_url,
+                "https_unavailable": bool(lan) and not PHONE_HTTPS_READY,
                 "chirp": {
                     "f0": audio_fx.CHIRP_F0,
                     "f1": audio_fx.CHIRP_F1,
@@ -2567,9 +2613,30 @@ def main():
         )
     srv = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
     print(f"\n  🎤 Karaoke Studio  →  http://{HOST}:{PORT}\n")
+
+    global PHONE_HTTPS_READY
     lan = _lan_ip()
+    phone_srv = None
     if lan:
-        print(f"  Phone-camera pairing (same WiFi): http://{lan}:{PORT}/phone\n")
+        cert_path, key_path = _ensure_phone_cert(lan)
+        if cert_path:
+            try:
+                phone_srv = ThreadingHTTPServer((BIND_HOST, PHONE_PORT), Handler)
+                ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ctx.load_cert_chain(cert_path, key_path)
+                phone_srv.socket = ctx.wrap_socket(phone_srv.socket, server_side=True)
+                threading.Thread(target=phone_srv.serve_forever, daemon=True).start()
+                PHONE_HTTPS_READY = True
+            except OSError as e:
+                phone_srv = None
+                print(f"  (Phone-camera HTTPS listener failed to start: {e})")
+        if PHONE_HTTPS_READY:
+            print(f"  Phone-camera pairing (same WiFi): https://{lan}:{PHONE_PORT}/phone")
+            print("    (self-signed cert — your phone will show a security warning once;")
+            print("     tap Advanced/Details → Proceed to continue)\n")
+        else:
+            print("  Phone-camera pairing unavailable: needs `openssl` on PATH to generate")
+            print("  a certificate (phone browsers block camera access without HTTPS).\n")
     print(f"  Party mode: open http://{HOST}:{PORT}/party on this machine (TV screen)")
     if lan:
         print(f"              guests join at http://{lan}:{PORT}/join (once you start a room)\n")
@@ -2579,6 +2646,8 @@ def main():
         srv.serve_forever()
     except KeyboardInterrupt:
         print("\n  Stopped.")
+        if phone_srv:
+            phone_srv.shutdown()
 
 
 if __name__ == "__main__":
