@@ -348,7 +348,7 @@
 
         <!-- music transport (independent of recording) -->
         <div class="transport">
-          <button id="play" class="btn" disabled title="Play / pause the soundtrack">▶ Play music</button>
+          <button id="play" class="btn" disabled title="Play / pause the soundtrack (P)">▶ Play music</button>
           <button id="stopmusic" class="btn" disabled title="Stop and go back to the start">■ Stop</button>
           <div class="keybox" title="Transpose the soundtrack to your key">
             <span class="klabel">KEY</span>
@@ -424,8 +424,8 @@
         <!-- record transport -->
         <div class="transport">
           <div class="reclamp" id="lamp"></div>
-          <button id="rec" class="btn rec" disabled>● Record</button>
-          <button id="stop" class="btn" disabled>■ Stop</button>
+          <button id="rec" class="btn rec" disabled title="Start recording (Space)">● Record</button>
+          <button id="stop" class="btn" disabled title="Stop recording (Space)">■ Stop</button>
           <button id="playtake" class="btn" disabled title="Hear your take over the music">▶ Play take</button>
         </div>
 
@@ -433,14 +433,14 @@
         <div class="choice" id="stopChoice" style="display:none">
           <span class="choice-msg" id="choiceMsg"></span>
           <button class="btn" id="continueBtn" title="Re-sing from where you stopped, keeping the earlier part">▶ Continue from here</button>
-          <button class="btn" id="keepBtn" title="Keep this take as it is">✓ Keep as-is</button>
+          <button class="btn" id="keepBtn" title="Keep this take as it is (Enter)">✓ Keep as-is</button>
           <button class="btn" id="redoBtn" title="Throw this take away and sing again from the start">↺ Redo all</button>
         </div>
 
         <div class="hint">
           Wear headphones so your mic captures only your voice. The clean track is what
           records &amp; exports — the sliders above only change what YOU hear.
-          <kbd>Space</kbd> record · <kbd>P</kbd> play/pause.
+          <kbd>Space</kbd> record · <kbd>P</kbd> play/pause · <kbd>Enter</kbd> keep take.
         </div>
 
         <!-- phone camera pairing: film with your phone, synced to this app's audio -->
@@ -1600,6 +1600,11 @@ document.addEventListener('keydown',e=>{
   if(/(INPUT|SELECT|TEXTAREA)/.test(e.target.tagName)) return;
   if(e.code==='Space'){ e.preventDefault(); recording?stopRec():(!$('rec').disabled&&startRec()); }
   if(e.key==='p'||e.key==='P'){ e.preventDefault(); if(!$('play').disabled) toggleMusic(); }
+  if(e.key==='Enter'){
+    if($('stopChoice').style.display!=='none' && !$('keepBtn').disabled){
+      e.preventDefault(); $('keepBtn').click();
+    }
+  }
   if(e.key==='m'||e.key==='M'){ e.preventDefault();
     $('clickRecToggle').checked=!$('clickRecToggle').checked;
     metro.clickOn=$('clickRecToggle').checked; }
