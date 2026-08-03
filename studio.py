@@ -592,7 +592,7 @@ def _run_render_locked(jid, vocal_path, fx, mix_opts, lock):
 # still go through the existing JOBS/do_prepare pipeline — a queue entry just
 # points at a jid once that job's status is "ready".
 
-ROOM = {"code": None, "queue": [], "now_playing": None, "challenges": []}
+ROOM = {"code": None, "queue": [], "now_playing": None, "challenges": [], "guests": []}
 ROOM_LOCK = threading.Lock()
 SUBSCRIBERS = []
 SUB_LOCK = threading.Lock()
@@ -601,7 +601,33 @@ SUB_LOCK = threading.Lock()
 def room_state():
     with ROOM_LOCK:
         return {"code": ROOM["code"], "queue": list(ROOM["queue"]),
-                "now_playing": ROOM["now_playing"], "challenges": list(ROOM["challenges"])}
+                "now_playing": ROOM["now_playing"], "challenges": list(ROOM["challenges"]),
+                "guests": list(ROOM["guests"])}
+
+
+def room_join(name, device_id):
+    """Register a guest as present in the party (shown on the TV screen),
+    independent of whether they've queued a song yet — just opening /join
+    and entering a name counts. Each name is bound to the device_id that
+    first claims it in this room (a random token the guest's browser
+    generates and persists) — this is what lets challenge_accept later
+    verify "is this really the person being challenged," not just "someone
+    typed their name," so nobody can be put on the spot to sing by someone
+    else impersonating them and accepting on their behalf."""
+    name = (name or "").strip()[:40]
+    device_id = (device_id or "").strip()[:64]
+    if not name or not device_id:
+        return {"ok": False, "error": "Missing name."}
+    with ROOM_LOCK:
+        if ROOM["code"] is None:
+            return {"ok": False, "error": "No open party room."}
+        existing = next((g for g in ROOM["guests"] if g["name"] == name), None)
+        if existing and existing["device_id"] != device_id:
+            return {"ok": False, "error": "That name is already taken by someone else at this party — try another."}
+        if not existing:
+            ROOM["guests"].append({"name": name, "device_id": device_id, "joined_at": time.time()})
+    broadcast_room()
+    return {"ok": True}
 
 
 def broadcast_room():
@@ -619,6 +645,7 @@ def start_room():
         ROOM["queue"] = []
         ROOM["now_playing"] = None
         ROOM["challenges"] = []
+        ROOM["guests"] = []
     broadcast_room()
     return code
 
@@ -729,27 +756,52 @@ def challenge_add(jid, from_singer, to_singer, semitones):
     return challenge
 
 
-def challenge_accept(challenge_id):
+def _guest_owns_name(name, device_id):
+    """True if device_id is the device that claimed `name` via room_join, or
+    if nobody has claimed that name yet (can't verify either way — err
+    toward allowing rather than locking out a party where people jump
+    straight to queueing without ever hitting the join step)."""
+    g = next((g for g in ROOM["guests"] if g["name"] == name), None)
+    return g is None or g["device_id"] == device_id
+
+
+def challenge_accept(challenge_id, device_id=None):
     """Move an accepted challenge into the real queue as an entry sung by
-    the challenged person, tagged with who challenged them."""
+    the challenged person, tagged with who challenged them.
+
+    device_id=None means this came from the TV/host screen, not a guest's
+    phone — the host is a trusted physical presence who can get a verbal
+    "yeah I'm cool with that" before clicking, so host accepts are always
+    allowed. A guest-originated accept (device_id set) is only allowed if
+    it's coming from the device that actually claimed the challenged
+    person's name — otherwise anyone could accept "as" someone else and
+    put them on the spot to sing without real consent."""
     with ROOM_LOCK:
         ch = next((c for c in ROOM["challenges"] if c["challenge_id"] == challenge_id), None)
         if not ch or ch["status"] != "pending":
-            return None
+            return None, "unknown or already-resolved challenge"
+        if device_id is not None and not _guest_owns_name(ch["to_singer"], device_id):
+            return None, "only " + ch["to_singer"] + " (or the host) can accept this challenge"
         entry = _make_queue_entry(ch["jid"], [ch["to_singer"]], ch["semitones"],
                                    from_singer=ch["from_singer"])
         if not entry:
-            return None
+            return None, "song isn't ready"
         ROOM["queue"].append(entry)
         ch["status"] = "accepted"
     broadcast_room()
-    return entry
+    return entry, None
 
 
-def challenge_decline(challenge_id):
+def challenge_decline(challenge_id, device_id=None):
     with ROOM_LOCK:
+        ch = next((c for c in ROOM["challenges"] if c["challenge_id"] == challenge_id), None)
+        if not ch:
+            return True  # already gone — fine
+        if device_id is not None and not _guest_owns_name(ch["to_singer"], device_id):
+            return False
         ROOM["challenges"] = [c for c in ROOM["challenges"] if c["challenge_id"] != challenge_id]
     broadcast_room()
+    return True
 
 
 def make_qr_png(data):
@@ -928,6 +980,15 @@ class Handler(BaseHTTPRequestHandler):
 
         if p.path == "/join":
             b = JOIN_HTML.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+            return
+
+        if p.path == "/host":
+            b = HOST_HTML.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(b)))
@@ -1366,7 +1427,17 @@ class Handler(BaseHTTPRequestHandler):
             code = start_room()
             lan = _lan_ip()
             join_url = f"http://{lan}:{PORT}/join?room={code}" if lan else None
-            self._json(200, {"code": code, "join_url": join_url})
+            host_url = f"http://{lan}:{PORT}/host" if lan else None
+            self._json(200, {"code": code, "join_url": join_url, "host_url": host_url})
+            return
+
+        if p.path == "/room/join":
+            body = self._read_body()
+            result = room_join(body.get("name"), body.get("device_id"))
+            if not result["ok"]:
+                self._json(400, {"error": result["error"]})
+                return
+            self._json(200, room_state())
             return
 
         if p.path == "/queue/add":
@@ -1441,16 +1512,18 @@ class Handler(BaseHTTPRequestHandler):
 
         if p.path == "/challenge/accept":
             body = self._read_body()
-            entry = challenge_accept(body.get("challenge_id"))
+            entry, err = challenge_accept(body.get("challenge_id"), body.get("device_id"))
             if not entry:
-                self._json(404, {"error": "unknown or already-resolved challenge"})
+                self._json(403 if "only" in (err or "") else 404, {"error": err})
                 return
             self._json(200, room_state())
             return
 
         if p.path == "/challenge/decline":
             body = self._read_body()
-            challenge_decline(body.get("challenge_id"))
+            if not challenge_decline(body.get("challenge_id"), body.get("device_id")):
+                self._json(403, {"error": "only the challenged person (or the host) can decline this"})
+                return
             self._json(200, room_state())
             return
 
@@ -1664,6 +1737,9 @@ PARTY_HTML = r"""<meta charset="utf-8">
     border-radius:10px;margin-bottom:8px;background:rgba(255,61,129,.07);box-shadow:var(--glow-pink)}
   .chal .txt{flex:1;font-size:14px}
   .chal .txt b{color:var(--pink)}
+  .guestList{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .guestChip{background:var(--track);border:1px solid var(--edge);border-radius:999px;
+    padding:5px 12px;font-size:13px;color:var(--ink)}
 </style>
 
 <div id="start">
@@ -1679,6 +1755,7 @@ PARTY_HTML = r"""<meta charset="utf-8">
     <div>
       <div class="code" id="roomCode"></div>
       <div class="join">Guests: join at <b id="joinUrl"></b></div>
+      <div class="join">📱 Run this from your phone: <b id="hostUrl"></b></div>
     </div>
     <img id="qrImg" class="hidden" alt="Scan to join">
   </div>
@@ -1692,6 +1769,8 @@ PARTY_HTML = r"""<meta charset="utf-8">
     <div class="card">
       <h3 style="margin-top:0">Up next <span style="font-size:11px;color:var(--dim);font-weight:400">— drag to reorder</span></h3>
       <ul class="upnext" id="upnext"><li class="empty">Queue is empty.</li></ul>
+      <h3>👥 Who's here <span id="guestCount" style="color:var(--dim);font-weight:400"></span></h3>
+      <div class="guestList" id="guestList"><span class="empty">Waiting for guests to join…</span></div>
     </div>
   </div>
   <div class="card challenges hidden" id="challengesCard">
@@ -1710,6 +1789,7 @@ $('startBtn').addEventListener('click',async()=>{
   $('start').style.display='none'; $('live').style.display='block';
   $('roomCode').innerHTML=[...j.code].map(c=>`<span>${esc(c)}</span>`).join('');
   $('joinUrl').textContent=j.join_url||'(no LAN IP found — check WiFi)';
+  $('hostUrl').textContent=j.host_url||'(no LAN IP found — check WiFi)';
   if(j.join_url){
     const qr=$('qrImg');
     qr.onload=()=>qr.classList.remove('hidden');
@@ -1760,6 +1840,12 @@ function render(){
       <button class="btn amber small" data-accept="${c.challenge_id}">Accept</button>
       <button class="btn ghost small" data-decline="${c.challenge_id}">Decline</button>
     </div>`).join('');
+
+  const guests=state.guests||[];
+  $('guestCount').textContent=guests.length?'('+guests.length+')':'';
+  $('guestList').innerHTML = guests.length
+    ? guests.map(g=>'<span class="guestChip">'+esc(g.name)+'</span>').join('')
+    : '<span class="empty">Waiting for guests to join…</span>';
 }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
@@ -1892,16 +1978,18 @@ function startAudio(entry){
 # no YouTube iframe here at all, so the localhost-only embed restriction
 # doesn't apply to this page.
 JOIN_HTML = r"""<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Join the Party</title>
 <link rel="stylesheet" href="/theme.css">
 <style>
+  *{-webkit-tap-highlight-color:transparent}
   body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
-    font:16px/1.4 -apple-system,system-ui,sans-serif;padding:18px;max-width:480px;margin:0 auto}
-  h1{font-size:22px;color:var(--amber);text-shadow:var(--glow-amber);margin:8px 0 16px;
+    font:16px/1.4 -apple-system,system-ui,sans-serif;
+    padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-width:480px;margin:0 auto}
+  h1{font-size:20px;color:var(--amber);text-shadow:var(--glow-amber);margin:6px 0 14px;
     display:flex;align-items:center;gap:10px}
   label{display:block;font-size:13px;color:var(--muted);margin:14px 0 6px}
-  .btn{width:100%;margin-top:10px}
+  .btn{width:100%;margin-top:10px;min-height:46px}
   .results{margin-top:10px}
   .result{display:flex;gap:10px;padding:10px;border:1px solid var(--edge);border-radius:12px;
     margin-bottom:8px;cursor:pointer;background:var(--panel);transition:border-color .12s,transform .12s}
@@ -1911,11 +1999,11 @@ JOIN_HTML = r"""<meta charset="utf-8">
   .result .c{font-size:12px;color:var(--muted)}
   .card{margin-top:16px}
   .slider{display:flex;align-items:center;gap:10px}
-  input[type=range]{flex:1}
+  input[type=range]{flex:1;min-height:32px}
   .msg{color:var(--ok);margin-top:10px}
   .err{color:var(--rec);margin-top:10px}
   .toggleRow{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;
-    color:var(--muted);cursor:pointer;user-select:none}
+    color:var(--muted);cursor:pointer;user-select:none;min-height:24px}
   .qlist li{list-style:none;padding:8px 0;border-bottom:1px solid var(--edge)}
   .qlist li:last-child{border-bottom:none}
   .qlist .who{font-weight:600;font-size:14px}
@@ -1927,43 +2015,91 @@ JOIN_HTML = r"""<meta charset="utf-8">
   .chal .txt b{color:var(--pink)}
   .chal .btnrow{display:flex;gap:8px}
   .chal .btnrow .btn{margin-top:0}
+  .chal .btnrow .btn:disabled{opacity:.35}
+
+  /* join step */
+  .whoRow{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:12px}
+  .whoRow b{color:var(--ink)}
+
+  /* tabs: keep the two things guests actually need one tap away, instead of
+     one long scroll where the queue view ends up buried under search results */
+  .tabbar{display:flex;gap:8px;margin:14px 0;position:sticky;top:0;background:var(--bg);
+    padding:8px 0;z-index:5}
+  .tabbtn{flex:1;padding:12px 10px;border-radius:12px;border:1px solid var(--edge);
+    background:var(--metal);color:var(--muted);font-weight:650;font-size:13px;cursor:pointer;
+    min-height:46px}
+  .tabbtn.active{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#fff;
+    border-color:var(--pink2);box-shadow:var(--glow-pink)}
+  .tabpane.hidden{display:none}
+
+  .guestList{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .guestChip{background:var(--panel);border:1px solid var(--edge);border-radius:999px;
+    padding:5px 10px;font-size:12px;color:var(--muted)}
+  .guestChip.me{color:var(--pink);border-color:var(--pink2)}
 </style>
 
 <h1>🎤 Join the party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
 
-<label>Room code</label>
-<input type="text" id="room" style="text-transform:uppercase" maxlength="4">
-
-<label>Your name (or names, comma-separated, for a duet)</label>
-<input type="text" id="names" placeholder="Alice, Bob">
-
-<label>Search for a song</label>
-<input type="text" id="q" placeholder="Search YouTube...">
-<label class="toggleRow"><input type="checkbox" id="karaokeSuffix" checked> 🎤 Add "karaoke" to search (helps surface lyrics videos)</label>
-<button class="btn amber" id="searchBtn">Search</button>
-<div class="results" id="results"></div>
-
-<div class="card hidden" id="preview">
-  <div id="prepStatus" style="color:var(--muted)">Preparing track…</div>
-  <div id="previewControls" class="hidden">
-    <audio id="audio" controls style="width:100%"></audio>
-    <div class="slider" style="margin-top:10px">
-      <span>Key</span>
-      <input type="range" id="key" min="-6" max="6" value="0">
-      <span id="keyVal">0</span>
-    </div>
-    <label class="toggleRow"><input type="checkbox" id="challengeMode"> 🎯 Challenge someone else to sing this instead</label>
-    <input type="text" id="challengeTarget" class="hidden" placeholder="Who are you challenging?" style="margin-top:8px">
-    <button class="btn pink" id="addBtn">Add to queue ✓</button>
-  </div>
+<!-- STEP 0: join with a verified name — this is what lets challenge accept/
+     decline later confirm "is this really the person being challenged," so
+     nobody can be impersonated into being put on the spot to sing. -->
+<div id="joinStep">
+  <label>Room code</label>
+  <input type="text" id="room" style="text-transform:uppercase" maxlength="4">
+  <label>Your name</label>
+  <input type="text" id="myName" placeholder="Alice" maxlength="40">
+  <button class="btn pink" id="joinBtn" type="button">Join the party →</button>
+  <div id="joinErr" class="err"></div>
 </div>
-<div id="feedback"></div>
 
-<div class="card" id="queueView">
-  <h3 style="margin-top:0">🎶 Party queue</h3>
-  <div id="qEmpty" style="color:var(--dim);font-size:13px">Enter the room code above to see who's up.</div>
-  <ul class="qlist hidden" id="qList"></ul>
-  <div id="qChallenges"></div>
+<div id="mainApp" class="hidden">
+  <div class="whoRow">🎉 Joined as <b id="whoLabel"></b> · room <b id="whoRoom"></b>
+    <button class="btn ghost small" id="leaveBtn" type="button" style="width:auto;margin-left:auto">Not you?</button></div>
+
+  <div class="tabbar">
+    <button class="tabbtn active" id="tabBtnFind" type="button">🔍 Find a song</button>
+    <button class="tabbtn" id="tabBtnQueue" type="button">🎶 Party queue</button>
+  </div>
+
+  <div class="tabpane" id="tabFind">
+    <label>Search for a song</label>
+    <input type="text" id="q" placeholder="Search YouTube...">
+    <label class="toggleRow"><input type="checkbox" id="karaokeSuffix" checked> 🎤 Add "karaoke" to search (helps surface lyrics videos)</label>
+    <button class="btn amber" id="searchBtn" type="button">Search</button>
+    <div class="results" id="results"></div>
+
+    <div class="card hidden" id="preview">
+      <div id="prepStatus" style="color:var(--muted)">Preparing track…</div>
+      <div id="previewControls" class="hidden">
+        <div class="hint" style="color:var(--muted);font-size:12px;margin-bottom:6px">Preview it and pick your key before confirming:</div>
+        <audio id="audio" controls style="width:100%"></audio>
+        <div class="slider" style="margin-top:10px">
+          <span>Key</span>
+          <input type="range" id="key" min="-6" max="6" value="0">
+          <span id="keyVal">0</span>
+        </div>
+        <label>Singing with anyone else? (optional, comma-separated)</label>
+        <input type="text" id="duetWith" placeholder="Bob">
+        <label class="toggleRow"><input type="checkbox" id="challengeMode"> 🎯 Challenge someone else to sing this instead</label>
+        <input type="text" id="challengeTarget" class="hidden" placeholder="Who are you challenging?" style="margin-top:8px">
+        <button class="btn pink" id="addBtn" type="button">Confirm — add to queue ✓</button>
+      </div>
+    </div>
+    <div id="feedback"></div>
+  </div>
+
+  <div class="tabpane hidden" id="tabQueue">
+    <div class="card" id="queueView">
+      <h3 style="margin-top:0">🎶 Party queue</h3>
+      <div id="qEmpty" style="color:var(--dim);font-size:13px">Nobody's queued yet.</div>
+      <ul class="qlist hidden" id="qList"></ul>
+      <div id="qChallenges"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">👥 Who's here</h3>
+      <div class="guestList" id="guestList"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1971,30 +2107,74 @@ const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 if(params.get('room')) $('room').value=params.get('room').toUpperCase();
 
-let currentJid=null, statusPoll=null, roomEvents=null, lastSubscribedRoom=null;
+// a random per-browser token, persisted — this is what proves "this device
+// is really Alice" so a challenge aimed at Alice can only be accepted or
+// declined from the device that actually joined as Alice (or by the host).
+function getDeviceId(){
+  try{
+    let id=localStorage.getItem('kstudio.device_id');
+    if(!id){ id=Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('kstudio.device_id', id); }
+    return id;
+  }catch(e){ return 'nodevice'; }
+}
+const DEVICE_ID=getDeviceId();
 
-$('searchBtn').addEventListener('click', doSearch);
-$('q').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
+let myName=null, currentJid=null, statusPoll=null, roomEvents=null, lastState={queue:[],challenges:[],guests:[]};
 
-$('challengeMode').addEventListener('change',()=>{
-  const on=$('challengeMode').checked;
-  $('challengeTarget').classList.toggle('hidden', !on);
-  $('addBtn').textContent = on ? '⚡ Send challenge' : 'Add to queue ✓';
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ---- join step --------------------------------------------------------
+$('joinBtn').addEventListener('click', doJoin);
+$('myName').addEventListener('keydown', e=>{ if(e.key==='Enter') doJoin(); });
+$('room').addEventListener('keydown', e=>{ if(e.key==='Enter') $('myName').focus(); });
+
+async function doJoin(){
+  const room=$('room').value.trim().toUpperCase();
+  const name=$('myName').value.trim();
+  $('joinErr').textContent='';
+  if(room.length!==4){ $('joinErr').textContent='Enter the 4-letter room code.'; return; }
+  if(!name){ $('joinErr').textContent='Enter your name.'; return; }
+  $('joinBtn').disabled=true;
+  let r,j;
+  try{
+    r=await fetch('/room/join',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name, device_id:DEVICE_ID})});
+    j=await r.json();
+  }catch(e){ $('joinBtn').disabled=false; $('joinErr').textContent='Could not reach the party host.'; return; }
+  $('joinBtn').disabled=false;
+  if(!r.ok){ $('joinErr').textContent=j.error||'Could not join.'; return; }
+  myName=name;
+  $('whoLabel').textContent=myName; $('whoRoom').textContent=room;
+  $('joinStep').classList.add('hidden');
+  $('mainApp').classList.remove('hidden');
+  subscribeRoom();
+}
+$('leaveBtn').addEventListener('click',()=>{
+  myName=null;
+  $('mainApp').classList.add('hidden');
+  $('joinStep').classList.remove('hidden');
+  if(roomEvents){ roomEvents.close(); roomEvents=null; }
 });
 
-// ---- live party queue view: subscribe once a plausible 4-char room code is typed ----
-function maybeSubscribe(){
-  const room=$('room').value.trim().toUpperCase();
-  if(room.length!==4 || room===lastSubscribedRoom) return;
-  lastSubscribedRoom=room;
+// ---- tabs ---------------------------------------------------------------
+$('tabBtnFind').addEventListener('click',()=>switchTab('find'));
+$('tabBtnQueue').addEventListener('click',()=>switchTab('queue'));
+function switchTab(name){
+  $('tabBtnFind').classList.toggle('active', name==='find');
+  $('tabBtnQueue').classList.toggle('active', name==='queue');
+  $('tabFind').classList.toggle('hidden', name!=='find');
+  $('tabQueue').classList.toggle('hidden', name!=='queue');
+}
+
+// ---- live room state: queue, challenges, who's here ----------------------
+function subscribeRoom(){
   if(roomEvents) roomEvents.close();
   roomEvents=new EventSource('/room/events');
-  roomEvents.onmessage=(ev)=>{ renderQueueView(JSON.parse(ev.data)); };
+  roomEvents.onmessage=(ev)=>{ lastState=JSON.parse(ev.data); renderQueueView(); renderGuests(); };
 }
-$('room').addEventListener('input', maybeSubscribe);
-maybeSubscribe();
 
-function renderQueueView(state){
+function renderQueueView(){
+  const state=lastState;
   const upcoming=state.queue.filter(e=>e.status==='queued');
   const now=state.queue.find(e=>e.entry_id===state.now_playing);
   $('qEmpty').classList.toggle('hidden', !!(now || upcoming.length));
@@ -2005,22 +2185,41 @@ function renderQueueView(state){
   $('qList').innerHTML=rows.join('');
 
   const pending=(state.challenges||[]).filter(c=>c.status==='pending');
-  $('qChallenges').innerHTML=pending.map(c=>`
+  $('qChallenges').innerHTML=pending.map(c=>{
+    const mine=c.to_singer===myName;
+    const lockedTitle=mine?'':'Only '+esc(c.to_singer)+' can respond to this one';
+    return `
     <div class="chal">
       <div class="txt"><b>${esc(c.from_singer)}</b> challenges <b>${esc(c.to_singer)}</b> to sing "${esc(c.title)}"</div>
       <div class="btnrow">
-        <button class="btn amber small" data-accept="${c.challenge_id}">Accept</button>
-        <button class="btn ghost small" data-decline="${c.challenge_id}">Decline</button>
+        <button class="btn amber small" data-accept="${c.challenge_id}" ${mine?'':'disabled'} title="${lockedTitle}">Accept</button>
+        <button class="btn ghost small" data-decline="${c.challenge_id}" ${mine?'':'disabled'} title="${lockedTitle}">Decline</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+function renderGuests(){
+  const guests=lastState.guests||[];
+  $('guestList').innerHTML = guests.length
+    ? guests.map(g=>`<span class="guestChip${g.name===myName?' me':''}">${esc(g.name)}</span>`).join('')
+    : '<span class="hint">Nobody\'s joined yet.</span>';
 }
 
 $('qChallenges').addEventListener('click',(ev)=>{
-  const b=ev.target.closest('button'); if(!b) return;
+  const b=ev.target.closest('button'); if(!b || b.disabled) return;
   if(b.dataset.accept) fetch('/challenge/accept',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({challenge_id:b.dataset.accept})});
+    body:JSON.stringify({challenge_id:b.dataset.accept, device_id:DEVICE_ID})});
   else if(b.dataset.decline) fetch('/challenge/decline',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({challenge_id:b.dataset.decline})});
+    body:JSON.stringify({challenge_id:b.dataset.decline, device_id:DEVICE_ID})});
+});
+
+// ---- search + preview-before-confirm --------------------------------------
+$('searchBtn').addEventListener('click', doSearch);
+$('q').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
+$('challengeMode').addEventListener('change',()=>{
+  const on=$('challengeMode').checked;
+  $('challengeTarget').classList.toggle('hidden', !on);
+  $('addBtn').textContent = on ? '⚡ Send challenge' : 'Confirm — add to queue ✓';
 });
 
 async function doSearch(){
@@ -2042,6 +2241,7 @@ async function doSearch(){
 async function pickSong(res){
   currentJid=null;
   $('preview').classList.remove('hidden');
+  $('preview').scrollIntoView({behavior:'smooth', block:'start'});
   $('previewControls').classList.add('hidden');
   $('prepStatus').textContent='Downloading & preparing "'+res.title+'"…';
   $('feedback').innerHTML='';
@@ -2073,37 +2273,189 @@ function loadPreview(key){
   a.src='/backing?id='+currentJid+'&key='+key;
   a.onloadedmetadata=()=>{ try{a.currentTime=t;}catch(_){} if(wasPlaying) a.play().catch(()=>{}); };
 }
-
 $('key').addEventListener('input',()=>{ $('keyVal').textContent=$('key').value; });
 $('key').addEventListener('change',()=>{ loadPreview(parseInt($('key').value,10)); });
 
 $('addBtn').addEventListener('click', async()=>{
-  const room=$('room').value.trim().toUpperCase();
-  const singers=$('names').value.split(',').map(s=>s.trim()).filter(Boolean);
   const semitones=parseInt($('key').value,10);
-  if(!room){ $('feedback').innerHTML='<div class="err">Enter the room code.</div>'; return; }
-  if(!singers.length){ $('feedback').innerHTML='<div class="err">Enter your name.</div>'; return; }
   if(!currentJid){ $('feedback').innerHTML='<div class="err">Pick a song first.</div>'; return; }
 
   if($('challengeMode').checked){
     const target=$('challengeTarget').value.trim();
     if(!target){ $('feedback').innerHTML='<div class="err">Who are you challenging?</div>'; return; }
     const r=await fetch('/challenge/add',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({jid:currentJid, from_singer:singers[0], to_singer:target, semitones})});
+      body:JSON.stringify({jid:currentJid, from_singer:myName, to_singer:target, semitones})});
     const j=await r.json();
     if(r.ok){ $('feedback').innerHTML='<div class="msg">Challenge sent to '+esc(target)+'! ⚡</div>'; }
     else { $('feedback').innerHTML='<div class="err">'+esc(j.error||'Could not send challenge.')+'</div>'; }
     return;
   }
 
+  const extra=$('duetWith').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const singers=[myName, ...extra];
   const r=await fetch('/queue/add',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({jid:currentJid,singers,semitones})});
   const j=await r.json();
-  if(r.ok){ $('feedback').innerHTML='<div class="msg">You\'re queued! 🎉</div>'; }
+  if(r.ok){ $('feedback').innerHTML='<div class="msg">You\'re queued! 🎉</div>'; switchTab('queue'); }
   else { $('feedback').innerHTML='<div class="err">'+esc(j.error||'Could not queue.')+'</div>'; }
 });
+</script>
+"""
+
+
+# ---- Party mode: host remote control ------------------------------------
+# A mobile-friendly page a host can open on THEIR OWN phone (over the LAN)
+# to run the party without hovering at the laptop — everything /party's TV
+# screen offers except the video/audio itself, which only works on the
+# machine actually running as localhost. All actions here go through the
+# same host-trusted (no device_id) path the TV screen uses.
+HOST_HTML = r"""<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Party Host</title>
+<link rel="stylesheet" href="/theme.css">
+<style>
+  body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
+    font:16px/1.4 -apple-system,system-ui,sans-serif;
+    padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-width:480px;margin:0 auto}
+  h1{font-size:20px;color:var(--amber);text-shadow:var(--glow-amber);margin:6px 0 4px;
+    display:flex;align-items:center;gap:10px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
+  .btn{min-height:46px}
+  .nowCard{margin-bottom:16px}
+  .nowSingers{font-size:20px;font-weight:700}
+  .nowTitle{color:var(--muted);font-size:13px;margin-bottom:10px}
+  .upnext{list-style:none;margin:0;padding:0}
+  .upnext li{padding:10px 0;border-bottom:1px solid var(--edge)}
+  .upnext li:last-child{border-bottom:none}
+  .upnext .who{font-weight:600}
+  .upnext .what{color:var(--muted);font-size:12.5px}
+  .rowBtns{display:flex;gap:6px;margin-top:6px}
+  .rowBtns .btn{margin-top:0;flex:1;min-height:38px}
+  .empty{color:var(--dim);padding:10px 0}
+  .chal{padding:10px;border:1px solid var(--pink2);border-radius:10px;margin-bottom:8px;
+    background:rgba(255,61,129,.07);box-shadow:var(--glow-pink)}
+  .chal .txt{font-size:13.5px;margin-bottom:8px}
+  .chal .txt b{color:var(--pink)}
+  .chal .btnrow{display:flex;gap:8px}
+  .chal .btnrow .btn{margin-top:0;flex:1}
+  .guestList{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .guestChip{background:var(--panel);border:1px solid var(--edge);border-radius:999px;
+    padding:5px 10px;font-size:12px;color:var(--muted)}
+</style>
+
+<h1>🎤 Party Host <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
+<div class="sub">Remote control for the TV screen — the video stays on the host laptop, but you can run the queue from here.</div>
+
+<div id="noRoom">
+  <div class="card">No party running yet. Start one from the TV screen at <code>http://localhost:8770/party</code>, then reload this page.</div>
+</div>
+
+<div id="live" class="hidden">
+  <div class="card nowCard">
+    <div class="metlabel" style="font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.1em">ROOM <span id="roomCode"></span> · NOW PLAYING</div>
+    <div class="nowSingers" id="singers">—</div>
+    <div class="nowTitle" id="songTitle"></div>
+    <button class="btn pink wide" id="nextBtn" type="button">Next ▶</button>
+  </div>
+
+  <div class="card" id="challengesCard" style="display:none">
+    <h3 style="margin-top:0">⚡ Challenges</h3>
+    <div id="challengeList"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Up next</h3>
+    <ul class="upnext" id="upnext"><li class="empty">Queue is empty.</li></ul>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">👥 Who's here <span id="guestCount" style="color:var(--dim);font-weight:400"></span></h3>
+    <div class="guestList" id="guestList"><span class="empty">Waiting for guests to join…</span></div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let state={code:null,queue:[],now_playing:null,challenges:[],guests:[]};
 
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+fetch('/room/state').then(r=>r.json()).then(j=>{
+  if(j.code){ state=j; showLive(); render(); }
+  subscribe();
+}).catch(subscribe);
+
+function subscribe(){
+  const es=new EventSource('/room/events');
+  es.onmessage=(ev)=>{
+    state=JSON.parse(ev.data);
+    if(state.code) showLive();
+    render();
+  };
+}
+function showLive(){
+  $('noRoom').classList.add('hidden');
+  $('live').classList.remove('hidden');
+  $('roomCode').textContent=state.code;
+}
+
+function render(){
+  const upcoming=state.queue.filter(e=>e.status==='queued');
+  $('upnext').innerHTML = upcoming.length
+    ? upcoming.map((e,i)=>{
+        const tag=e.from_singer?`<div class="what">⚡ challenged by ${esc(e.from_singer)}</div>`:'';
+        return `<li>
+        <div class="who">${esc(e.singers.join(' & '))}</div>
+        <div class="what">${esc(e.title)}</div>
+        ${tag}
+        <div class="rowBtns">
+          <button class="btn ghost small" data-move="up" data-id="${e.entry_id}" ${i===0?'disabled':''}>▲ Up</button>
+          <button class="btn ghost small" data-move="down" data-id="${e.entry_id}" ${i===upcoming.length-1?'disabled':''}>▼ Down</button>
+          <button class="btn ghost small" data-remove="${e.entry_id}">✕ Remove</button>
+        </div>
+      </li>`; }).join('')
+    : '<li class="empty">Queue is empty.</li>';
+
+  const now=state.queue.find(e=>e.entry_id===state.now_playing);
+  $('singers').textContent = now ? now.singers.join(' & ') : '—';
+  $('songTitle').textContent = now ? now.title : '';
+
+  const pending=(state.challenges||[]).filter(c=>c.status==='pending');
+  $('challengesCard').style.display=pending.length?'':'none';
+  $('challengeList').innerHTML=pending.map(c=>`
+    <div class="chal">
+      <div class="txt"><b>${esc(c.from_singer)}</b> challenges <b>${esc(c.to_singer)}</b> to sing "${esc(c.title)}"</div>
+      <div class="btnrow">
+        <button class="btn amber small" data-accept="${c.challenge_id}">Accept</button>
+        <button class="btn ghost small" data-decline="${c.challenge_id}">Decline</button>
+      </div>
+    </div>`).join('');
+
+  const guests=state.guests||[];
+  $('guestCount').textContent=guests.length?'('+guests.length+')':'';
+  $('guestList').innerHTML = guests.length
+    ? guests.map(g=>'<span class="guestChip">'+esc(g.name)+'</span>').join('')
+    : '<span class="empty">Waiting for guests to join…</span>';
+}
+
+$('nextBtn').addEventListener('click',()=>{ fetch('/queue/next',{method:'POST'}); });
+
+$('upnext').addEventListener('click',(ev)=>{
+  const b=ev.target.closest('button'); if(!b) return;
+  if(b.dataset.move) fetch('/queue/move',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({entry_id:b.dataset.id, direction:b.dataset.move})});
+  else if(b.dataset.remove) fetch('/queue/remove',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({entry_id:b.dataset.remove})});
+});
+
+$('challengeList').addEventListener('click',(ev)=>{
+  const b=ev.target.closest('button'); if(!b) return;
+  // no device_id sent -> host-trusted path, same as the TV screen
+  if(b.dataset.accept) fetch('/challenge/accept',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({challenge_id:b.dataset.accept})});
+  else if(b.dataset.decline) fetch('/challenge/decline',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({challenge_id:b.dataset.decline})});
+});
 </script>
 """
 
