@@ -1499,26 +1499,39 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/phone/upload":
-            body = self._read_body()
-            jid = body.get("id")
+            # The phone posts the raw video blob as the request body (id/mime
+            # as query params, not JSON) — a base64-in-JSON body used to be
+            # required here, but that inflates a multi-minute 1080p recording
+            # (~150-250MB) by another ~33% and forces both the phone's
+            # FileReader and this handler to hold a full extra copy in
+            # memory, which reliably failed on real devices. Stream straight
+            # to disk in chunks instead of reading the whole body at once.
+            q = parse_qs(p.query)
+            jid = (q.get("id") or [""])[0]
+            mime = (q.get("mime") or ["video/webm"])[0]
             j = job_or_disk(jid)
             if not j:
                 self._json(404, {"error": "unknown session"})
                 return
-            b64 = body.get("video_b64", "")
-            if not b64:
+            length = int(self.headers.get("Content-Length", 0))
+            if not length:
                 self._json(400, {"error": "No video received."})
                 return
-            mime = body.get("mime", "video/webm")
             ext = ".mp4" if "mp4" in mime else ".webm"
             sdir = os.path.join(SESS_DIR, jid)
             os.makedirs(sdir, exist_ok=True)
             video_path = os.path.join(sdir, f"phone_raw{ext}")
             try:
+                remaining = length
                 with open(video_path, "wb") as fh:
-                    fh.write(base64.b64decode(b64))
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(1 << 20, remaining))
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+                        remaining -= len(chunk)
             except Exception:
-                self._json(400, {"error": "Could not decode video."})
+                self._json(400, {"error": "Could not save video."})
                 return
             set_job(jid, phone_status="uploaded",
                     phone_video_file=os.path.basename(video_path))
@@ -1969,23 +1982,18 @@ function stopPhoneRec(){
   if(recorder && recorder.state !== 'inactive') recorder.stop();
 }
 
-function blobToB64(blob){
-  return new Promise((res, rej)=>{
-    const fr = new FileReader();
-    fr.onload = ()=>res(fr.result.split(',')[1]);
-    fr.onerror = rej;
-    fr.readAsDataURL(blob);
-  });
-}
-
 async function uploadPhoneVideo(){
   setStatus('Uploading…', 'warn');
   try{
     const blob = new Blob(chunks, {type: recorder.mimeType || 'video/webm'});
-    const b64 = await blobToB64(blob);
-    const r = await fetch('/phone/upload', {method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({id, video_b64: b64, mime: blob.type})});
+    // Send the blob directly as the request body instead of base64-encoding
+    // it into a JSON string first. Base64 inflates size ~33% AND FileReader
+    // has to hold the whole encoded string in memory alongside the original
+    // blob — for a multi-minute 1080p/8Mbps recording (~150-250MB) that's
+    // enough to fail or crash outright on a phone browser. A raw binary
+    // POST body streams straight through, no second full-size copy.
+    const r = await fetch('/phone/upload?id='+encodeURIComponent(id)+'&mime='+encodeURIComponent(blob.type),
+      {method:'POST', body: blob});
     setStatus(r.ok ? 'Uploaded ✓ — you can put the phone down' : 'Upload failed', r.ok ? 'ok' : 'warn');
   }catch(e){
     setStatus('Upload failed', 'warn');
