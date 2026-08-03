@@ -11,6 +11,17 @@
   }
   .wrap{max-width:1180px;margin:0 auto}
   header{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+  .profileChip{position:relative}
+  .profileMenu{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:220px;
+    background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--edge);border-radius:12px;padding:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  .profileMenu input[type=text]{margin-bottom:8px}
+  .profileMenu .btn{width:100%;margin-bottom:4px}
+  .profileList{max-height:160px;overflow-y:auto;margin-top:8px;display:flex;flex-direction:column;gap:4px}
+  .profileList button{width:100%;text-align:left;background:none;border:none;color:var(--muted);
+    padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12.5px}
+  .profileList button:hover{background:rgba(255,255,255,.06);color:var(--ink)}
   .logo{font-family:var(--mono);font-weight:700;font-size:19px;letter-spacing:.14em;
     text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:12px}
   .logo b{color:var(--amber);text-shadow:var(--glow-amber)}
@@ -133,6 +144,17 @@
     padding:3px 6px;cursor:pointer;opacity:0;transition:opacity .12s}
   .rcard:hover .rqueue{opacity:1}
   .rqueue:hover{border-color:var(--amber2);color:var(--amber)}
+  .rsave{position:absolute;top:6px;right:6px;background:rgba(10,11,14,.85);color:var(--ink);
+    border:1px solid var(--edge);border-radius:6px;font-family:var(--mono);font-size:12px;
+    padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .12s,color .12s,border-color .12s}
+  .rcard:hover .rsave{opacity:1}
+  .rsave:hover{border-color:var(--pink2);color:var(--pink)}
+  .rsave.saved{opacity:1;color:var(--pink);border-color:var(--pink2)}
+  .rremove{position:absolute;top:6px;right:6px;background:rgba(10,11,14,.85);color:var(--dim);
+    border:1px solid var(--edge);border-radius:6px;font-size:12px;padding:3px 7px;cursor:pointer;
+    opacity:0;transition:opacity .12s}
+  .rcard:hover .rremove{opacity:1}
+  .rremove:hover{border-color:var(--rec);color:var(--rec)}
 
   /* queue */
   .queuepanel{margin-top:14px;background:#0a0b0e;border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
@@ -277,6 +299,23 @@
   .toast.error{border-color:var(--rec);box-shadow:0 8px 24px rgba(0,0,0,.5),var(--glow-rec)}
   @keyframes toastin{from{opacity:0;transform:translateX(12px)} to{opacity:1;transform:translateX(0)}}
 
+  /* ---- gamified random-song picker overlay ---------------------------- */
+  .pickerOverlay{position:fixed;inset:0;z-index:900;background:rgba(5,2,12,.88);
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .pickerCard{max-width:600px;width:100%;background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--edge);border-radius:16px;padding:24px;text-align:center;
+    box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .pickerTitle{font-family:var(--mono);font-size:13px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:10px}
+  .pickerGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:10px;
+    max-height:340px;overflow-y:auto}
+  .pickerGrid img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;
+    border:2px solid transparent;transition:border-color .1s,transform .1s}
+  .pickerGrid img.hl{border-color:var(--pink);box-shadow:var(--glow-pink);transform:scale(1.06)}
+  .pickerResult img{width:220px;max-width:80%;aspect-ratio:16/9;object-fit:cover;border-radius:10px;
+    border:2px solid var(--pink2);box-shadow:var(--glow-pink);margin:16px auto 0;display:block}
+  .pickerResultTitle{margin-top:12px;font-size:15px;color:var(--ink)}
+
   /* ---- responsive tiers (the >1100px 2-col rule lives with .grid above) - */
   @media(max-width:700px){
     body{padding:12px}
@@ -297,15 +336,62 @@
 
 <div id="toasts" class="toaststack"></div>
 
+<div class="pickerOverlay hidden" id="pickerOverlay">
+  <div class="pickerCard">
+    <div class="pickerTitle">🎲 Picking your song… <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <div class="pickerGrid" id="pickerGrid"></div>
+    <div class="pickerResult hidden" id="pickerResult">
+      <img id="pickerThumb" alt="">
+      <div class="pickerResultTitle" id="pickerResultTitle"></div>
+      <div class="row" style="justify-content:center;margin-top:14px;flex-wrap:wrap">
+        <button class="btn amber" id="pickerSingBtn" type="button">🎤 Sing this!</button>
+        <button class="btn ghost" id="pickerAgainBtn" type="button">🎲 Spin again</button>
+        <button class="btn ghost" id="pickerCloseBtn" type="button">✕ Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="wrap">
   <header>
     <div class="logo">KARAOKE <b>STUDIO</b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
-    <a class="btn pink" id="partyLink" href="/party" style="margin-left:auto;text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones">🎉 Party mode</a>
+    <div class="profileChip" id="profileChip" style="margin-left:auto">
+      <button class="btn ghost small" id="profileBtn" type="button">👤 <span id="profileNameLabel">Guest</span></button>
+      <div class="profileMenu hidden" id="profileMenu">
+        <input type="text" id="profileInput" placeholder="Your name…" maxlength="40">
+        <button class="btn amber small" id="profileSetBtn" type="button">Switch / create</button>
+        <div id="profileList"></div>
+      </div>
+    </div>
+    <a class="btn pink" id="partyLink" href="/party" style="text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones">🎉 Party mode</a>
   </header>
 
   <!-- STEP 1: find a song -->
   <div class="card" id="step1Card" style="margin-bottom:16px">
     <h2>1 · Find a song</h2>
+
+    <!-- bookmarked songs for the active profile, so you don't have to
+         re-search every time — plus a gamified random pick over them -->
+    <details class="drawer">
+      <summary>📚 My Library <span id="libCount" class="hint" style="margin:0 0 0 6px;display:inline"></span></summary>
+      <div class="drawer-body">
+        <div class="row" style="margin-bottom:10px">
+          <button class="btn purple wide" id="surpriseBtn" type="button">🎲 Surprise me!</button>
+        </div>
+        <div class="results" id="libraryResults"></div>
+        <div class="hint" id="libraryEmpty">Nothing saved yet — hit the ☆ on any search result to add it here.</div>
+      </div>
+    </details>
+
+    <!-- resume a previously-prepared song for this profile, no re-download needed -->
+    <details class="drawer">
+      <summary>🕘 Resume a recent song</summary>
+      <div class="drawer-body">
+        <div class="results" id="recentResults"></div>
+        <div class="hint" id="recentEmpty">No recent sessions for this profile yet.</div>
+      </div>
+    </details>
+
     <div class="tabs">
       <button class="tab on" id="tabSearch">Search YouTube</button>
       <button class="tab" id="tabUrl">Paste a link</button>
@@ -960,11 +1046,13 @@ function renderResults(res){
   res.forEach(v=>{
     const card=document.createElement('div'); card.className='rcard';
     const dur=(v.duration!=null)? fmt(v.duration) : '';
+    const saved=libraryCache.some(e=>e.video_id===v.id);
     card.innerHTML=
       '<div style="position:relative">'+
         '<img class="rthumb" loading="lazy" src="'+v.thumb+'" alt="">'+
         (dur?'<span class="rdur">'+dur+'</span>':'')+
         '<button class="rqueue" title="Add to queue">+ Queue</button>'+
+        '<button class="rsave'+(saved?' saved':'')+'" title="'+(saved?'Remove from library':'Save to library')+'">'+(saved?'★':'☆')+'</button>'+
       '</div>'+
       '<div class="rmeta">'+
         '<div class="rtitle">'+escapeHtml(v.title)+'</div>'+
@@ -979,10 +1067,187 @@ function renderResults(res){
       e.stopPropagation();
       addToQueue({url:'https://www.youtube.com/watch?v='+v.id, title:v.title, thumb:v.thumb});
     });
+    card.querySelector('.rsave').addEventListener('click',async e=>{
+      e.stopPropagation();
+      const btn=e.currentTarget;
+      if(btn.classList.contains('saved')){ await removeFromLibraryById(v.id); }
+      else{ await saveToLibrary(v); }
+      btn.classList.toggle('saved');
+      btn.textContent=btn.classList.contains('saved')?'★':'☆';
+      btn.title=btn.classList.contains('saved')?'Remove from library':'Save to library';
+    });
     box.appendChild(card);
   });
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---- profiles: a display name, not an account — no login. Scopes which
+// sessions/library belong to whom on a shared machine. --------------------
+const PROFILE_KEY='kstudio.profile';
+let activeProfile=(function(){ try{ return localStorage.getItem(PROFILE_KEY)||'Guest'; }catch(e){ return 'Guest'; } })();
+$('profileNameLabel').textContent=activeProfile;
+
+function setActiveProfile(name){
+  activeProfile=(name||'Guest').trim()||'Guest';
+  try{ localStorage.setItem(PROFILE_KEY, activeProfile); }catch(e){}
+  $('profileNameLabel').textContent=activeProfile;
+  refreshLibrary(); refreshRecentSessions();
+}
+$('profileBtn').addEventListener('click',(e)=>{
+  e.stopPropagation();
+  $('profileMenu').classList.toggle('hidden');
+  $('profileInput').value=activeProfile==='Guest'?'':activeProfile;
+  loadProfileList();
+});
+$('profileMenu').addEventListener('click',e=>e.stopPropagation());
+document.addEventListener('click',()=>$('profileMenu').classList.add('hidden'));
+$('profileSetBtn').addEventListener('click',()=>{
+  const v=$('profileInput').value.trim();
+  if(v){ setActiveProfile(v); $('profileMenu').classList.add('hidden'); }
+});
+$('profileInput').addEventListener('keydown',e=>{ if(e.key==='Enter') $('profileSetBtn').click(); });
+async function loadProfileList(){
+  let profiles=[];
+  try{ profiles=(await(await fetch('/profiles')).json()).profiles||[]; }catch(e){}
+  const list=$('profileList');
+  list.innerHTML = profiles.length
+    ? profiles.map(p=>'<button data-name="'+escapeHtml(p.name)+'">'+escapeHtml(p.name)+'</button>').join('')
+    : '<div class="hint" style="margin:4px 0 0">No saved profiles yet.</div>';
+  list.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    setActiveProfile(b.dataset.name); $('profileMenu').classList.add('hidden');
+  }));
+}
+
+// ---- library: bookmarked songs for the active profile ---------------------
+let libraryCache=[];
+async function refreshLibrary(){
+  try{ libraryCache=(await(await fetch('/profile/library?name='+encodeURIComponent(activeProfile))).json()).library||[]; }
+  catch(e){ libraryCache=[]; }
+  renderLibrary();
+}
+function renderLibrary(){
+  $('libCount').textContent=libraryCache.length?'('+libraryCache.length+')':'';
+  $('libraryEmpty').style.display=libraryCache.length?'none':'';
+  const box=$('libraryResults'); box.innerHTML='';
+  libraryCache.forEach(v=>{
+    const card=document.createElement('div'); card.className='rcard';
+    card.innerHTML=
+      '<div style="position:relative">'+
+        '<img class="rthumb" loading="lazy" src="'+v.thumb+'" alt="">'+
+        '<button class="rremove" title="Remove from library">✕</button>'+
+      '</div>'+
+      '<div class="rmeta">'+
+        '<div class="rtitle">'+escapeHtml(v.title)+'</div>'+
+        (v.channel?'<div class="rchan">'+escapeHtml(v.channel)+'</div>':'')+
+      '</div>';
+    card.addEventListener('click',()=>{
+      document.querySelectorAll('.rcard').forEach(c=>c.classList.remove('loading'));
+      card.classList.add('loading');
+      loadTrack('https://www.youtube.com/watch?v='+v.video_id);
+    });
+    card.querySelector('.rremove').addEventListener('click',async e=>{
+      e.stopPropagation();
+      await removeFromLibraryById(v.video_id);
+    });
+    box.appendChild(card);
+  });
+}
+async function saveToLibrary(v){
+  await fetch('/profile/library/add',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:activeProfile, video_id:v.id, title:v.title, thumb:v.thumb, channel:v.channel})});
+  toast('Saved to library.','ok',1500);
+  refreshLibrary();
+}
+async function removeFromLibraryById(video_id){
+  await fetch('/profile/library/remove',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:activeProfile, video_id})});
+  refreshLibrary();
+}
+
+// ---- resume a recent song: profile-scoped session history -----------------
+async function refreshRecentSessions(){
+  let sessions=[];
+  try{ sessions=(await(await fetch('/sessions?profile='+encodeURIComponent(activeProfile))).json()).sessions||[]; }
+  catch(e){}
+  $('recentEmpty').style.display=sessions.length?'none':'';
+  const box=$('recentResults'); box.innerHTML='';
+  sessions.forEach(s=>{
+    const card=document.createElement('div'); card.className='rcard';
+    const dur=(s.duration!=null)?fmt(s.duration):'';
+    card.innerHTML=
+      '<div style="position:relative">'+
+        (s.thumb?'<img class="rthumb" loading="lazy" src="'+s.thumb+'" alt="">':'<div class="rthumb"></div>')+
+        (dur?'<span class="rdur">'+dur+'</span>':'')+
+      '</div>'+
+      '<div class="rmeta"><div class="rtitle">'+escapeHtml(s.title)+'</div></div>';
+    card.addEventListener('click',()=>{
+      document.querySelectorAll('.rcard').forEach(c=>c.classList.remove('loading'));
+      card.classList.add('loading');
+      resumeSession(s.id);
+    });
+    box.appendChild(card);
+  });
+}
+function resumeSession(sid){
+  SID=sid;
+  $('loaderr').textContent='';
+  $('loadbar').style.display='block'; $('loadfill').style.width='100%';
+  $('loadstatus').textContent='Resuming session…';
+  fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
+    if(j && (j.status==='ready'||j.stage==='ready')){ onReady(j); }
+    else{
+      document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
+      $('loadbar').style.display='none';
+      $('loaderr').textContent='That session is no longer available.';
+    }
+  }).catch(()=>{
+    document.querySelectorAll('.rcard.loading').forEach(c=>c.classList.remove('loading'));
+    $('loadbar').style.display='none';
+    $('loaderr').textContent='Could not reach the local server.';
+  });
+}
+
+// ---- random picker: character-select-style spin over the library ----------
+$('surpriseBtn').addEventListener('click',()=>{
+  if(!libraryCache.length){ toast('Save some songs to your library first!','warn',2000); return; }
+  openPicker();
+});
+function openPicker(){
+  $('pickerOverlay').classList.remove('hidden');
+  $('pickerResult').classList.add('hidden');
+  const grid=$('pickerGrid'); grid.innerHTML='';
+  const imgs=libraryCache.map(v=>{
+    const img=document.createElement('img'); img.src=v.thumb; img.alt=v.title;
+    grid.appendChild(img); return img;
+  });
+  let i=0, delay=80, elapsed=0;
+  const maxTime=1800+Math.random()*800;
+  (function tick(){
+    imgs.forEach(im=>im.classList.remove('hl'));
+    imgs[i%imgs.length].classList.add('hl');
+    i++; elapsed+=delay;
+    delay=Math.min(delay*1.12, 260);
+    if(elapsed<maxTime){ setTimeout(tick,delay); }
+    else{ landOnPick((i-1)%imgs.length); }
+  })();
+}
+function landOnPick(idx){
+  const v=libraryCache[idx];
+  window._pickedVideo=v;
+  $('pickerThumb').src=v.thumb;
+  $('pickerResultTitle').textContent=v.title;
+  $('pickerResult').classList.remove('hidden');
+}
+$('pickerSingBtn').addEventListener('click',()=>{
+  const v=window._pickedVideo; if(!v) return;
+  $('pickerOverlay').classList.add('hidden');
+  loadTrack('https://www.youtube.com/watch?v='+v.video_id);
+});
+$('pickerAgainBtn').addEventListener('click',openPicker);
+$('pickerCloseBtn').addEventListener('click',()=>$('pickerOverlay').classList.add('hidden'));
+
+refreshLibrary();
+refreshRecentSessions();
 
 // ---- playlist / queue: line up several YouTube songs, auto-advance between
 // them. Persisted to localStorage (URLs only — an imported local File object
@@ -1050,7 +1315,8 @@ async function loadTrack(explicitUrl){
   $('loaderr').textContent=''; $('load').disabled=true; $('searchBtn').disabled=true;
   $('loadbar').style.display='block'; $('loadstatus').textContent='Downloading backing track…';
   let r;
-  try{ r=await fetch('/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})}); }
+  try{ r=await fetch('/prepare',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url, profile:activeProfile})}); }
   catch(e){ return failLoad('Could not reach the local server.'); }
   const d=await r.json();
   if(!r.ok) return failLoad(d.error||'Load failed.');
@@ -2653,10 +2919,6 @@ function blobToB64(blob){ return new Promise(res=>{const fr=new FileReader();
 // (runs LAST, after every declaration exists, to avoid temporal-dead-zone errors)
 (function autoload(){
   const sid=new URLSearchParams(location.search).get('sid');
-  if(!sid) return;
-  SID=sid;
-  fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
-    if(j && (j.status==='ready'||j.stage==='ready')) onReady(j);
-  }).catch(()=>{});
+  if(sid) resumeSession(sid);
 })();
 </script>

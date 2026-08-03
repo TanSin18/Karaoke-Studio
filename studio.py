@@ -133,6 +133,108 @@ def _write_meta(jid, **kw):
         pass
 
 
+# ---- Profiles ----------------------------------------------------------------
+# A profile is just a display name, not an account — no login, matching how
+# party mode already treats identity (free-text names, no auth). It scopes
+# (a) which sessions belong to whom, via meta.json's "profile" field, and
+# (b) a saved library of shortlisted songs, in its own JSON file.
+
+def _profiles_dir():
+    # sibling to SESS_DIR, reusing its already-resolved writable location
+    # (handles the .app-bundle case for free — see _sessions_dir()).
+    d = os.path.join(os.path.dirname(SESS_DIR), "profiles")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _safe_profile_name(name):
+    """Sanitize a user-typed profile name into something safe to use as both
+    a display name and (lowercased) a filename — this comes straight from
+    user input, so it must be defused against path traversal."""
+    name = re.sub(r"[^A-Za-z0-9 _-]", "", (name or "")).strip()
+    return name[:40]
+
+
+def _profile_slug(name):
+    return re.sub(r"\s+", "_", name.lower())
+
+
+def _read_profile(name):
+    slug = _profile_slug(name)
+    try:
+        with open(os.path.join(_profiles_dir(), slug + ".json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {"display_name": name, "library": []}
+
+
+def _write_profile(name, **kw):
+    slug = _profile_slug(name)
+    prof = _read_profile(name)
+    prof["display_name"] = name
+    prof.update(kw)
+    with open(os.path.join(_profiles_dir(), slug + ".json"), "w", encoding="utf-8") as fh:
+        json.dump(prof, fh)
+    return prof
+
+
+def list_profiles():
+    out = []
+    try:
+        entries = os.listdir(_profiles_dir())
+    except OSError:
+        return out
+    for fn in entries:
+        if not fn.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(_profiles_dir(), fn), encoding="utf-8") as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        out.append({"name": d.get("display_name") or fn[:-5], "slug": fn[:-5]})
+    out.sort(key=lambda p: p["name"].lower())
+    return out
+
+
+def list_recent_sessions(profile=None, limit=8):
+    """Sessions with a downloaded backing track, newest first, for the
+    'resume a recent song' panel. Survives server restarts (reads meta.json).
+    Optionally filtered to sessions tagged with `profile` (untagged/older
+    sessions just won't match a filter — no migration needed)."""
+    out = []
+    try:
+        entries = os.listdir(SESS_DIR)
+    except OSError:
+        return out
+    want_slug = _profile_slug(profile) if profile else None
+    for jid in entries:
+        sdir = os.path.join(SESS_DIR, jid)
+        backing = os.path.join(sdir, "backing.wav")
+        if not os.path.isfile(backing):
+            continue
+        meta = _read_meta(jid)
+        if want_slug is not None and meta.get("profile") != want_slug:
+            continue
+        created_at = meta.get("created_at")
+        if created_at is None:
+            try:
+                created_at = os.path.getmtime(backing)
+            except OSError:
+                created_at = 0
+        vid = meta.get("video_id")
+        out.append({
+            "id": jid,
+            "title": meta.get("title") or "Karaoke",
+            "video_id": vid,
+            "duration": meta.get("duration"),
+            "thumb": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg" if vid else None,
+            "created_at": created_at,
+        })
+    out.sort(key=lambda s: s["created_at"] or 0, reverse=True)
+    return out[:limit]
+
+
 def _probe_duration(path):
     try:
         r = subprocess.run(["ffprobe", "-v", "quiet", "-show_entries",
@@ -206,8 +308,13 @@ def job_or_disk(jid):
         return {}
     backing = os.path.join(SESS_DIR, jid, "backing.wav")
     if os.path.exists(backing):
+        meta = _read_meta(jid)
+        dur = meta.get("duration")
+        if dur is None:
+            dur = _probe_duration(backing)
         set_job(jid, status="ready", stage="ready", pct=100,
-                title="Karaoke", duration=_probe_duration(backing), recovered=True)
+                title=meta.get("title") or "Karaoke", video_id=meta.get("video_id"),
+                duration=dur, recovered=True)
         return get_job(jid)
     return {}
 
@@ -256,7 +363,7 @@ def search_youtube(query, n=12):
 
 # ---- Backing-track download -------------------------------------------------
 
-def do_prepare(jid, url):
+def do_prepare(jid, url, profile=None):
     set_job(jid, status="running", stage="downloading", pct=0, error=None)
     vid = extract_video_id(url)
     sdir = os.path.join(SESS_DIR, jid)
@@ -305,8 +412,14 @@ def do_prepare(jid, url):
     except Exception:
         pass
 
+    dur = _probe_duration(backing)
     set_job(jid, status="ready", stage="ready", pct=100,
-            video_id=vid, title=title or "Karaoke", duration=_probe_duration(backing))
+            video_id=vid, title=title or "Karaoke", duration=dur)
+    meta_kw = {"video_id": vid, "title": title or "Karaoke", "duration": dur,
+               "url": url, "created_at": time.time()}
+    if profile:
+        meta_kw["profile"] = _profile_slug(profile)
+    _write_meta(jid, **meta_kw)
 
 
 # ---- Local file import (no YouTube) -----------------------------------------
@@ -712,6 +825,25 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, audio_fx.PRO_CHAIN_DEFAULTS)
             return
 
+        if p.path == "/sessions":
+            profile = (parse_qs(p.query).get("profile") or [""])[0]
+            self._json(200, {"sessions": list_recent_sessions(profile or None)})
+            return
+
+        if p.path == "/profiles":
+            self._json(200, {"profiles": list_profiles()})
+            return
+
+        if p.path == "/profile/library":
+            name = _safe_profile_name((parse_qs(p.query).get("name") or [""])[0])
+            if not name:
+                self._json(400, {"error": "Missing profile name."})
+                return
+            prof = _read_profile(name)
+            self._json(200, {"display_name": prof.get("display_name") or name,
+                              "library": prof.get("library") or []})
+            return
+
         if p.path == "/status":
             jid = (parse_qs(p.query).get("id") or [""])[0]
             j = get_job(jid)
@@ -947,10 +1079,45 @@ class Handler(BaseHTTPRequestHandler):
             if not url.lower().startswith("http"):
                 self._json(400, {"error": "Paste a valid YouTube URL."})
                 return
+            profile = _safe_profile_name(body.get("profile")) or None
             jid = uuid.uuid4().hex[:12]
             set_job(jid, status="queued")
-            threading.Thread(target=do_prepare, args=(jid, url), daemon=True).start()
+            threading.Thread(target=do_prepare, args=(jid, url, profile), daemon=True).start()
             self._json(200, {"id": jid})
+            return
+
+        if p.path == "/profile/library/add":
+            body = self._read_body()
+            name = _safe_profile_name(body.get("name"))
+            video_id = (body.get("video_id") or "").strip()
+            if not name or not video_id:
+                self._json(400, {"error": "Missing profile name or song."})
+                return
+            prof = _read_profile(name)
+            lib = prof.get("library") or []
+            if not any(e.get("video_id") == video_id for e in lib):
+                lib.append({
+                    "video_id": video_id,
+                    "title": (body.get("title") or "").strip() or "Karaoke",
+                    "thumb": body.get("thumb") or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                    "channel": (body.get("channel") or "").strip(),
+                    "added_at": time.time(),
+                })
+            prof = _write_profile(name, library=lib)
+            self._json(200, prof)
+            return
+
+        if p.path == "/profile/library/remove":
+            body = self._read_body()
+            name = _safe_profile_name(body.get("name"))
+            video_id = (body.get("video_id") or "").strip()
+            if not name:
+                self._json(400, {"error": "Missing profile name."})
+                return
+            prof = _read_profile(name)
+            lib = [e for e in (prof.get("library") or []) if e.get("video_id") != video_id]
+            prof = _write_profile(name, library=lib)
+            self._json(200, prof)
             return
 
         if p.path == "/import":
