@@ -1,65 +1,42 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Karaoke Studio</title>
+<link rel="stylesheet" href="/theme.css">
 <style>
-  :root{
-    --panel:#15171c; --panel2:#1c1f26; --rack:#0e0f13; --edge:#2a2e38;
-    --ink:#e8ebf0; --muted:#8b93a3; --dim:#5a6172;
-    --amber:#ffb454; --amber2:#ff9b3d; --rec:#ff3b47; --ok:#39d98a;
-    --fader:#3a3f4c; --track:#0a0b0e;
-    --mono:'SF Mono',ui-monospace,Menlo,monospace;
-
-    /* jukebox amber-neon: the same accents as above, turned into real glow */
-    --accent: var(--amber);
-    --accent2: var(--amber2);
-    --glow-amber: 0 0 6px rgba(255,180,84,.55), 0 0 16px rgba(255,155,61,.30);
-    --glow-rec:   0 0 8px var(--rec), 0 0 3px #fff;
-    --glow-ok:    0 0 6px rgba(57,217,138,.6), 0 0 14px rgba(57,217,138,.25);
-    --metal: linear-gradient(180deg,#20242e,#15171c);
-    --glass: linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.16));
-  }
-  *{box-sizing:border-box}
   body{
-    margin:0;min-height:100vh;background:
-      radial-gradient(1200px 600px at 70% -10%, #20242e 0%, transparent 60%),
-      #0b0c0f;
+    margin:0;min-height:100vh;background:var(--bg);
     color:var(--ink);
     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     padding:20px;
   }
   .wrap{max-width:1180px;margin:0 auto}
-  header{display:flex;align-items:baseline;gap:14px;margin-bottom:18px}
+  header{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
   .logo{font-family:var(--mono);font-weight:700;font-size:19px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--ink)}
+    text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:12px}
   .logo b{color:var(--amber);text-shadow:var(--glow-amber)}
-  .tag{color:var(--dim);font-size:12px;font-family:var(--mono);letter-spacing:.08em}
 
   .grid{display:grid;grid-template-columns:1.35fr .95fr;gap:16px}
   @media(max-width:1100px){.grid{grid-template-columns:1fr}}
 
-  .card{background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
-    border:1px solid var(--edge);border-radius:12px;padding:16px;
-    box-shadow:0 10px 30px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04)}
   .card h2{margin:0 0 12px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;
     text-transform:uppercase;color:var(--muted);font-weight:600;
     display:flex;align-items:center;gap:8px}
   .card h2::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber);
     box-shadow:var(--glow-amber)}
+  #duetCard h2::before,#mixCard h2::before{background:var(--pink);box-shadow:var(--glow-pink)}
 
-  input[type=text]{width:100%;padding:11px 13px;border-radius:8px;border:1px solid var(--edge);
-    background:#0a0b0e;color:var(--ink);font-size:13px;outline:none;font-family:var(--mono);
-    transition:border-color .15s,box-shadow .15s}
-  input[type=text]:focus{border-color:var(--amber2);box-shadow:var(--glow-amber)}
-  .btn{padding:11px 18px;border:none;border-radius:8px;cursor:pointer;font-weight:650;font-size:13px;
-    background:var(--metal);color:var(--ink);
-    border:1px solid var(--edge);transition:filter .12s,box-shadow .12s}
-  .btn:hover{filter:brightness(1.15)}
-  .btn:disabled{opacity:.4;cursor:default}
-  .btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#211500;border-color:#a5651f;
-    box-shadow:var(--glow-amber)}
-  .btn.rec{background:linear-gradient(180deg,#ff4d58,#e0313c);color:#fff;border-color:#a51f27}
-  .btn.rec:not(:disabled){box-shadow:var(--glow-rec)}
-  .btn.wide{width:100%}
+  /* practice/advanced disclosure drawers (native <details>, styled to match card headers) */
+  details.drawer{margin-top:12px;border-top:1px dashed var(--edge);padding-top:10px}
+  details.drawer summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:8px;user-select:none}
+  details.drawer summary::-webkit-details-marker{display:none}
+  details.drawer summary::before{content:"";width:6px;height:6px;border-radius:50%;
+    background:var(--pink);box-shadow:var(--glow-pink)}
+  details.drawer summary::after{content:"▸";margin-left:auto;color:var(--dim);transition:transform .15s}
+  details.drawer[open] summary::after{transform:rotate(90deg)}
+  details.drawer summary:hover{color:var(--ink)}
+  details.drawer .drawer-body{margin-top:10px;display:flex;flex-direction:column;gap:10px}
 
   .row{display:flex;gap:10px;align-items:center}
   .mt{margin-top:12px}
@@ -123,32 +100,7 @@
   .fxname{min-width:90px;width:118px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
   .fxname.on{color:var(--amber);text-shadow:var(--glow-amber)}
 
-  /* skeuomorphic fader: recessed track, raised metal cap, amber glow when focused */
-  input[type=range]{-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;
-    background:var(--track);box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000;
-    flex:1;min-width:80px;outline:none}
-  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:22px;border-radius:4px;
-    background:linear-gradient(180deg,#565c6c,var(--fader) 55%,#2c2f38);
-    border:1px solid #0a0b0e;position:relative;cursor:pointer;
-    box-shadow:0 2px 5px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.15)}
-  input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--track);
-    box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000}
-  input[type=range]::-moz-range-thumb{width:18px;height:22px;border-radius:4px;
-    background:linear-gradient(180deg,#565c6c,var(--fader) 55%,#2c2f38);
-    border:1px solid #0a0b0e;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.6)}
-  input[type=range]:focus::-webkit-slider-thumb{box-shadow:0 2px 5px rgba(0,0,0,.6),var(--glow-amber)}
-  input[type=range]:disabled::-webkit-slider-thumb{background:#3a3d45;box-shadow:none}
   .val{font-family:var(--mono);font-size:11px;color:var(--muted);width:52px;text-align:right}
-  .tog{width:34px;height:19px;border-radius:11px;background:#2a2e38;position:relative;cursor:pointer;
-    border:1px solid #000;flex:none;transition:background .15s,box-shadow .15s}
-  .tog.on{background:var(--amber2);box-shadow:var(--glow-amber)}
-  .tog::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;
-    background:#dfe3ea;transition:left .15s}
-  .tog.on::after{left:16px}
-
-  select{padding:8px 10px;border-radius:7px;border:1px solid var(--edge);background:#0a0b0e;
-    color:var(--ink);font-size:12px;font-family:var(--mono);outline:none}
-  select:focus{border-color:var(--amber2)}
 
   .mixrow{display:flex;align-items:center;gap:12px;padding:8px 0;flex-wrap:wrap}
   .mixrow .fxname{min-width:70px;width:90px}
@@ -248,19 +200,19 @@
   .takemix .monrow{min-width:190px}
   #testModeBtn{margin-left:auto}
   .testpanel{margin-top:12px;padding:14px;border-radius:12px;
-    background:linear-gradient(180deg,#1a1f2a,#141821);border:1px solid var(--accent2)}
+    background:linear-gradient(180deg,#241a2e,#1a1420);border:1px solid var(--pink2);box-shadow:var(--glow-pink)}
   .testpanel h3{margin:0 0 4px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--accent)}
+    text-transform:uppercase;color:var(--pink)}
   .testpanel .tp-sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
   .loopbar{position:relative;height:34px;background:#0a0b0e;border:1px solid #000;border-radius:8px;
     margin:10px 0;overflow:hidden;cursor:pointer}
-  .loopregion{position:absolute;top:0;bottom:0;background:rgba(110,168,254,.28);border-left:2px solid var(--accent);
-    border-right:2px solid var(--accent)}
+  .loopregion{position:absolute;top:0;bottom:0;background:rgba(255,61,129,.22);border-left:2px solid var(--pink);
+    border-right:2px solid var(--pink)}
   .loopplay{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.85}
   .looprow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .tp-btn{padding:9px 16px;border:1px solid var(--edge);border-radius:8px;cursor:pointer;font-weight:650;font-size:13px;
     background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink)}
-  .tp-btn.on{background:linear-gradient(180deg,var(--accent),var(--accent2));color:#0b0e13;border-color:var(--accent2)}
+  .tp-btn.on{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#fff;border-color:var(--pink2)}
   .tp-btn:hover{filter:brightness(1.15)}
   .tp-note{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.03em}
   .hint{color:var(--dim);font-size:11.5px;line-height:1.6;margin-top:10px;font-family:var(--mono);letter-spacing:.02em}
@@ -286,7 +238,6 @@
   .step.active{opacity:1;pointer-events:auto}
   .bar{height:6px;background:#0a0b0e;border-radius:4px;overflow:hidden;border:1px solid #000;margin-top:8px}
   .bar .fill{height:100%;width:0;background:linear-gradient(90deg,var(--amber2),var(--amber));transition:width .3s}
-  kbd{font-family:var(--mono);background:#0a0b0e;border:1px solid var(--edge);border-radius:4px;padding:1px 6px;font-size:11px;color:var(--amber)}
 
   /* ---- toasts (replaces ad-hoc inline error text for transient messages) --- */
   .toaststack{position:fixed;top:16px;right:16px;z-index:1000;display:flex;flex-direction:column;
@@ -323,8 +274,8 @@
 
 <div class="wrap">
   <header>
-    <div class="logo">KARAOKE <b>STUDIO</b></div>
-    <div class="tag">// record · tune · mix · export</div>
+    <div class="logo">KARAOKE <b>STUDIO</b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <a class="btn pink" id="partyLink" href="/party" style="margin-left:auto;text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones">🎉 Party mode</a>
   </header>
 
   <!-- STEP 1: find a song -->
@@ -339,9 +290,10 @@
     <!-- search mode -->
     <div id="searchMode">
       <div class="row">
-        <input id="q" type="text" placeholder="Search e.g. “tum hi ho karaoke lyrics”…" spellcheck="false" autocomplete="off">
+        <input id="q" type="text" placeholder="Search e.g. “tum hi ho”…" spellcheck="false" autocomplete="off">
         <button id="searchBtn" class="btn amber">Search</button>
       </div>
+      <label class="punch mt"><input type="checkbox" id="karaokeSuffix" checked> 🎤 Add "karaoke" to search (helps surface lyrics videos)</label>
       <div class="status mt" id="searchStatus"></div>
       <div class="results" id="results"></div>
     </div>
@@ -420,45 +372,54 @@
         <div class="metlabel mt">MIC INPUT</div>
         <div class="meter"><div class="lvl" id="mic"></div></div>
 
-        <!-- live monitor volumes (in your headphones; do not change recording) -->
-        <div class="mons">
-          <div class="monrow">
-            <span class="monlbl">Music vol</span>
-            <input type="range" id="musVol" min="0" max="100" value="100">
-            <span class="monval" id="musVolV">100%</span>
-          </div>
-          <div class="monrow">
-            <span class="monlbl">My voice</span>
-            <input type="range" id="monVol" min="0" max="100" value="0" title="Hear yourself in headphones">
-            <span class="monval" id="monVolV">off</span>
-          </div>
-          <label class="tunertog"><input type="checkbox" id="tunerToggle" checked> pitch guide</label>
-        </div>
+        <!-- practice/monitor settings: headphone volumes, timing calibration, metronome —
+             all pre-recording fine-tuning, tucked away so the core record flow isn't
+             competing with it by default. Native <details> so none of the show/hide
+             logic below (ids, JS) needs to change. -->
+        <details class="drawer">
+          <summary>Practice &amp; monitor settings</summary>
+          <div class="drawer-body">
+            <!-- live monitor volumes (in your headphones; do not change recording) -->
+            <div class="mons">
+              <div class="monrow">
+                <span class="monlbl">Music vol</span>
+                <input type="range" id="musVol" min="0" max="100" value="100">
+                <span class="monval" id="musVolV">100%</span>
+              </div>
+              <div class="monrow">
+                <span class="monlbl">My voice</span>
+                <input type="range" id="monVol" min="0" max="100" value="0" title="Hear yourself in headphones">
+                <span class="monval" id="monVolV">off</span>
+              </div>
+              <label class="tunertog"><input type="checkbox" id="tunerToggle" checked> pitch guide</label>
+            </div>
 
-        <!-- vocal timing calibration: pulls your recorded voice earlier to
-             cancel mic input latency (the "vocals lag the track" problem) -->
-        <div class="mons" style="margin-top:8px">
-          <div class="monrow">
-            <span class="monlbl" title="Move your recorded vocals earlier/later to line up with the music">Vocal timing</span>
-            <input type="range" id="vocalDelay" min="-100" max="400" value="140" step="5">
-            <span class="monval" id="vocalDelayV">140ms</span>
-          </div>
-          <span class="tunertog" id="delayHint" style="cursor:default">vocals lag → slide right</span>
-        </div>
+            <!-- vocal timing calibration: pulls your recorded voice earlier to
+                 cancel mic input latency (the "vocals lag the track" problem) -->
+            <div class="mons">
+              <div class="monrow">
+                <span class="monlbl" title="Move your recorded vocals earlier/later to line up with the music">Vocal timing</span>
+                <input type="range" id="vocalDelay" min="-100" max="400" value="140" step="5">
+                <span class="monval" id="vocalDelayV">140ms</span>
+              </div>
+              <span class="tunertog" id="delayHint" style="cursor:default">vocals lag → slide right</span>
+            </div>
 
-        <!-- metronome: count-in before recording, optional click while singing -->
-        <div class="mons" id="metroRow">
-          <div class="monrow" style="flex:none">
-            <span class="monlbl">Metronome</span>
-            <button id="bpmdn" class="ksmall" title="Slower">−</button>
-            <span class="kval" id="bpmval">100</span>
-            <button id="bpmup" class="ksmall" title="Faster">+</button>
-            <span class="monlbl">bpm</span>
+            <!-- metronome: count-in before recording, optional click while singing -->
+            <div class="mons" id="metroRow">
+              <div class="monrow" style="flex:none">
+                <span class="monlbl">Metronome</span>
+                <button id="bpmdn" class="ksmall" title="Slower">−</button>
+                <span class="kval" id="bpmval">100</span>
+                <button id="bpmup" class="ksmall" title="Faster">+</button>
+                <span class="monlbl">bpm</span>
+              </div>
+              <label class="tunertog"><input type="checkbox" id="countInToggle" checked> 4-click count-in</label>
+              <label class="tunertog" title="Click track heard only in your headphones — never recorded (M)">
+                <input type="checkbox" id="clickRecToggle"> click while recording</label>
+            </div>
           </div>
-          <label class="tunertog"><input type="checkbox" id="countInToggle" checked> 4-click count-in</label>
-          <label class="tunertog" title="Click track heard only in your headphones — never recorded (M)">
-            <input type="checkbox" id="clickRecToggle"> click while recording</label>
-        </div>
+        </details>
 
         <!-- record transport -->
         <div class="transport">
@@ -483,16 +444,21 @@
         </div>
 
         <!-- phone camera pairing: film with your phone, synced to this app's audio -->
-        <div class="hint" id="phonePairPanel" style="margin-top:8px">
-          📱 <span id="phoneStatusText">Loading phone-pairing link…</span>
-          <div id="phoneUrlBox" style="display:none;margin-top:6px">
-            <code id="phoneUrlText" style="user-select:all"></code>
-            <button class="btn" id="phoneCopyBtn" type="button" style="margin-left:8px">Copy link</button>
-            <div style="opacity:.8;margin-top:4px">Open on your phone (same WiFi). Android only for now —
-              camera access over a plain link needs a one-time browser setting; see the
-              <a href="https://github.com/TanSin18/Karaoke-Studio#readme" target="_blank" rel="noopener">README</a>.</div>
+        <details class="drawer">
+          <summary>📱 Phone camera sync (optional)</summary>
+          <div class="drawer-body">
+            <div class="hint" id="phonePairPanel">
+              <span id="phoneStatusText">Loading phone-pairing link…</span>
+              <div id="phoneUrlBox" style="display:none;margin-top:6px">
+                <code id="phoneUrlText" style="user-select:all"></code>
+                <button class="btn" id="phoneCopyBtn" type="button" style="margin-left:8px">Copy link</button>
+                <div style="opacity:.8;margin-top:4px">Open on your phone (same WiFi). Android only for now —
+                  camera access over a plain link needs a one-time browser setting; see the
+                  <a href="https://github.com/TanSin18/Karaoke-Studio#readme" target="_blank" rel="noopener">README</a>.</div>
+              </div>
+            </div>
           </div>
-        </div>
+        </details>
 
         <!-- your recorded take: full play/pause/stop/seek, appears after recording -->
         <div class="player" id="takePlayer" style="display:none"></div>
@@ -561,25 +527,6 @@
             <input type="range" id="echo" min="0" max="100" value="20" disabled>
             <div class="val" id="echov">20%</div>
           </div>
-          <!-- eq low/mid/high -->
-          <div class="fxrow">
-            <div class="tog" data-fx="eq"></div>
-            <div class="fxname" data-name="eq">EQ · low</div>
-            <input type="range" id="eqlow" min="-12" max="12" value="2" disabled>
-            <div class="val" id="eqlowv">+2 dB</div>
-          </div>
-          <div class="fxrow">
-            <div style="width:34px"></div>
-            <div class="fxname">EQ · mid</div>
-            <input type="range" id="eqmid" min="-12" max="12" value="1" disabled>
-            <div class="val" id="eqmidv">+1 dB</div>
-          </div>
-          <div class="fxrow">
-            <div style="width:34px"></div>
-            <div class="fxname">EQ · high</div>
-            <input type="range" id="eqhigh" min="-12" max="12" value="3" disabled>
-            <div class="val" id="eqhighv">+3 dB</div>
-          </div>
           <!-- compression -->
           <div class="fxrow">
             <div class="tog" data-fx="compress"></div>
@@ -587,19 +534,46 @@
             <input type="range" id="compress" min="0" max="100" value="55" disabled>
             <div class="val" id="compressv">55%</div>
           </div>
-          <!-- denoise + deess -->
-          <div class="fxrow">
-            <div class="tog" data-fx="denoise"></div>
-            <div class="fxname" data-name="denoise">De-noise</div>
-            <input type="range" id="denoise" min="0" max="100" value="40" disabled>
-            <div class="val" id="denoisev">40%</div>
-          </div>
-          <div class="fxrow">
-            <div class="tog" data-fx="deess"></div>
-            <div class="fxname" data-name="deess">De-ess</div>
-            <div style="flex:1;color:var(--dim);font-family:var(--mono);font-size:11px">tame harsh S sounds</div>
-          </div>
         </div>
+
+        <!-- advanced: EQ bands + cleanup tools, tucked away from the four
+             essentials above so the rack doesn't dump 18 controls at once -->
+        <details class="drawer">
+          <summary>Advanced (EQ &amp; cleanup)</summary>
+          <div class="rack drawer-body">
+            <!-- eq low/mid/high -->
+            <div class="fxrow">
+              <div class="tog" data-fx="eq"></div>
+              <div class="fxname" data-name="eq">EQ · low</div>
+              <input type="range" id="eqlow" min="-12" max="12" value="2" disabled>
+              <div class="val" id="eqlowv">+2 dB</div>
+            </div>
+            <div class="fxrow">
+              <div style="width:34px"></div>
+              <div class="fxname">EQ · mid</div>
+              <input type="range" id="eqmid" min="-12" max="12" value="1" disabled>
+              <div class="val" id="eqmidv">+1 dB</div>
+            </div>
+            <div class="fxrow">
+              <div style="width:34px"></div>
+              <div class="fxname">EQ · high</div>
+              <input type="range" id="eqhigh" min="-12" max="12" value="3" disabled>
+              <div class="val" id="eqhighv">+3 dB</div>
+            </div>
+            <!-- denoise + deess -->
+            <div class="fxrow">
+              <div class="tog" data-fx="denoise"></div>
+              <div class="fxname" data-name="denoise">De-noise</div>
+              <input type="range" id="denoise" min="0" max="100" value="40" disabled>
+              <div class="val" id="denoisev">40%</div>
+            </div>
+            <div class="fxrow">
+              <div class="tog" data-fx="deess"></div>
+              <div class="fxname" data-name="deess">De-ess</div>
+              <div style="flex:1;color:var(--dim);font-family:var(--mono);font-size:11px">tame harsh S sounds</div>
+            </div>
+          </div>
+        </details>
       </div>
 
       <div class="card step mt" id="duetCard" style="margin-top:16px">
@@ -768,8 +742,9 @@ function switchTab(mode){
 $('searchBtn').addEventListener('click',doSearch);
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
 async function doSearch(){
-  const q=$('q').value.trim();
+  let q=$('q').value.trim();
   if(!q){ $('searchStatus').textContent='Type a song to search for.'; return; }
+  if($('karaokeSuffix').checked && !/karaoke/i.test(q)) q+=' karaoke';
   $('loaderr').textContent=''; $('searchStatus').textContent='Searching YouTube…';
   $('results').innerHTML=''; $('searchBtn').disabled=true;
   let r;

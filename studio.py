@@ -34,10 +34,16 @@ import audio_fx
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(HERE, "index.html")
+THEME_PATH = os.path.join(HERE, "theme.css")
 
 
 def _read_index():
     with open(INDEX_PATH, "rb") as fh:
+        return fh.read()
+
+
+def _read_theme():
+    with open(THEME_PATH, "rb") as fh:
         return fh.read()
 
 def _sessions_dir():
@@ -473,7 +479,7 @@ def _run_render_locked(jid, vocal_path, fx, mix_opts, lock):
 # still go through the existing JOBS/do_prepare pipeline — a queue entry just
 # points at a jid once that job's status is "ready".
 
-ROOM = {"code": None, "queue": [], "now_playing": None}
+ROOM = {"code": None, "queue": [], "now_playing": None, "challenges": []}
 ROOM_LOCK = threading.Lock()
 SUBSCRIBERS = []
 SUB_LOCK = threading.Lock()
@@ -482,7 +488,7 @@ SUB_LOCK = threading.Lock()
 def room_state():
     with ROOM_LOCK:
         return {"code": ROOM["code"], "queue": list(ROOM["queue"]),
-                "now_playing": ROOM["now_playing"]}
+                "now_playing": ROOM["now_playing"], "challenges": list(ROOM["challenges"])}
 
 
 def broadcast_room():
@@ -499,22 +505,30 @@ def start_room():
         ROOM["code"] = code
         ROOM["queue"] = []
         ROOM["now_playing"] = None
+        ROOM["challenges"] = []
     broadcast_room()
     return code
 
 
-def queue_add(jid, singers, semitones):
+def _make_queue_entry(jid, singers, semitones, from_singer=None):
     j = get_job(jid)
     if not j or j.get("status") != "ready":
         return None
-    entry = {
+    return {
         "entry_id": uuid.uuid4().hex[:10],
         "jid": jid,
         "title": j.get("title") or "Karaoke",
         "singers": singers,
         "semitones": semitones,
         "status": "queued",
+        "from_singer": from_singer,  # set only for entries born from an accepted challenge
     }
+
+
+def queue_add(jid, singers, semitones):
+    entry = _make_queue_entry(jid, singers, semitones)
+    if not entry:
+        return None
     with ROOM_LOCK:
         if ROOM["code"] is None:
             return None
@@ -565,6 +579,66 @@ def queue_move(entry_id, direction):
     broadcast_room()
 
 
+def queue_reorder(order):
+    """Reorder the still-queued entries to match `order` (a list of entry_ids
+    from a drag-and-drop drop on the TV screen). done/now_playing entries
+    keep their existing positions; only the queued ones get rearranged."""
+    with ROOM_LOCK:
+        q = ROOM["queue"]
+        by_id = {e["entry_id"]: e for e in q if e["status"] == "queued"}
+        if set(order) != set(by_id):
+            return False  # not a straight permutation of what's actually queued — ignore
+        queued_idx = [i for i, e in enumerate(q) if e["status"] == "queued"]
+        for i, entry_id in zip(queued_idx, order):
+            q[i] = by_id[entry_id]
+    broadcast_room()
+    return True
+
+
+def challenge_add(jid, from_singer, to_singer, semitones):
+    j = get_job(jid)
+    if not j or j.get("status") != "ready":
+        return None
+    challenge = {
+        "challenge_id": uuid.uuid4().hex[:10],
+        "jid": jid,
+        "title": j.get("title") or "Karaoke",
+        "from_singer": from_singer,
+        "to_singer": to_singer,
+        "semitones": semitones,
+        "status": "pending",
+    }
+    with ROOM_LOCK:
+        if ROOM["code"] is None:
+            return None
+        ROOM["challenges"].append(challenge)
+    broadcast_room()
+    return challenge
+
+
+def challenge_accept(challenge_id):
+    """Move an accepted challenge into the real queue as an entry sung by
+    the challenged person, tagged with who challenged them."""
+    with ROOM_LOCK:
+        ch = next((c for c in ROOM["challenges"] if c["challenge_id"] == challenge_id), None)
+        if not ch or ch["status"] != "pending":
+            return None
+        entry = _make_queue_entry(ch["jid"], [ch["to_singer"]], ch["semitones"],
+                                   from_singer=ch["from_singer"])
+        if not entry:
+            return None
+        ROOM["queue"].append(entry)
+        ch["status"] = "accepted"
+    broadcast_room()
+    return entry
+
+
+def challenge_decline(challenge_id):
+    with ROOM_LOCK:
+        ROOM["challenges"] = [c for c in ROOM["challenges"] if c["challenge_id"] != challenge_id]
+    broadcast_room()
+
+
 def make_qr_png(data):
     """Render `data` as a QR code PNG via the optional `qrencode` CLI (same
     "optional but recommended" pattern as rubberband/sox). Returns None if
@@ -604,6 +678,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+            return
+
+        if p.path == "/theme.css":
+            try:
+                b = _read_theme()
+            except OSError:
+                self._json(500, {"error": "theme.css is missing next to studio.py."})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/css; charset=utf-8")
             self.send_header("Content-Length", str(len(b)))
             self.end_headers()
             self.wfile.write(b)
@@ -1150,6 +1237,52 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, room_state())
             return
 
+        if p.path == "/queue/reorder":
+            body = self._read_body()
+            order = body.get("order")
+            if not isinstance(order, list) or not order:
+                self._json(400, {"error": "order must be a non-empty list of entry_ids"})
+                return
+            if not queue_reorder(order):
+                self._json(409, {"error": "queue changed — reload and try again"})
+                return
+            self._json(200, room_state())
+            return
+
+        if p.path == "/challenge/add":
+            body = self._read_body()
+            jid = (body.get("jid") or "").strip()
+            from_singer = (body.get("from_singer") or "").strip()
+            to_singer = (body.get("to_singer") or "").strip()
+            try:
+                semitones = max(-6, min(6, int(body.get("semitones") or 0)))
+            except (TypeError, ValueError):
+                semitones = 0
+            if not jid or not from_singer or not to_singer:
+                self._json(400, {"error": "Need a song, your name, and who you're challenging."})
+                return
+            challenge = challenge_add(jid, from_singer, to_singer, semitones)
+            if not challenge:
+                self._json(400, {"error": "No open party room, or song isn't ready yet."})
+                return
+            self._json(200, {"challenge": challenge})
+            return
+
+        if p.path == "/challenge/accept":
+            body = self._read_body()
+            entry = challenge_accept(body.get("challenge_id"))
+            if not entry:
+                self._json(404, {"error": "unknown or already-resolved challenge"})
+                return
+            self._json(200, room_state())
+            return
+
+        if p.path == "/challenge/decline":
+            body = self._read_body()
+            challenge_decline(body.get("challenge_id"))
+            self._json(200, room_state())
+            return
+
         self._json(404, {"error": "not found"})
 
 
@@ -1325,50 +1458,52 @@ async function pollLoop(){
 PARTY_HTML = r"""<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Karaoke Party</title>
+<link rel="stylesheet" href="/theme.css">
 <style>
-  :root{
-    --panel:#15171c; --panel2:#1c1f26; --edge:#2a2e38;
-    --ink:#e8ebf0; --muted:#8b93a3; --dim:#5a6172;
-    --amber:#ffb454; --amber2:#ff9b3d; --ok:#39d98a;
-    --mono:'SF Mono',ui-monospace,Menlo,monospace;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;background:#0a0b0e;color:var(--ink);
+  body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
     font:16px/1.4 -apple-system,system-ui,sans-serif;padding:24px;}
-  h1{font-size:22px;margin:0 0 4px;color:var(--amber)}
+  h1{font-size:24px;margin:0 0 4px;color:var(--amber);text-shadow:var(--glow-amber);
+    display:flex;align-items:center;gap:12px}
   .sub{color:var(--muted);margin:0 0 20px}
-  .code{font:700 64px/1 var(--mono);letter-spacing:.08em;color:var(--amber)}
+  .code{font:700 64px/1 var(--mono);letter-spacing:.1em;color:var(--amber);text-shadow:var(--glow-amber)}
+  .code span:nth-child(2n){color:var(--pink);text-shadow:var(--glow-pink)}
   .join{color:var(--muted);font-size:14px}
-  button{background:var(--amber);color:#1a1200;border:none;border-radius:10px;
-    padding:12px 20px;font-weight:700;font-size:15px;cursor:pointer}
-  button:hover{background:var(--amber2)}
-  button.ghost{background:transparent;border:1px solid var(--edge);color:var(--ink)}
+  .join b{color:var(--ink)}
   .grid{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-top:20px}
-  .panel{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:20px}
   #stage{aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden}
   #stage iframe,#ytplayer{width:100%;height:100%}
   .nowSingers{font-size:28px;font-weight:700;margin:14px 0 2px}
   .nowTitle{color:var(--muted)}
-  .upnext li{padding:10px 0;border-bottom:1px solid var(--edge);position:relative}
+  .upnext{list-style:none;margin:0;padding:0}
+  .upnext li{padding:10px 34px 10px 22px;border-bottom:1px solid var(--edge);position:relative;
+    cursor:grab;transition:background .1s}
+  .upnext li:hover{background:rgba(255,255,255,.03)}
+  .upnext li.dragging{opacity:.35}
+  .upnext li::before{content:"⠿";position:absolute;left:0;top:10px;color:var(--dim);font-size:16px}
   .upnext .who{font-weight:600}
   .upnext .what{color:var(--muted);font-size:14px}
   .rowBtns{position:absolute;right:0;top:8px;display:flex;gap:6px}
-  button.small{padding:4px 8px;font-size:13px;border-radius:6px}
-  button.small:disabled{opacity:.25;cursor:default}
   .empty{color:var(--dim);padding:20px 0}
   .codeRow{display:flex;align-items:center;gap:20px}
-  #qrImg{width:120px;height:120px;background:#fff;border-radius:8px;padding:6px}
-  .hidden{display:none}
+  #qrImg{width:120px;height:120px;background:#fff;border-radius:10px;padding:6px;
+    border:2px solid var(--pink2);box-shadow:var(--glow-pink)}
+  .challenges{margin-top:20px}
+  .challenges h3{display:flex;align-items:center;gap:8px;margin-top:0}
+  .chal{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--pink2);
+    border-radius:10px;margin-bottom:8px;background:rgba(255,61,129,.07);box-shadow:var(--glow-pink)}
+  .chal .txt{flex:1;font-size:14px}
+  .chal .txt b{color:var(--pink)}
 </style>
 
 <div id="start">
-  <h1>🎤 Karaoke Party</h1>
+  <a href="/" style="color:var(--muted);font-size:13px;text-decoration:none">← Back to Studio</a>
+  <h1>🎤 Karaoke Party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
   <p class="sub">Start a room, then have guests join from their phones on the same WiFi.</p>
-  <button id="startBtn">Start Party</button>
+  <button class="btn amber" id="startBtn">Start Party</button>
 </div>
 
-<div id="live" style="display:none">
-  <h1>🎤 Karaoke Party</h1>
+<div id="live" class="hidden">
+  <h1>🎤 Karaoke Party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
   <div class="codeRow">
     <div>
       <div class="code" id="roomCode"></div>
@@ -1377,16 +1512,20 @@ PARTY_HTML = r"""<meta charset="utf-8">
     <img id="qrImg" class="hidden" alt="Scan to join">
   </div>
   <div class="grid">
-    <div class="panel">
+    <div class="card">
       <div id="stage"><div class="empty">Nobody queued yet — waiting for guests to join and add songs.</div></div>
       <div class="nowSingers" id="singers"></div>
       <div class="nowTitle" id="songTitle"></div>
-      <div style="margin-top:14px"><button id="nextBtn">Next ▶</button></div>
+      <div style="margin-top:14px"><button class="btn pink" id="nextBtn">Next ▶</button></div>
     </div>
-    <div class="panel">
-      <h3 style="margin-top:0">Up next</h3>
+    <div class="card">
+      <h3 style="margin-top:0">Up next <span style="font-size:11px;color:var(--dim);font-weight:400">— drag to reorder</span></h3>
       <ul class="upnext" id="upnext"><li class="empty">Queue is empty.</li></ul>
     </div>
+  </div>
+  <div class="card challenges hidden" id="challengesCard">
+    <h3>⚡ Challenges <span class="marquee"><i class="bulb"></i><i class="bulb"></i></span></h3>
+    <div id="challengeList"></div>
   </div>
 </div>
 
@@ -1398,7 +1537,8 @@ let currentEntryId=null, ytPlayer=null, ytReady=false, backingAudio=null, syncTi
 $('startBtn').addEventListener('click',async()=>{
   const r=await fetch('/room/start',{method:'POST'}); const j=await r.json();
   $('start').style.display='none'; $('live').style.display='block';
-  $('roomCode').textContent=j.code; $('joinUrl').textContent=j.join_url||'(no LAN IP found — check WiFi)';
+  $('roomCode').innerHTML=[...j.code].map(c=>`<span>${esc(c)}</span>`).join('');
+  $('joinUrl').textContent=j.join_url||'(no LAN IP found — check WiFi)';
   if(j.join_url){
     const qr=$('qrImg');
     qr.onload=()=>qr.classList.remove('hidden');
@@ -1421,21 +1561,34 @@ function subscribe(){
 }
 
 function render(){
+  if(dragging) return;  // a live drag rebuilds its own DOM order — don't fight it with an SSE-triggered re-render
   const upcoming=state.queue.filter(e=>e.status==='queued');
   $('upnext').innerHTML = upcoming.length
-    ? upcoming.map((e,i)=>`<li>
+    ? upcoming.map((e,i)=>{
+        const tag=e.from_singer?`<div class="what">⚡ challenged by ${esc(e.from_singer)}</div>`:'';
+        return `<li draggable="true" data-entry-id="${e.entry_id}">
         <div class="who">${esc(e.singers.join(' & '))}</div>
         <div class="what">${esc(e.title)}</div>
+        ${tag}
         <div class="rowBtns">
-          <button class="ghost small" data-move="up" data-id="${e.entry_id}" ${i===0?'disabled':''}>▲</button>
-          <button class="ghost small" data-move="down" data-id="${e.entry_id}" ${i===upcoming.length-1?'disabled':''}>▼</button>
-          <button class="ghost small" data-remove="${e.entry_id}">✕</button>
+          <button class="btn ghost small" data-move="up" data-id="${e.entry_id}" ${i===0?'disabled':''}>▲</button>
+          <button class="btn ghost small" data-move="down" data-id="${e.entry_id}" ${i===upcoming.length-1?'disabled':''}>▼</button>
+          <button class="btn ghost small" data-remove="${e.entry_id}">✕</button>
         </div>
-      </li>`).join('')
+      </li>`; }).join('')
     : '<li class="empty">Queue is empty.</li>';
   const now=state.queue.find(e=>e.entry_id===state.now_playing);
   if(now){ $('singers').textContent=now.singers.join(' & '); $('songTitle').textContent=now.title; }
   else { $('singers').textContent=''; $('songTitle').textContent=''; }
+
+  const pending=(state.challenges||[]).filter(c=>c.status==='pending');
+  $('challengesCard').classList.toggle('hidden', pending.length===0);
+  $('challengeList').innerHTML=pending.map(c=>`
+    <div class="chal">
+      <div class="txt"><b>${esc(c.from_singer)}</b> challenges <b>${esc(c.to_singer)}</b> to sing "${esc(c.title)}"</div>
+      <button class="btn amber small" data-accept="${c.challenge_id}">Accept</button>
+      <button class="btn ghost small" data-decline="${c.challenge_id}">Decline</button>
+    </div>`).join('');
 }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
@@ -1445,6 +1598,39 @@ $('upnext').addEventListener('click',(ev)=>{
     body:JSON.stringify({entry_id:b.dataset.id, direction:b.dataset.move})});
   else if(b.dataset.remove) fetch('/queue/remove',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({entry_id:b.dataset.remove})});
+});
+
+$('challengeList').addEventListener('click',(ev)=>{
+  const b=ev.target.closest('button'); if(!b) return;
+  if(b.dataset.accept) fetch('/challenge/accept',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({challenge_id:b.dataset.accept})});
+  else if(b.dataset.decline) fetch('/challenge/decline',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({challenge_id:b.dataset.decline})});
+});
+
+// ---- drag-to-reorder: classic "move the dragged node live, commit on drop" -----
+let dragging=null;
+$('upnext').addEventListener('dragstart',(ev)=>{
+  const li=ev.target.closest('li[draggable]'); if(!li) return;
+  dragging=li; li.classList.add('dragging');
+  ev.dataTransfer.effectAllowed='move';
+});
+$('upnext').addEventListener('dragend',()=>{
+  if(dragging) dragging.classList.remove('dragging');
+  dragging=null;
+  const order=[...$('upnext').querySelectorAll('li[data-entry-id]')].map(li=>li.dataset.entryId);
+  if(order.length) fetch('/queue/reorder',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({order})});
+});
+$('upnext').addEventListener('dragover',(ev)=>{
+  if(!dragging) return;
+  ev.preventDefault();
+  const after=[...$('upnext').querySelectorAll('li[data-entry-id]:not(.dragging)')].find(li=>{
+    const r=li.getBoundingClientRect();
+    return ev.clientY < r.top + r.height/2;
+  });
+  if(after) $('upnext').insertBefore(dragging, after);
+  else $('upnext').appendChild(dragging);
 });
 
 function loadYTApi(cb){
@@ -1470,11 +1656,49 @@ async function mountEntry(entry){
       playerVars:{mute:1,rel:0,modestbranding:1,playsinline:1,iv_load_policy:3,controls:0,origin:window.location.origin},
       events:{
         onReady:()=>{ try{ytPlayer.mute();}catch(_){} ytReady=true; ytPlayer.playVideo(); startAudio(entry); },
-        onStateChange:(e)=>{ if(e.data===0){ /* video ended — host taps Next */ } },
+        onStateChange:onPartyVideoState,
       }
     });
   });
 }
+
+// The video is the master clock, but it isn't the only thing that can change
+// its play state — a stray click on the (controls:0) player, buffering, or
+// the tab losing focus can all pause/resume it without going through our own
+// code. Previously only drift got corrected, never play/pause, so a paused
+// video left the backing track playing on its own and fighting the sync
+// loop's repeated seeks-back — that's the "glitchy" bug. Mirror state instead.
+function onPartyVideoState(e){
+  if(!backingAudio) return;
+  const st=e.data;
+  if(st===1){ // playing
+    resyncAudio();
+    backingAudio.play().catch(()=>{});
+  } else if(st===2){ // paused
+    backingAudio.pause();
+  } else if(st===0){ // ended
+    backingAudio.pause();
+  }
+  // buffering(3) / cued(5): leave backingAudio as-is, syncTimer will settle it
+}
+
+function resyncAudio(){
+  if(!ytReady || !backingAudio) return;
+  try{ backingAudio.currentTime=ytPlayer.getCurrentTime(); }catch(_){}
+}
+
+// Background tabs get their timers throttled hard, so drift (or a missed
+// pause/play event) can pile up while this tab isn't visible — force a hard
+// resync the moment the host switches back to it instead of waiting for the
+// next 500ms tick to slowly correct a potentially multi-second gap.
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible' || !ytReady || !backingAudio) return;
+  resyncAudio();
+  try{
+    if(ytPlayer.getPlayerState()===1) backingAudio.play().catch(()=>{});
+    else backingAudio.pause();
+  }catch(_){}
+});
 
 function startAudio(entry){
   if(backingAudio){ try{backingAudio.pause();}catch(_){} }
@@ -1483,6 +1707,7 @@ function startAudio(entry){
   backingAudio.play().catch(()=>{});
   syncTimer=setInterval(()=>{
     if(!ytReady||!backingAudio) return;
+    if(ytPlayer.getPlayerState()!==1) return;  // only chase drift while actually playing
     const vt=ytPlayer.getCurrentTime();
     if(Math.abs((backingAudio.currentTime||0)-vt)>0.15){ try{backingAudio.currentTime=vt;}catch(_){} }
   },500);
@@ -1498,36 +1723,42 @@ function startAudio(entry){
 JOIN_HTML = r"""<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Join the Party</title>
+<link rel="stylesheet" href="/theme.css">
 <style>
-  :root{
-    --panel:#15171c; --edge:#2a2e38; --ink:#e8ebf0; --muted:#8b93a3;
-    --amber:#ffb454; --amber2:#ff9b3d; --ok:#39d98a;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;background:#0a0b0e;color:var(--ink);
+  body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
     font:16px/1.4 -apple-system,system-ui,sans-serif;padding:18px;max-width:480px;margin:0 auto}
-  h1{font-size:20px;color:var(--amber);margin:8px 0 16px}
+  h1{font-size:22px;color:var(--amber);text-shadow:var(--glow-amber);margin:8px 0 16px;
+    display:flex;align-items:center;gap:10px}
   label{display:block;font-size:13px;color:var(--muted);margin:14px 0 6px}
-  input[type=text]{width:100%;padding:12px;border-radius:10px;border:1px solid var(--edge);
-    background:var(--panel);color:var(--ink);font-size:16px}
-  button{background:var(--amber);color:#1a1200;border:none;border-radius:10px;
-    padding:12px 18px;font-weight:700;font-size:15px;cursor:pointer;margin-top:10px}
-  button:disabled{opacity:.4}
+  .btn{width:100%;margin-top:10px}
   .results{margin-top:10px}
-  .result{display:flex;gap:10px;padding:10px;border:1px solid var(--edge);border-radius:10px;
-    margin-bottom:8px;cursor:pointer;background:var(--panel)}
-  .result img{width:72px;height:54px;object-fit:cover;border-radius:6px;flex:none}
+  .result{display:flex;gap:10px;padding:10px;border:1px solid var(--edge);border-radius:12px;
+    margin-bottom:8px;cursor:pointer;background:var(--panel);transition:border-color .12s,transform .12s}
+  .result:hover{border-color:var(--pink2);transform:translateY(-1px)}
+  .result img{width:72px;height:54px;object-fit:cover;border-radius:8px;flex:none}
   .result .t{font-size:14px}
   .result .c{font-size:12px;color:var(--muted)}
-  .panel{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:16px;margin-top:16px}
+  .card{margin-top:16px}
   .slider{display:flex;align-items:center;gap:10px}
   input[type=range]{flex:1}
   .msg{color:var(--ok);margin-top:10px}
-  .err{color:#ff6b6b;margin-top:10px}
-  .hidden{display:none}
+  .err{color:var(--rec);margin-top:10px}
+  .toggleRow{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;
+    color:var(--muted);cursor:pointer;user-select:none}
+  .qlist li{list-style:none;padding:8px 0;border-bottom:1px solid var(--edge)}
+  .qlist li:last-child{border-bottom:none}
+  .qlist .who{font-weight:600;font-size:14px}
+  .qlist .what{color:var(--muted);font-size:12.5px}
+  .qlist .now .who{color:var(--amber);text-shadow:var(--glow-amber)}
+  .chal{padding:10px;border:1px solid var(--pink2);border-radius:10px;margin-top:8px;
+    background:rgba(255,61,129,.07);box-shadow:var(--glow-pink)}
+  .chal .txt{font-size:13.5px;margin-bottom:8px}
+  .chal .txt b{color:var(--pink)}
+  .chal .btnrow{display:flex;gap:8px}
+  .chal .btnrow .btn{margin-top:0}
 </style>
 
-<h1>🎤 Join the party</h1>
+<h1>🎤 Join the party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
 
 <label>Room code</label>
 <input type="text" id="room" style="text-transform:uppercase" maxlength="4">
@@ -1537,10 +1768,11 @@ JOIN_HTML = r"""<meta charset="utf-8">
 
 <label>Search for a song</label>
 <input type="text" id="q" placeholder="Search YouTube...">
-<button id="searchBtn">Search</button>
+<label class="toggleRow"><input type="checkbox" id="karaokeSuffix" checked> 🎤 Add "karaoke" to search (helps surface lyrics videos)</label>
+<button class="btn amber" id="searchBtn">Search</button>
 <div class="results" id="results"></div>
 
-<div class="panel hidden" id="preview">
+<div class="card hidden" id="preview">
   <div id="prepStatus" style="color:var(--muted)">Preparing track…</div>
   <div id="previewControls" class="hidden">
     <audio id="audio" controls style="width:100%"></audio>
@@ -1549,24 +1781,81 @@ JOIN_HTML = r"""<meta charset="utf-8">
       <input type="range" id="key" min="-6" max="6" value="0">
       <span id="keyVal">0</span>
     </div>
-    <button id="addBtn">Add to queue ✓</button>
+    <label class="toggleRow"><input type="checkbox" id="challengeMode"> 🎯 Challenge someone else to sing this instead</label>
+    <input type="text" id="challengeTarget" class="hidden" placeholder="Who are you challenging?" style="margin-top:8px">
+    <button class="btn pink" id="addBtn">Add to queue ✓</button>
   </div>
 </div>
 <div id="feedback"></div>
+
+<div class="card" id="queueView">
+  <h3 style="margin-top:0">🎶 Party queue</h3>
+  <div id="qEmpty" style="color:var(--dim);font-size:13px">Enter the room code above to see who's up.</div>
+  <ul class="qlist hidden" id="qList"></ul>
+  <div id="qChallenges"></div>
+</div>
 
 <script>
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 if(params.get('room')) $('room').value=params.get('room').toUpperCase();
 
-let currentJid=null, statusPoll=null;
+let currentJid=null, statusPoll=null, roomEvents=null, lastSubscribedRoom=null;
 
 $('searchBtn').addEventListener('click', doSearch);
 $('q').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
 
+$('challengeMode').addEventListener('change',()=>{
+  const on=$('challengeMode').checked;
+  $('challengeTarget').classList.toggle('hidden', !on);
+  $('addBtn').textContent = on ? '⚡ Send challenge' : 'Add to queue ✓';
+});
+
+// ---- live party queue view: subscribe once a plausible 4-char room code is typed ----
+function maybeSubscribe(){
+  const room=$('room').value.trim().toUpperCase();
+  if(room.length!==4 || room===lastSubscribedRoom) return;
+  lastSubscribedRoom=room;
+  if(roomEvents) roomEvents.close();
+  roomEvents=new EventSource('/room/events');
+  roomEvents.onmessage=(ev)=>{ renderQueueView(JSON.parse(ev.data)); };
+}
+$('room').addEventListener('input', maybeSubscribe);
+maybeSubscribe();
+
+function renderQueueView(state){
+  const upcoming=state.queue.filter(e=>e.status==='queued');
+  const now=state.queue.find(e=>e.entry_id===state.now_playing);
+  $('qEmpty').classList.toggle('hidden', !!(now || upcoming.length));
+  $('qList').classList.toggle('hidden', !(now || upcoming.length));
+  const rows=[];
+  if(now) rows.push(`<li class="now"><div class="who">▶ ${esc(now.singers.join(' & '))}</div><div class="what">${esc(now.title)}</div></li>`);
+  upcoming.forEach(e=>rows.push(`<li><div class="who">${esc(e.singers.join(' & '))}</div><div class="what">${esc(e.title)}</div></li>`));
+  $('qList').innerHTML=rows.join('');
+
+  const pending=(state.challenges||[]).filter(c=>c.status==='pending');
+  $('qChallenges').innerHTML=pending.map(c=>`
+    <div class="chal">
+      <div class="txt"><b>${esc(c.from_singer)}</b> challenges <b>${esc(c.to_singer)}</b> to sing "${esc(c.title)}"</div>
+      <div class="btnrow">
+        <button class="btn amber small" data-accept="${c.challenge_id}">Accept</button>
+        <button class="btn ghost small" data-decline="${c.challenge_id}">Decline</button>
+      </div>
+    </div>`).join('');
+}
+
+$('qChallenges').addEventListener('click',(ev)=>{
+  const b=ev.target.closest('button'); if(!b) return;
+  if(b.dataset.accept) fetch('/challenge/accept',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({challenge_id:b.dataset.accept})});
+  else if(b.dataset.decline) fetch('/challenge/decline',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({challenge_id:b.dataset.decline})});
+});
+
 async function doSearch(){
-  const q=$('q').value.trim();
+  let q=$('q').value.trim();
   if(!q) return;
+  if($('karaokeSuffix').checked && !/karaoke/i.test(q)) q+=' karaoke';
   $('results').innerHTML='Searching…';
   const r=await fetch('/search?q='+encodeURIComponent(q));
   const j=await r.json();
@@ -1620,11 +1909,24 @@ $('key').addEventListener('change',()=>{ loadPreview(parseInt($('key').value,10)
 $('addBtn').addEventListener('click', async()=>{
   const room=$('room').value.trim().toUpperCase();
   const singers=$('names').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const semitones=parseInt($('key').value,10);
   if(!room){ $('feedback').innerHTML='<div class="err">Enter the room code.</div>'; return; }
   if(!singers.length){ $('feedback').innerHTML='<div class="err">Enter your name.</div>'; return; }
   if(!currentJid){ $('feedback').innerHTML='<div class="err">Pick a song first.</div>'; return; }
+
+  if($('challengeMode').checked){
+    const target=$('challengeTarget').value.trim();
+    if(!target){ $('feedback').innerHTML='<div class="err">Who are you challenging?</div>'; return; }
+    const r=await fetch('/challenge/add',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({jid:currentJid, from_singer:singers[0], to_singer:target, semitones})});
+    const j=await r.json();
+    if(r.ok){ $('feedback').innerHTML='<div class="msg">Challenge sent to '+esc(target)+'! ⚡</div>'; }
+    else { $('feedback').innerHTML='<div class="err">'+esc(j.error||'Could not send challenge.')+'</div>'; }
+    return;
+  }
+
   const r=await fetch('/queue/add',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({jid:currentJid,singers,semitones:parseInt($('key').value,10)})});
+    body:JSON.stringify({jid:currentJid,singers,semitones})});
   const j=await r.json();
   if(r.ok){ $('feedback').innerHTML='<div class="msg">You\'re queued! 🎉</div>'; }
   else { $('feedback').innerHTML='<div class="err">'+esc(j.error||'Could not queue.')+'</div>'; }
@@ -3484,6 +3786,11 @@ def main():
     if not os.path.isfile(INDEX_PATH):
         raise SystemExit(
             f"Fatal: index.html not found at {INDEX_PATH}\n"
+            "It must sit next to studio.py — check your install/bundle."
+        )
+    if not os.path.isfile(THEME_PATH):
+        raise SystemExit(
+            f"Fatal: theme.css not found at {THEME_PATH}\n"
             "It must sit next to studio.py — check your install/bundle."
         )
     srv = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
