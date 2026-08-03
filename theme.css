@@ -3,38 +3,62 @@
    three surfaces are one visual system instead of drifting copies. Page-
    specific layout/components stay in each page's own <style> block. */
 
-/* Bold neon-party palette. Kept the --amber/--amber2/--glow-amber token
-   NAMES (dozens of call sites across index.html, /party, /join reference
-   them) but repointed the VALUES to electric cyan — no more amber/yellow as
-   the dominant color. Pink got brighter/more magenta, plus new purple/green
-   accents for real multi-color "string lights" energy in the marquee. */
+/* Righteous (display) + Poppins (body/UI) — a real typeface pairing instead
+   of the system-font stack. A karaoke/party app that only ever renders in
+   -apple-system reads as unfinished no matter what the colors do; committing
+   to a characterful display face is one of the highest-leverage ways to
+   stop looking like a generic template. The app already depends on network
+   access for its core feature (YouTube search/download), so a font request
+   adds no new offline constraint. */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Righteous&display=swap');
+
+/* NEON NIGHTCLUB / RAVE system. Kept every existing token NAME (dozens of
+   call sites across index.html, /party, /join, /host reference them) but
+   pushed the values much further: near-black stage-lighting background,
+   higher-saturation neon, real glassmorphism (backdrop-filter, not just a
+   gradient overlay pretending to be glass), and a set of new utilities
+   (glow-pulse motion, grain texture, equalizer bars, gradient text) that
+   didn't exist before. Nothing here is a rename — only intensification. */
 :root{
-  --panel:#1c1030; --panel2:#241640; --rack:#150a26; --edge:#3d2a5e;
-  --ink:#f2ecff; --muted:#b3a3d9; --dim:#7a6a9e;
-  --amber:#00e5ff; --amber2:#00b8cc;              /* now "primary" = electric cyan */
-  --pink:#ff2fd0; --pink2:#d600a8;                 /* brighter magenta */
-  --purple:#b026ff; --green:#39ff8a;               /* extra party accents */
+  --panel:#160b28; --panel2:#1e1038; --rack:#0f0620; --edge:#3d2a5e;
+  --ink:#f7f2ff; --muted:#bcaee0; --dim:#8577ac;
+  --amber:#00f0ff; --amber2:#00b8cc;              /* "primary" = electric cyan */
+  --pink:#ff2ee0; --pink2:#e000b8;                 /* brighter, hotter magenta */
+  --purple:#8b2fff; --green:#39ff8a;               /* UV violet + green (green reserved for
+                                                       success/ok states, not part of the party trio) */
   --rec:#ff3b47; --ok:#39ff8a;
-  --fader:#4a3a70; --track:#120820;
-  --field:#120820;                                 /* text-input/select fill — separate from
+  --fader:#4a3a70; --track:#0a0512;
+  --field:#0a0512;                                 /* text-input/select fill — separate from
                                                        --track so we can flip it in light mode
                                                        without also relighting the mixing-console
                                                        sliders, which stay dark on purpose */
-  --well:#0a0b0e; --well2:#141821;                 /* sunken content panels — result cards, queue
+  --well:#08040f; --well2:#120a22;                 /* sunken content panels — result cards, queue
                                                        rows, take strip, tuner, player chrome —
                                                        as opposed to --rack/--fader/--metal which
                                                        are the deliberately-always-dark "hardware" */
   --mono:'SF Mono',ui-monospace,Menlo,monospace;
+  --display:'Righteous',ui-rounded,system-ui,sans-serif;
+  --body:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 
-  --glow-amber: 0 0 6px rgba(0,229,255,.6), 0 0 16px rgba(0,229,255,.32);
-  --glow-pink:  0 0 6px rgba(255,47,208,.6), 0 0 16px rgba(214,0,168,.32);
-  --glow-purple:0 0 6px rgba(176,38,255,.6), 0 0 16px rgba(176,38,255,.32);
-  --glow-green: 0 0 6px rgba(57,255,138,.6), 0 0 16px rgba(57,255,138,.30);
-  --glow-rec:   0 0 8px var(--rec), 0 0 3px #fff;
+  --glow-amber: 0 0 8px rgba(0,240,255,.75), 0 0 24px rgba(0,240,255,.4), 0 0 48px rgba(0,240,255,.18);
+  --glow-pink:  0 0 8px rgba(255,46,224,.75), 0 0 24px rgba(224,0,184,.4), 0 0 48px rgba(224,0,184,.18);
+  --glow-purple:0 0 8px rgba(139,47,255,.75), 0 0 24px rgba(139,47,255,.4), 0 0 48px rgba(139,47,255,.18);
+  --glow-green: 0 0 8px rgba(57,255,138,.75), 0 0 24px rgba(57,255,138,.4), 0 0 48px rgba(57,255,138,.18);
+  --glow-rec:   0 0 10px var(--rec), 0 0 4px #fff;
   --glow-ok:    var(--glow-green);
-  --metal: linear-gradient(180deg,#2c1d4a,#1c1030);
-  --glass: linear-gradient(180deg,rgba(255,255,255,.06),rgba(0,0,0,.2));
-  --bg: radial-gradient(1200px 600px at 70% -10%, #2c1d4a 0%, transparent 60%), #0d0618;
+  --metal: linear-gradient(180deg,#2f1d52,#1a0f30);
+  --glass: linear-gradient(180deg,rgba(255,255,255,.07),rgba(0,0,0,.22));
+  --bg: radial-gradient(1000px 560px at 12% -6%, rgba(139,47,255,.28) 0%, transparent 55%),
+        radial-gradient(900px 620px at 88% 8%, rgba(0,240,255,.22) 0%, transparent 52%),
+        radial-gradient(1100px 700px at 50% 108%, rgba(255,46,224,.16) 0%, transparent 58%),
+        #060310;
+
+  /* new: glass panel surface (real blur, not a fake gradient), used by
+     .glass-panel and layered onto .card so cards actually blur whatever's
+     behind them instead of just looking vaguely translucent. */
+  --glass-fill: rgba(30,16,56,.52);
+  --glass-border: rgba(255,255,255,.09);
+  --grain-opacity: .05;
 }
 
 /* Light mode: everything flips, including the "hardware" tokens
@@ -44,28 +68,78 @@
    stayed dark-only, that text would go dark-on-dark and become unreadable.
    Only --fader is exempt: it's just a small 3D bevel highlight on the
    slider thumb, never holds text, so it can safely stay a fixed dark tone
-   in both themes. Respects the OS preference by default; an explicit
-   data-theme attribute (set by the toggle in index.html) overrides it. */
+   in both themes. Light mode intentionally reads as "premium daylight
+   lounge" rather than trying to force neon-on-white — the rave identity
+   lives in dark mode, which is the default and the one party mode assumes.
+   Respects the OS preference by default; an explicit data-theme attribute
+   (set by the toggle in index.html) overrides it. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
-    --panel:#ffffff; --panel2:#f4f1fb; --edge:#ddd6ef;
+    --panel:#ffffff; --panel2:#f5f2fc; --edge:#e0d8f5;
     --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
-    --bg: radial-gradient(1200px 600px at 70% -10%, #efe9fb 0%, transparent 60%), #f8f6fc;
+    --bg: radial-gradient(1000px 560px at 12% -6%, rgba(139,47,255,.10) 0%, transparent 55%),
+          radial-gradient(900px 620px at 88% 8%, rgba(0,224,255,.08) 0%, transparent 52%),
+          #f8f6fc;
     --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
-    --field:#ffffff; --well:#f1ecfb; --well2:#e7ddf7;
-    --rack:#ece4fa; --metal: linear-gradient(180deg,#f5f2fb,#e6ddf6);
+    --field:#ffffff; --well:#f2eefc; --well2:#e8ddf8;
+    --rack:#ece4fa; --metal: linear-gradient(180deg,#f6f3fc,#e8dff7);
+    --glass-fill: rgba(255,255,255,.6); --glass-border: rgba(28,19,48,.08);
+    --grain-opacity: .025;
   }
 }
 :root[data-theme="light"]{
-  --panel:#ffffff; --panel2:#f4f1fb; --edge:#ddd6ef;
+  --panel:#ffffff; --panel2:#f5f2fc; --edge:#e0d8f5;
   --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
-  --bg: radial-gradient(1200px 600px at 70% -10%, #efe9fb 0%, transparent 60%), #f8f6fc;
+  --bg: radial-gradient(1000px 560px at 12% -6%, rgba(139,47,255,.10) 0%, transparent 55%),
+        radial-gradient(900px 620px at 88% 8%, rgba(0,224,255,.08) 0%, transparent 52%),
+        #f8f6fc;
   --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
-  --field:#ffffff; --well:#f1ecfb; --well2:#e7ddf7;
-  --rack:#ece4fa; --metal: linear-gradient(180deg,#f5f2fb,#e6ddf6);
+  --field:#ffffff; --well:#f2eefc; --well2:#e8ddf8;
+  --rack:#ece4fa; --metal: linear-gradient(180deg,#f6f3fc,#e8dff7);
+  --glass-fill: rgba(255,255,255,.6); --glass-border: rgba(28,19,48,.08);
+  --grain-opacity: .025;
 }
 
 *{box-sizing:border-box}
+body{font-family:var(--body)}
+
+/* real icon system: sized inline SVGs via <svg class="icon"><use href="#i-x"/></svg>,
+   sprite defs injected once per page (see #icon-sprite in each HTML page).
+   Replaces color-emoji-as-icon, which is one of the fastest tells of an
+   unfinished/AI-assembled interface — emoji render inconsistently across
+   platforms and carry no relationship to the rest of the visual system. */
+.icon{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round;vertical-align:-0.15em;flex:none}
+.icon.filled{fill:currentColor;stroke:none}
+
+/* headings/hero text/tab labels take the display face; body copy, inputs,
+   and long-form text stay on --body for readability at small sizes */
+h1,h2,h3,.logo,.sessionTab,.btn.amber,.btn.pink,.btn.purple,.neon-title{font-family:var(--display)}
+
+/* entrance stagger: used on grids that populate after load (search results,
+   library, queue) so content arrives with a bit of choreography instead of
+   snapping in flat. back.out-style overshoot via cubic-bezier since there's
+   no GSAP in a stdlib-only server — same easing curve, no dependency. */
+@keyframes riseIn{
+  0%{opacity:0;transform:translateY(14px) scale(.96)}
+  100%{opacity:1;transform:translateY(0) scale(1)}
+}
+.stagger-in>*{animation:riseIn .45s cubic-bezier(.34,1.56,.64,1) both}
+.stagger-in>*:nth-child(n){animation-delay:calc(var(--i,0) * 40ms)}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+}
+
+/* fine neon-tinted scrollbar — a small detail, but bare default scrollbars
+   are one of the fastest tells that a page never got a design pass */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--well)}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--purple),var(--pink2));border-radius:6px;border:2px solid var(--well)}
+::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,var(--pink),var(--purple))}
+*{scrollbar-color:var(--purple) var(--well); scrollbar-width:thin}
+
+::selection{background:var(--pink2);color:#fff}
 
 /* !important is deliberate: this is a shared utility class loaded before
    every page's own <style> block, so any same-specificity page rule that
@@ -75,12 +149,24 @@
    overlay show permanently on page load instead of only when opened. */
 .hidden{display:none !important}
 
+/* subtle animated film-grain texture over the whole page — the single
+   biggest "this wasn't designed, it was assembled" tell is a perfectly flat
+   gradient background; a faint moving grain layer breaks that up without
+   costing any real contrast. Fixed, pointer-events:none, so it never
+   interferes with anything. Uses an inline SVG turbulence filter — no
+   external asset, no network dependency. */
+body::before{
+  content:"";position:fixed;inset:0;z-index:9999;pointer-events:none;
+  opacity:var(--grain-opacity);mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
 /* ---- buttons ---------------------------------------------------------- */
 .btn{padding:12px 20px;border:1px solid var(--edge);border-radius:14px;cursor:pointer;
   font-weight:650;font-size:13px;background:var(--metal);color:var(--ink);
-  transition:filter .12s,box-shadow .12s,transform .08s}
-.btn:hover{filter:brightness(1.15);transform:translateY(-1px)}
-.btn:active{transform:translateY(0) scale(.98)}
+  transition:filter .12s,box-shadow .15s,transform .08s;position:relative}
+.btn:hover{filter:brightness(1.18);transform:translateY(-1px)}
+.btn:active{transform:translateY(0) scale(.97)}
 .btn:disabled{opacity:.4;cursor:default;transform:none}
 .btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#001a1f;
   border-color:#008494;box-shadow:var(--glow-amber)}
@@ -96,11 +182,59 @@
 .btn.wide{width:100%}
 .btn.small{padding:5px 10px;font-size:12px;border-radius:9px}
 .btn.small:disabled{opacity:.25}
+/* breathing glow on the primary call-to-action classes — a static glow
+   reads as "styled"; a slow pulse reads as "alive, wants you to press it" */
+.btn.amber:not(:disabled),.btn.pink:not(:disabled),.btn.purple:not(:disabled){
+  animation:ctaPulse 2.6s ease-in-out infinite}
+.btn.amber:not(:disabled):hover,.btn.pink:not(:disabled):hover,.btn.purple:not(:disabled):hover{animation:none}
+@keyframes ctaPulse{
+  0%,100%{filter:brightness(1)} 50%{filter:brightness(1.12)}
+}
 
 /* ---- cards -------------------------------------------------------------*/
-.card{background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
-  border:1px solid var(--edge);border-radius:14px;padding:16px;
-  box-shadow:0 10px 30px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.04)}
+.card{background:var(--glass-fill);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);
+  border:1px solid var(--glass-border);border-radius:18px;padding:16px;
+  box-shadow:0 10px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06)}
+
+/* real glass utility for anything that wants the frosted look without the
+   full .card padding/shadow treatment (overlays, chips, floating bars) */
+.glass-panel{background:var(--glass-fill);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
+  border:1px solid var(--glass-border)}
+
+/* static gradient text for secondary headings — modest, no animation. The
+   one bold, animated move is reserved for .marquee-sign below, so this
+   doesn't compete with it (a page where everything glows and shifts is as
+   generic as one where nothing does). */
+.neon-title{background:linear-gradient(90deg,var(--amber),var(--pink),var(--purple));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* ---- marquee sign: the signature element -------------------------------
+   Real club/karaoke-bar signage, not a metaphor for it: each character is
+   its own lit bulb-tile, dark until it "warms up" in a left-to-right
+   stagger, then holds a slow randomized flicker like an old marquee with
+   one dodgy transformer. Used for moments that deserve real ceremony (the
+   party room code reveal) — expects pre-split markup, one <span> per
+   character, e.g. [...'ABCD'].map(c=>`<span>${c}</span>`).join(''). */
+.marquee-sign{display:inline-flex;gap:.12em}
+.marquee-sign span{
+  display:inline-flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;
+  color:var(--dim);text-shadow:none;
+  animation:signWarmup .5s ease-out forwards, signFlicker 5s ease-in-out infinite;
+  animation-delay:calc(var(--i,0) * .08s), calc(var(--i,0) * .08s + .5s)}
+.marquee-sign span:nth-child(4n+1){color:var(--amber);text-shadow:var(--glow-amber)}
+.marquee-sign span:nth-child(4n+2){color:var(--pink);text-shadow:var(--glow-pink)}
+.marquee-sign span:nth-child(4n+3){color:var(--purple);text-shadow:var(--glow-purple)}
+.marquee-sign span:nth-child(4n+4){color:var(--green);text-shadow:var(--glow-green)}
+@keyframes signWarmup{
+  0%{opacity:.15;filter:brightness(.4);text-shadow:none}
+  60%{opacity:1;filter:brightness(1.6)}
+  100%{opacity:1;filter:brightness(1)}
+}
+@keyframes signFlicker{
+  0%,89%,91%,100%{filter:brightness(1)}
+  90%{filter:brightness(.55)}
+}
 
 /* ---- inputs --------------------------------------------------------- */
 input[type=text]{width:100%;padding:11px 13px;border-radius:10px;border:1px solid var(--edge);
@@ -116,13 +250,13 @@ input[type=range]{-webkit-appearance:none;appearance:none;height:6px;border-radi
   background:var(--track);box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000;
   flex:1;min-width:80px;outline:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:22px;border-radius:5px;
-  background:linear-gradient(180deg,#6a5f78,var(--fader) 55%,#332b3d);
+  background:linear-gradient(180deg,#8a7aa8,var(--fader) 55%,#332b3d);
   border:1px solid #100c16;position:relative;cursor:pointer;
-  box-shadow:0 2px 5px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.15)}
+  box-shadow:0 2px 5px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.2)}
 input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--track);
   box-shadow:inset 0 1px 3px rgba(0,0,0,.7),inset 0 0 0 1px #000}
 input[type=range]::-moz-range-thumb{width:18px;height:22px;border-radius:5px;
-  background:linear-gradient(180deg,#6a5f78,var(--fader) 55%,#332b3d);
+  background:linear-gradient(180deg,#8a7aa8,var(--fader) 55%,#332b3d);
   border:1px solid #100c16;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.6)}
 input[type=range]:focus::-webkit-slider-thumb{box-shadow:0 2px 5px rgba(0,0,0,.6),var(--glow-pink)}
 input[type=range]:disabled::-webkit-slider-thumb{background:#453c4f;box-shadow:none}
@@ -151,3 +285,15 @@ kbd{font-family:var(--mono);background:var(--well2);border:1px solid var(--edge)
 
 .neon-text{text-shadow:var(--glow-amber)}
 .neon-text.pink{text-shadow:var(--glow-pink)}
+
+/* ---- equalizer bars: a small animated visualizer motif for "now playing"/
+   loading moments — pure CSS, four bars bouncing out of phase like a music
+   app's mini-visualizer. Sized via font-size on the parent (1em tall). */
+.eq-bars{display:inline-flex;align-items:flex-end;gap:2px;height:1em;width:.9em;vertical-align:middle}
+.eq-bars i{flex:1;background:linear-gradient(180deg,var(--amber),var(--pink));border-radius:1px;
+  animation:eqBounce 1s ease-in-out infinite}
+.eq-bars i:nth-child(1){animation-delay:-.9s}
+.eq-bars i:nth-child(2){animation-delay:-.6s}
+.eq-bars i:nth-child(3){animation-delay:-.3s}
+.eq-bars i:nth-child(4){animation-delay:0s}
+@keyframes eqBounce{0%,100%{height:20%}50%{height:100%}}

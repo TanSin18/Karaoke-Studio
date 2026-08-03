@@ -14,7 +14,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     padding:20px;
   }
   .wrap{max-width:1180px;margin:0 auto}
-  header{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+  header{display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;
+    padding:14px 20px;border-radius:20px;position:sticky;top:12px;z-index:40;
+    background:var(--glass-fill);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);
+    border:1px solid var(--glass-border);box-shadow:0 8px 32px rgba(0,0,0,.35)}
   .profileChip{position:relative}
   .profileMenu{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:260px;
     background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
@@ -54,7 +57,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .sessionNav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
   .sessionTab{flex:1;min-width:120px;padding:12px 14px;border-radius:14px;border:1px solid var(--edge);
     background:var(--metal);color:var(--muted);font-weight:650;font-size:13px;cursor:pointer;
-    text-align:center;transition:filter .12s,box-shadow .12s,transform .08s,color .12s}
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.02em;
+    transition:filter .12s,box-shadow .12s,transform .08s,color .12s}
   .sessionTab:hover{filter:brightness(1.15);transform:translateY(-1px)}
   .sessionTab.active{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#fff;
     border-color:var(--pink2);box-shadow:var(--glow-pink)}
@@ -326,7 +330,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     border:2px solid var(--pink2);box-shadow:var(--glow-pink);flex:none}
   .err{color:var(--rec);font-size:12.5px;margin-top:10px;font-family:var(--mono)}
   .status{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
-  .dl{display:inline-block;margin-top:12px;text-decoration:none;background:linear-gradient(180deg,var(--ok),#28b873);
+  .dl{display:inline-flex;align-items:center;gap:8px;margin-top:12px;text-decoration:none;background:linear-gradient(180deg,var(--ok),#28b873);
     color:#052012;padding:11px 20px;border-radius:8px;font-weight:700;font-size:13px;box-shadow:var(--glow-ok)}
   .dl.ghost{background:var(--metal);color:var(--ink);box-shadow:none;border:1px solid var(--edge)}
   /* reusable mini-player control row (used for Play take + final song) */
@@ -396,19 +400,41 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   }
 </style>
 
+<svg id="icon-sprite" style="display:none" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 4.9L19 9.5l-4.9 1.8L12 16l-1.8-4.7L5 9.5l5.2-1.6L12 3z"/><path d="M19 14l.9 2.5L22 17.5l-2.1.9L19 21l-.9-2.6L16 17.5l2.1-1L19 14z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+  <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.3" class="filled"/><circle cx="16" cy="8" r="1.3" class="filled"/><circle cx="12" cy="12" r="1.3" class="filled"/><circle cx="8" cy="16" r="1.3" class="filled"/><circle cx="16" cy="16" r="1.3" class="filled"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+</svg>
+
 <div id="toasts" class="toaststack"></div>
 
 <div class="pickerOverlay hidden" id="pickerOverlay">
   <div class="pickerCard">
-    <div class="pickerTitle" id="pickerTitle">🎲 Picking your song… <span class="marquee" id="pickerMarquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <div class="pickerTitle" id="pickerTitle"><svg class="icon"><use href="#i-dice"/></svg> Picking your song… <span class="marquee" id="pickerMarquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
     <div class="pickerGrid" id="pickerGrid"></div>
     <div class="pickerResult hidden" id="pickerResult">
       <img id="pickerThumb" alt="">
       <div class="pickerResultTitle" id="pickerResultTitle"></div>
       <div class="row" style="justify-content:center;margin-top:14px;flex-wrap:wrap">
-        <button class="btn amber" id="pickerSingBtn" type="button">🎤 Sing this!</button>
-        <button class="btn ghost" id="pickerAgainBtn" type="button">🎲 Spin again</button>
-        <button class="btn ghost" id="pickerCloseBtn" type="button">✕ Close</button>
+        <button class="btn amber" id="pickerSingBtn" type="button"><svg class="icon"><use href="#i-mic"/></svg> Sing this!</button>
+        <button class="btn ghost" id="pickerAgainBtn" type="button"><svg class="icon"><use href="#i-dice"/></svg> Spin again</button>
+        <button class="btn ghost" id="pickerCloseBtn" type="button"><svg class="icon"><use href="#i-x"/></svg> Close</button>
       </div>
     </div>
   </div>
@@ -416,9 +442,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
 <div class="wrap">
   <header>
-    <div class="logo">KARAOKE <b>STUDIO</b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <div class="logo">KARAOKE <b class="marquee-sign" id="logoStudio"></b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
     <div class="profileChip" id="profileChip" style="margin-left:auto">
-      <button class="btn ghost small" id="profileBtn" type="button">👤 <span id="profileNameLabel">Guest</span></button>
+      <button class="btn ghost small" id="profileBtn" type="button"><svg class="icon"><use href="#i-user"/></svg> <span id="profileNameLabel">Guest</span></button>
       <div class="profileMenu hidden" id="profileMenu">
         <div class="profileMenuLabel">New / switch account</div>
         <input type="text" id="profileInput" placeholder="Account name…" maxlength="40">
@@ -427,8 +453,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <div id="profileList"></div>
       </div>
     </div>
-    <button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme">🌙</button>
-    <a class="btn pink" id="partyLink" href="/party" style="text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones">🎉 Party mode</a>
+    <button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme"><svg class="icon"><use href="#i-moon"/></svg></button>
+    <a class="btn pink" id="partyLink" href="/party" style="text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones"><svg class="icon"><use href="#i-sparkle"/></svg> Party mode</a>
   </header>
 
   <!-- STEP 1: find a song -->
@@ -438,21 +464,21 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <!-- bookmarked songs for the active profile, so you don't have to
          re-search every time — plus a gamified random pick over them -->
     <details class="drawer">
-      <summary>📚 My Library <span id="libCount" class="hint" style="margin:0 0 0 6px;display:inline"></span></summary>
+      <summary><svg class="icon"><use href="#i-bookmark"/></svg> My Library <span id="libCount" class="hint" style="margin:0 0 0 6px;display:inline"></span></summary>
       <div class="drawer-body">
         <div class="row" style="margin-bottom:10px">
-          <button class="btn purple wide" id="surpriseBtn" type="button">🎲 Surprise me!</button>
+          <button class="btn purple wide" id="surpriseBtn" type="button"><svg class="icon"><use href="#i-dice"/></svg> Surprise me!</button>
         </div>
-        <div class="results" id="libraryResults"></div>
+        <div class="results stagger-in" id="libraryResults"></div>
         <div class="hint" id="libraryEmpty">Nothing saved yet — hit the ☆ on any search result to add it here.</div>
       </div>
     </details>
 
     <!-- resume a previously-prepared song for this profile, no re-download needed -->
     <details class="drawer">
-      <summary>🕘 Resume a recent song</summary>
+      <summary><svg class="icon"><use href="#i-clock"/></svg> Resume a recent song</summary>
       <div class="drawer-body">
-        <div class="results" id="recentResults"></div>
+        <div class="results stagger-in" id="recentResults"></div>
         <div class="hint" id="recentEmpty">No recent sessions for this profile yet.</div>
       </div>
     </details>
@@ -467,11 +493,11 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <div id="searchMode">
       <div class="row">
         <input id="q" type="text" placeholder="Search e.g. “tum hi ho”…" spellcheck="false" autocomplete="off">
-        <button id="searchBtn" class="btn amber">Search</button>
+        <button id="searchBtn" class="btn amber"><svg class="icon"><use href="#i-search"/></svg> Search</button>
       </div>
-      <label class="punch mt"><input type="checkbox" id="karaokeSuffix" checked> 🎤 Add "karaoke" to search (helps surface lyrics videos)</label>
+      <label class="punch mt"><input type="checkbox" id="karaokeSuffix" checked> <svg class="icon"><use href="#i-mic"/></svg> Add "karaoke" to search (helps surface lyrics videos)</label>
       <div class="status mt" id="searchStatus"></div>
-      <div class="results" id="results"></div>
+      <div class="results stagger-in" id="results"></div>
     </div>
 
     <!-- url mode -->
@@ -485,7 +511,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <!-- file-import mode: sing over a local audio/video file instead of YouTube -->
     <div id="fileMode" style="display:none">
       <div class="dropzone" id="dropzone">
-        <div class="dz-icon">♪</div>
+        <div class="dz-icon"><svg class="icon" style="width:1.6em;height:1.6em"><use href="#i-music"/></svg></div>
         <div class="dz-text">Drop an audio or video file here, or</div>
         <button id="filePickBtn" class="btn amber">Choose a file</button>
         <input type="file" id="filePick" accept="audio/*,video/*" style="display:none">
@@ -516,15 +542,15 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <div class="npTitle" id="npTitle"></div>
         <div class="npSub">● loaded and ready</div>
       </div>
-      <button class="btn ghost small" id="npChangeBtn">🔄 Change song</button>
+      <button class="btn ghost small" id="npChangeBtn"><svg class="icon"><use href="#i-refresh"/></svg> Change song</button>
     </div>
   </div>
 
   <div class="sessionNav hidden" id="sessionNav">
-    <button class="sessionTab active" data-step="stageCard">🎤 Record</button>
-    <button class="sessionTab" data-step="fxCard">🎛 Effects</button>
-    <button class="sessionTab" data-step="duetCard">🎵 Duet</button>
-    <button class="sessionTab" data-step="mixCard">📤 Export</button>
+    <button class="sessionTab active" data-step="stageCard"><svg class="icon"><use href="#i-mic"/></svg> Record</button>
+    <button class="sessionTab" data-step="fxCard"><svg class="icon"><use href="#i-sliders"/></svg> Effects</button>
+    <button class="sessionTab" data-step="duetCard"><svg class="icon"><use href="#i-music"/></svg> Duet</button>
+    <button class="sessionTab" data-step="mixCard"><svg class="icon"><use href="#i-download"/></svg> Export</button>
   </div>
 
   <div class="grid">
@@ -549,7 +575,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <div class="liveScoreBar hidden" id="liveScoreBar">
             <span class="lsbDot" id="lsbDot"></span><span id="lsbPct">--%</span>
           </div>
-          <button class="stageFsBtn" id="stageFsBtn" type="button" title="Fullscreen (keeps the live score visible)">⛶</button>
+          <button class="stageFsBtn" id="stageFsBtn" type="button" title="Fullscreen (keeps the live score visible)"><svg class="icon"><use href="#i-expand"/></svg></button>
         </div>
 
         <!-- seek / scrub bar -->
@@ -643,7 +669,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
                comes from the app's own mix, not the phone) -->
           <div class="selfView hidden" id="selfViewBox" title="Live view from your phone">
             <video id="phoneSelfView" autoplay muted playsinline></video>
-            <span class="selfViewLabel">📱 live</span>
+            <span class="selfViewLabel"><svg class="icon"><use href="#i-phone"/></svg> live</span>
           </div>
         </div>
 
@@ -679,7 +705,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
         <!-- phone camera pairing: film with your phone, synced to this app's audio -->
         <details class="drawer">
-          <summary>📱 Phone camera sync (optional)</summary>
+          <summary><svg class="icon"><use href="#i-phone"/></svg> Phone camera sync (optional)</summary>
           <div class="drawer-body">
             <div class="hint" id="phonePairPanel">
               <span id="phoneStatusText">Loading phone-pairing link…</span>
@@ -808,24 +834,24 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <!-- trim the exported song (and phone video, if recorded) to a
              range instead of always exporting the full take -->
         <details class="drawer mt">
-          <summary>✂️ Trim (optional)</summary>
+          <summary><svg class="icon"><use href="#i-scissors"/></svg> Trim (optional)</summary>
           <div class="drawer-body">
             <div class="row" style="gap:16px;flex-wrap:wrap">
               <div>
                 <div class="klabel" style="margin-bottom:4px">START</div>
                 <div class="row" style="gap:6px">
                   <input type="text" id="trimStart" style="width:70px" placeholder="0:00">
-                  <button class="btn small" id="trimStartNow" type="button" title="Use the current playhead position">🎯 Now</button>
+                  <button class="btn small" id="trimStartNow" type="button" title="Use the current playhead position"><svg class="icon"><use href="#i-target"/></svg> Now</button>
                 </div>
               </div>
               <div>
                 <div class="klabel" style="margin-bottom:4px">END</div>
                 <div class="row" style="gap:6px">
                   <input type="text" id="trimEnd" style="width:70px" placeholder="end">
-                  <button class="btn small" id="trimEndNow" type="button" title="Use the current playhead position">🎯 Now</button>
+                  <button class="btn small" id="trimEndNow" type="button" title="Use the current playhead position"><svg class="icon"><use href="#i-target"/></svg> Now</button>
                 </div>
               </div>
-              <button class="btn ghost small" id="trimClear" type="button" title="Remove trim — export the full song" style="align-self:flex-end">✕ Clear</button>
+              <button class="btn ghost small" id="trimClear" type="button" title="Remove trim — export the full song" style="align-self:flex-end"><svg class="icon"><use href="#i-x"/></svg> Clear</button>
             </div>
             <div class="hint">Cuts the exported song (and video, if you recorded one) to just this range — mm:ss. Leave End blank to keep through the end.</div>
           </div>
@@ -1216,8 +1242,9 @@ function currentTheme(){
   return document.documentElement.dataset.theme ||
     (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 }
-function applyThemeIcon(){ $('themeToggle').textContent = currentTheme()==='light' ? '☀️' : '🌙'; }
+function applyThemeIcon(){ $('themeToggle').innerHTML = '<svg class="icon"><use href="#i-'+(currentTheme()==='light'?'sun':'moon')+'"/></svg>'; }
 applyThemeIcon();
+$('logoStudio').innerHTML=[...'STUDIO'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
 $('themeToggle').addEventListener('click',()=>{
   const next = currentTheme()==='light' ? 'dark' : 'light';
   document.documentElement.dataset.theme=next;
@@ -1817,7 +1844,7 @@ $('stageFsBtn').addEventListener('click',()=>{
   else{ $('stageWrap').requestFullscreen().catch(()=>{}); }
 });
 document.addEventListener('fullscreenchange',()=>{
-  $('stageFsBtn').textContent = document.fullscreenElement ? '⤡' : '⛶';
+  $('stageFsBtn').innerHTML = '<svg class="icon"><use href="#i-expand"/></svg>';
 });
 
 // ---- mic priming: persistent WebAudio graph -------------------------------
@@ -2961,7 +2988,7 @@ function buildTakeAudio(){
     '<div class="monrow"><span class="monlbl">Music</span>'+
       '<input type="range" id="tpMusic" min="-18" max="6" value="'+(+$('mgain').value)+'">'+
       '<span class="monval" id="tpMusicV">'+fmtDb($('mgain').value)+'</span></div>'+
-    '<button class="btn" id="testModeBtn" title="Loop a section and audition each effect live">🎛 Test effects</button>';
+    '<button class="btn" id="testModeBtn" title="Loop a section and audition each effect live"><svg class="icon"><use href="#i-sliders"/></svg> Test effects</button>';
   $('takePlayer').appendChild(extra);
   // re-record controls: from the scrubbed point, or sing-along continuation
   const rec=document.createElement('div'); rec.className='takemix'; rec.style.marginTop='8px';
@@ -3069,7 +3096,7 @@ function enterTestMode(){
 }
 function exitTestMode(){
   testMode=false;
-  $('testModeBtn').classList.remove('on'); $('testModeBtn').textContent='🎛 Test effects';
+  $('testModeBtn').classList.remove('on'); $('testModeBtn').textContent='<svg class="icon"><use href="#i-sliders"/></svg> Test effects';
   const p=$('testPanel'); if(p) p.remove();
   stopTakePlayback(); tp.pos=0;
 }
@@ -3336,8 +3363,8 @@ async function checkRender(){
     // cache-bust so a re-render loads the new file, not a stale cached one.
     $('result').innerHTML=
       '<div class="player" id="finalPlayer"></div>'+
-      '<a class="dl" href="/final?id='+SID+'" download>⬇ Download “'+(j.display_name||'song')+'”</a>'+
-      '<a class="dl ghost" href="/final_vocal?id='+SID+'" download style="margin-left:8px">⬇ Download vocal only (WAV)</a>';
+      '<a class="dl" href="/final?id='+SID+'" download><svg class="icon"><use href="#i-download"/></svg> Download “'+(j.display_name||'song')+'”</a>'+
+      '<a class="dl ghost" href="/final_vocal?id='+SID+'" download style="margin-left:8px"><svg class="icon"><use href="#i-download"/></svg> Download vocal only (WAV)</a>';
     const fa=new Audio('/final?id='+SID+'&t='+Date.now());
     fa.preload='metadata';
     if(window._finalAudio){ try{window._finalAudio.pause();}catch(_){}}
@@ -3368,7 +3395,7 @@ async function checkVideoCombine(){
   if(j.video_status==='done'){
     clearInterval(videoPoll); videoPoll=null;
     $('result').insertAdjacentHTML('beforeend',
-      '<a class="dl" href="/final_video?id='+SID+'" download>⬇ Download video (with phone camera)</a>');
+      '<a class="dl" href="/final_video?id='+SID+'" download><svg class="icon"><use href="#i-download"/></svg> Download video (with phone camera)</a>');
   }else if(j.video_status==='error'){
     clearInterval(videoPoll); videoPoll=null;
     $('result').insertAdjacentHTML('beforeend',
