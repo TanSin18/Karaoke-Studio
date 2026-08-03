@@ -250,7 +250,7 @@
     background:linear-gradient(180deg,#3a3f4c,#2b2f39);color:var(--ink);font-size:14px;line-height:1;
     display:flex;align-items:center;justify-content:center}
   .pbtn:hover{filter:brightness(1.18)} .pbtn:disabled{opacity:.4;cursor:default}
-  .pbtn.play{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#211500;border-color:#a5651f}
+  .pbtn.play{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#001a1f;border-color:#008494}
   .player .pseek{flex:1}
   .player .ptime{font-family:var(--mono);font-size:11px;color:var(--amber);min-width:96px;text-align:right;letter-spacing:.04em}
   .player .plabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim);
@@ -2051,7 +2051,7 @@ function drawWaveform(canvas, peaks, playheadFrac){
   ctx.clearRect(0,0,w,h);
   if(!peaks || !peaks.length) return;
   const cols=peaks.length/2, mid=h/2, colW=w/cols;
-  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--amber2').trim()||'#ff9b3d';
+  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--amber2').trim()||'#00b8cc';
   ctx.globalAlpha=.85;
   for(let x=0;x<cols;x++){
     const min=peaks[x*2], max=peaks[x*2+1];

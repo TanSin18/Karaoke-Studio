@@ -3,22 +3,30 @@
    three surfaces are one visual system instead of drifting copies. Page-
    specific layout/components stay in each page's own <style> block. */
 
+/* Bold neon-party palette. Kept the --amber/--amber2/--glow-amber token
+   NAMES (dozens of call sites across index.html, /party, /join reference
+   them) but repointed the VALUES to electric cyan — no more amber/yellow as
+   the dominant color. Pink got brighter/more magenta, plus new purple/green
+   accents for real multi-color "string lights" energy in the marquee. */
 :root{
-  --panel:#1a1620; --panel2:#211c2c; --rack:#120f18; --edge:#332c3f;
-  --ink:#efe9f2; --muted:#a89bb3; --dim:#6e6178;
-  --amber:#ffb454; --amber2:#ff9b3d;
-  --pink:#ff3d81; --pink2:#ff1f6b;
-  --rec:#ff3b47; --ok:#39d98a;
-  --fader:#4a4056; --track:#100c16;
+  --panel:#1c1030; --panel2:#241640; --rack:#150a26; --edge:#3d2a5e;
+  --ink:#f2ecff; --muted:#b3a3d9; --dim:#7a6a9e;
+  --amber:#00e5ff; --amber2:#00b8cc;              /* now "primary" = electric cyan */
+  --pink:#ff2fd0; --pink2:#d600a8;                 /* brighter magenta */
+  --purple:#b026ff; --green:#39ff8a;               /* extra party accents */
+  --rec:#ff3b47; --ok:#39ff8a;
+  --fader:#4a3a70; --track:#120820;
   --mono:'SF Mono',ui-monospace,Menlo,monospace;
 
-  --glow-amber: 0 0 6px rgba(255,180,84,.55), 0 0 16px rgba(255,155,61,.30);
-  --glow-pink:  0 0 6px rgba(255,61,129,.55), 0 0 16px rgba(255,31,107,.30);
+  --glow-amber: 0 0 6px rgba(0,229,255,.6), 0 0 16px rgba(0,229,255,.32);
+  --glow-pink:  0 0 6px rgba(255,47,208,.6), 0 0 16px rgba(214,0,168,.32);
+  --glow-purple:0 0 6px rgba(176,38,255,.6), 0 0 16px rgba(176,38,255,.32);
+  --glow-green: 0 0 6px rgba(57,255,138,.6), 0 0 16px rgba(57,255,138,.30);
   --glow-rec:   0 0 8px var(--rec), 0 0 3px #fff;
-  --glow-ok:    0 0 6px rgba(57,217,138,.6), 0 0 14px rgba(57,217,138,.25);
-  --metal: linear-gradient(180deg,#2b2436,#1a1620);
-  --glass: linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.18));
-  --bg: radial-gradient(1200px 600px at 70% -10%, #2b2436 0%, transparent 60%), #120f18;
+  --glow-ok:    var(--glow-green);
+  --metal: linear-gradient(180deg,#2c1d4a,#1c1030);
+  --glass: linear-gradient(180deg,rgba(255,255,255,.06),rgba(0,0,0,.2));
+  --bg: radial-gradient(1200px 600px at 70% -10%, #2c1d4a 0%, transparent 60%), #0d0618;
 }
 
 *{box-sizing:border-box}
@@ -32,10 +40,14 @@
 .btn:hover{filter:brightness(1.15);transform:translateY(-1px)}
 .btn:active{transform:translateY(0) scale(.98)}
 .btn:disabled{opacity:.4;cursor:default;transform:none}
-.btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#211500;
-  border-color:#a5651f;box-shadow:var(--glow-amber)}
-.btn.pink{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#2a0012;
-  border-color:#8a0f42;box-shadow:var(--glow-pink)}
+.btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#001a1f;
+  border-color:#008494;box-shadow:var(--glow-amber)}
+.btn.pink{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#2a0022;
+  border-color:#8a0070;box-shadow:var(--glow-pink)}
+.btn.purple{background:linear-gradient(180deg,var(--purple),#7a0fd6);color:#fff;
+  border-color:#6a0fc0;box-shadow:var(--glow-purple)}
+.btn.green{background:linear-gradient(180deg,var(--green),#1fcc6b);color:#00220f;
+  border-color:#149a4f;box-shadow:var(--glow-green)}
 .btn.rec{background:linear-gradient(180deg,#ff4d58,#e0313c);color:#fff;border-color:#a51f27}
 .btn.rec:not(:disabled){box-shadow:var(--glow-rec)}
 .btn.ghost{background:transparent;color:var(--ink)}
@@ -84,15 +96,15 @@ kbd{font-family:var(--mono);background:var(--track);border:1px solid var(--edge)
   padding:1px 6px;font-size:11px;color:var(--amber)}
 
 /* ---- marquee bulbs: the jukebox/arcade motif ----------------------------
-   A short row of alternating amber/pink dots with a slow pulse — used on
-   card headers, room codes, and anywhere that wants a little marquee-light
-   energy without going full hard-neon. */
+   A short row of dots cycling cyan/pink/purple/green with a slow pulse —
+   like a string of party lights — used on card headers, room codes, and
+   anywhere that wants a little marquee-light energy. */
 .marquee{display:inline-flex;gap:5px;align-items:center;vertical-align:middle}
 .marquee .bulb{width:6px;height:6px;border-radius:50%;background:var(--amber);
   box-shadow:var(--glow-amber);animation:bulbpulse 1.8s ease-in-out infinite}
-.marquee .bulb:nth-child(2n){background:var(--pink);box-shadow:var(--glow-pink);animation-delay:.3s}
-.marquee .bulb:nth-child(3n){animation-delay:.6s}
-.marquee .bulb:nth-child(4n){animation-delay:.9s}
+.marquee .bulb:nth-child(4n+2){background:var(--pink);box-shadow:var(--glow-pink);animation-delay:.3s}
+.marquee .bulb:nth-child(4n+3){background:var(--purple);box-shadow:var(--glow-purple);animation-delay:.6s}
+.marquee .bulb:nth-child(4n+4){background:var(--green);box-shadow:var(--glow-green);animation-delay:.9s}
 @keyframes bulbpulse{0%,50%,100%{opacity:.45;transform:scale(.8)} 25%{opacity:1;transform:scale(1.2)}}
 
 .neon-text{text-shadow:var(--glow-amber)}
