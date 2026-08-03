@@ -1943,7 +1943,15 @@ PARTY_HTML = r"""<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Karaoke Party</title>
 <link rel="stylesheet" href="/theme.css">
+<script>
+// applied before first paint to avoid a flash of the wrong theme — same
+// localStorage key as the main studio page, so a preference set there
+// carries over here too instead of party mode only ever following the
+// OS/browser's own light/dark setting with no override at all.
+try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
+</script>
 <style>
+  #themeToggle{position:fixed;top:16px;right:16px;z-index:50}
   body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
     font:16px/1.4 -apple-system,system-ui,sans-serif;padding:24px;}
   h1{font-size:24px;margin:0 0 4px;color:var(--amber);text-shadow:var(--glow-amber);
@@ -1981,6 +1989,8 @@ PARTY_HTML = r"""<meta charset="utf-8">
   .guestChip{background:var(--panel);border:1px solid var(--edge);border-radius:999px;
     padding:5px 12px;font-size:13px;color:var(--ink)}
 </style>
+
+<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme">🌙</button>
 
 <div id="start">
   <a href="/" style="color:var(--muted);font-size:13px;text-decoration:none">← Back to Studio</a>
@@ -2023,6 +2033,21 @@ PARTY_HTML = r"""<meta charset="utf-8">
 const $=id=>document.getElementById(id);
 let state={code:null,queue:[],now_playing:null};
 let currentEntryId=null, ytPlayer=null, ytReady=false, backingAudio=null, syncTimer=null;
+
+// ---- light/dark theme toggle (same pattern/localStorage key as the main
+// studio page) -----------------------------------------------------------
+function currentTheme(){
+  return document.documentElement.dataset.theme ||
+    (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+}
+function applyThemeIcon(){ $('themeToggle').textContent = currentTheme()==='light' ? '☀️' : '🌙'; }
+applyThemeIcon();
+$('themeToggle').addEventListener('click',()=>{
+  const next = currentTheme()==='light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme=next;
+  try{ localStorage.setItem('kstudio.theme', next); }catch(e){}
+  applyThemeIcon();
+});
 
 $('startBtn').addEventListener('click',async()=>{
   const r=await fetch('/room/start',{method:'POST'}); const j=await r.json();
@@ -2221,8 +2246,14 @@ JOIN_HTML = r"""<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Join the Party</title>
 <link rel="stylesheet" href="/theme.css">
+<script>
+// applied before first paint to avoid a flash of the wrong theme — same
+// localStorage key as the main studio page.
+try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
+</script>
 <style>
   *{-webkit-tap-highlight-color:transparent}
+  #themeToggle{position:fixed;top:calc(14px + env(safe-area-inset-top));right:16px;z-index:50}
   body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
     font:16px/1.4 -apple-system,system-ui,sans-serif;
     padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-width:480px;margin:0 auto}
@@ -2278,6 +2309,7 @@ JOIN_HTML = r"""<meta charset="utf-8">
   .guestChip.me{color:var(--pink);border-color:var(--pink2)}
 </style>
 
+<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme">🌙</button>
 <h1>🎤 Join the party <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
 
 <!-- STEP 0: join with a verified name — this is what lets challenge accept/
@@ -2346,6 +2378,21 @@ JOIN_HTML = r"""<meta charset="utf-8">
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 if(params.get('room')) $('room').value=params.get('room').toUpperCase();
+
+// ---- light/dark theme toggle (same pattern/localStorage key as the main
+// studio page) -----------------------------------------------------------
+function currentTheme(){
+  return document.documentElement.dataset.theme ||
+    (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+}
+function applyThemeIcon(){ $('themeToggle').textContent = currentTheme()==='light' ? '☀️' : '🌙'; }
+applyThemeIcon();
+$('themeToggle').addEventListener('click',()=>{
+  const next = currentTheme()==='light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme=next;
+  try{ localStorage.setItem('kstudio.theme', next); }catch(e){}
+  applyThemeIcon();
+});
 
 // a random per-browser token, persisted — this is what proves "this device
 // is really Alice" so a challenge aimed at Alice can only be accepted or
@@ -2553,10 +2600,16 @@ HOST_HTML = r"""<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Party Host</title>
 <link rel="stylesheet" href="/theme.css">
+<script>
+// applied before first paint to avoid a flash of the wrong theme — same
+// localStorage key as the main studio page.
+try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
+</script>
 <style>
   body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
     font:16px/1.4 -apple-system,system-ui,sans-serif;
     padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-width:480px;margin:0 auto}
+  #themeToggle{position:fixed;top:calc(14px + env(safe-area-inset-top));right:16px;z-index:50}
   h1{font-size:20px;color:var(--amber);text-shadow:var(--glow-amber);margin:6px 0 4px;
     display:flex;align-items:center;gap:10px}
   .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
@@ -2583,6 +2636,7 @@ HOST_HTML = r"""<meta charset="utf-8">
     padding:5px 10px;font-size:12px;color:var(--muted)}
 </style>
 
+<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme">🌙</button>
 <h1>🎤 Party Host <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></h1>
 <div class="sub">Remote control for the TV screen — the video stays on the host laptop, but you can run the queue from here.</div>
 
@@ -2617,6 +2671,21 @@ HOST_HTML = r"""<meta charset="utf-8">
 <script>
 const $=id=>document.getElementById(id);
 let state={code:null,queue:[],now_playing:null,challenges:[],guests:[]};
+
+// ---- light/dark theme toggle (same pattern/localStorage key as the main
+// studio page) -----------------------------------------------------------
+function currentTheme(){
+  return document.documentElement.dataset.theme ||
+    (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+}
+function applyThemeIcon(){ $('themeToggle').textContent = currentTheme()==='light' ? '☀️' : '🌙'; }
+applyThemeIcon();
+$('themeToggle').addEventListener('click',()=>{
+  const next = currentTheme()==='light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme=next;
+  try{ localStorage.setItem('kstudio.theme', next); }catch(e){}
+  applyThemeIcon();
+});
 
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
