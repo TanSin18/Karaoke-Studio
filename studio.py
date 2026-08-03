@@ -899,7 +899,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if p.path == "/status":
             jid = (parse_qs(p.query).get("id") or [""])[0]
-            j = get_job(jid)
+            # job_or_disk (not get_job) so a resumed session — from the
+            # "resume a recent song" panel, or a bookmarked ?sid= link —
+            # still works after a server restart wiped the in-memory JOBS
+            # dict, as long as the session's files are still on disk.
+            j = job_or_disk(jid)
             if not j:
                 self._json(404, {"error": "unknown job"})
             else:
