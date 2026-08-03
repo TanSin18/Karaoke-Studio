@@ -630,21 +630,20 @@ def do_render(jid, vocal_path, fx, mix_opts):
 
 
 def do_combine_video(jid):
-    """Align the paired phone's video to the finished audio mix (via the sync
-    chirp) and mux them into one final video file."""
+    """Mux the phone's video with the finished audio mix into one final
+    video file. No alignment step needed: the desktop starts recording the
+    live WebRTC stream from the phone in the same tick it starts the vocal
+    recording, so both are already on the same clock from t=0 — unlike the
+    old design, which had the phone record+upload independently and relied
+    on a sync chirp (audible only through a real speaker, not headphones)
+    to find the offset after the fact."""
     sdir = os.path.join(SESS_DIR, jid)
     j = get_job(jid)
     phone_video = os.path.join(sdir, j["phone_video_file"])
     final_mix = os.path.join(sdir, j["final_file"])
     out_video = os.path.join(sdir, "final_video.mp4")
-    tmp = os.path.join(sdir, "tmp")
-    os.makedirs(tmp, exist_ok=True)
     try:
-        audio_fx.align_and_mux_video(
-            phone_video, final_mix, out_video,
-            chirp_music_pos_sec=float(j.get("chirp_music_pos_sec", 0.0)),
-            tmp_dir=tmp,
-        )
+        audio_fx.mux_video(phone_video, final_mix, out_video)
     except Exception as e:
         set_job(jid, video_status="error", video_error=str(e)[:400])
         return
@@ -1067,11 +1066,6 @@ class Handler(BaseHTTPRequestHandler):
                 "port": PORT,
                 "phone_url": phone_url,
                 "https_unavailable": bool(lan) and not PHONE_HTTPS_READY,
-                "chirp": {
-                    "f0": audio_fx.CHIRP_F0,
-                    "f1": audio_fx.CHIRP_F1,
-                    "dur_ms": int(audio_fx.CHIRP_DUR * 1000),
-                },
             })
             return
 
@@ -1146,22 +1140,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(png)
             return
 
-        if p.path == "/phone/poll":
-            q = parse_qs(p.query)
-            jid = (q.get("id") or [""])[0]
-            j = get_job(jid)
-            if not j or not j.get("phone_paired"):
-                self._json(404, {"error": "not paired"})
-                return
-            set_job(jid, phone_last_seen=time.time())
-            self._json(200, {"cmd": j.get("phone_cmd"), "seq": j.get("phone_cmd_seq", 0)})
-            return
-
         # ---- WebRTC signaling for the live phone-camera self-view -----------
-        # The server only relays these small SDP/ICE messages (poll-based,
-        # same pattern as /phone/poll above) — the actual video never touches
-        # it, it flows peer-to-peer once the connection is up. The phone
-        # (sender, has the camera) creates the offer; the desktop (receiver)
+        # The server only relays these small SDP/ICE messages (poll-based) —
+        # the actual video never touches it, it flows peer-to-peer once the
+        # connection is up. The phone (sender, has the camera) creates the
+        # offer; the desktop (receiver)
         # answers. webrtc_gen lets either side detect a fresh phone
         # connection and rebuild its peer connection instead of reusing one
         # tied to a camera stream that no longer exists.
@@ -1453,9 +1436,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             fx = body.get("fx", {})
             mix_opts = body.get("mix", {})
-            chirp_pos = body.get("chirp_music_pos_sec")
-            set_job(jid, status="rendering",
-                    chirp_music_pos_sec=float(chirp_pos) if chirp_pos is not None else 0.0)
+            set_job(jid, status="rendering")
             threading.Thread(target=_run_render_locked,
                              args=(jid, vocal_path, fx, mix_opts, lock),
                              daemon=True).start()
@@ -1475,27 +1456,10 @@ class Handler(BaseHTTPRequestHandler):
             # to reuse one tied to a camera that no longer exists.
             gen = (j.get("webrtc_gen") or 0) + 1
             set_job(jid, phone_paired=True, phone_status="paired",
-                    phone_cmd=None, phone_cmd_seq=0, phone_last_seen=time.time(),
+                    phone_last_seen=time.time(),
                     webrtc_gen=gen, webrtc_offer=None, webrtc_answer=None,
                     webrtc_ice_phone=[], webrtc_ice_desktop=[])
             self._json(200, {"ok": True, "webrtc_gen": gen})
-            return
-
-        if p.path == "/phone/cmd":
-            body = self._read_body()
-            jid = body.get("id")
-            cmd = body.get("cmd")
-            if cmd not in ("start", "stop"):
-                self._json(400, {"error": "bad cmd"})
-                return
-            j = get_job(jid)
-            if not j or not j.get("phone_paired"):
-                self._json(409, {"error": "phone not paired"})
-                return
-            seq = j.get("phone_cmd_seq", 0) + 1
-            set_job(jid, phone_cmd=cmd, phone_cmd_seq=seq,
-                    phone_status="recording" if cmd == "start" else "stopping")
-            self._json(200, {"ok": True, "seq": seq})
             return
 
         if p.path == "/phone/upload":
@@ -1826,8 +1790,8 @@ const statusText = document.getElementById('statusText');
 const dot = document.getElementById('dot');
 const errEl = document.getElementById('err');
 const video = document.getElementById('preview');
-let stream = null, recorder = null, chunks = [], facing = 'environment';
-let lastSeq = 0, wakeLock = null;
+let stream = null, facing = 'environment';
+let wakeLock = null;
 
 function setStatus(text, cls){
   statusText.textContent = text;
@@ -1843,17 +1807,26 @@ if(!id){
   startCamera();
 }
 
+// The phone's only job now is to be a live camera source over WebRTC — the
+// desktop records the incoming stream itself (see startRec()/stopRec() in
+// the main app), started in the same tick as the vocal recording so the two
+// share one clock instead of needing a separate phone-side recording +
+// upload + audio-chirp alignment pass after the fact. That old design
+// required the sync chirp to be audible to the phone's own mic through a
+// real speaker — silently broken for anyone monitoring on headphones — and
+// a full-length video upload from the phone at the end, which is exactly
+// the "video not even getting recorded" failure this replaces.
 async function startCamera(){
   try{
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: facing, width: {ideal:1920}, height: {ideal:1080} },
-      audio: true,   // kept ON purely as a sync reference (picks up the chirp);
-                     // discarded later — final output uses the app's own mix.
+      audio: false,   // no phone-side audio needed anymore — nothing here
+                       // ever gets used for sync or for the final mix.
     });
     video.srcObject = stream;
     await register();
     requestWakeLock();
-    setStatus('Connected — waiting for Record on desktop', 'ok');
+    setStatus('Connected — streaming to desktop', 'ok');
     pollLoop();
   }catch(e){
     setStatus('Camera access failed', 'warn');
@@ -1871,7 +1844,7 @@ async function flipCamera(){
   let newStream;
   try{
     newStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facing, width: {ideal:1920}, height: {ideal:1080} }, audio: true });
+      video: { facingMode: facing, width: {ideal:1920}, height: {ideal:1080} }, audio: false });
   }catch(e){ showErr((e && e.message) || String(e)); return; }
   const oldStream = stream;
   stream = newStream;
@@ -1953,67 +1926,8 @@ document.addEventListener('visibilitychange', async ()=>{
   if(document.visibilityState==='visible') requestWakeLock();
 });
 
-function pickMime(){
-  for(const m of ['video/webm;codecs=vp8,opus','video/webm','video/mp4']){
-    if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
-  }
-  return '';
-}
-
-function startPhoneRec(){
-  chunks = [];
-  // 8 Mbps matches the bumped 1080p capture target above — 2.5Mbps was sized
-  // for 720p and would have looked visibly blocky stretched over the extra
-  // pixels. The phone's own mic audio here is just a low-bitrate sync
-  // reference (discarded after alignment); the real audio quality comes
-  // from the app's own high-quality mix, muxed in separately at render time.
-  recorder = new MediaRecorder(stream, {
-    mimeType: pickMime(),
-    videoBitsPerSecond: 8000000,
-    audioBitsPerSecond: 128000,
-  });
-  recorder.ondataavailable = e=>{ if(e.data.size) chunks.push(e.data); };
-  recorder.onstop = uploadPhoneVideo;
-  recorder.start();
-  setStatus('🔴 Recording', 'rec');
-}
-
-function stopPhoneRec(){
-  if(recorder && recorder.state !== 'inactive') recorder.stop();
-}
-
-async function uploadPhoneVideo(){
-  setStatus('Uploading…', 'warn');
-  try{
-    const blob = new Blob(chunks, {type: recorder.mimeType || 'video/webm'});
-    // Send the blob directly as the request body instead of base64-encoding
-    // it into a JSON string first. Base64 inflates size ~33% AND FileReader
-    // has to hold the whole encoded string in memory alongside the original
-    // blob — for a multi-minute 1080p/8Mbps recording (~150-250MB) that's
-    // enough to fail or crash outright on a phone browser. A raw binary
-    // POST body streams straight through, no second full-size copy.
-    const r = await fetch('/phone/upload?id='+encodeURIComponent(id)+'&mime='+encodeURIComponent(blob.type),
-      {method:'POST', body: blob});
-    setStatus(r.ok ? 'Uploaded ✓ — you can put the phone down' : 'Upload failed', r.ok ? 'ok' : 'warn');
-  }catch(e){
-    setStatus('Upload failed', 'warn');
-    showErr((e && e.message) || String(e));
-  }
-}
-
 async function pollLoop(){
   while(true){
-    try{
-      const r = await fetch('/phone/poll?id=' + encodeURIComponent(id) + '&seq=' + lastSeq);
-      if(r.ok){
-        const j = await r.json();
-        if(j.seq > lastSeq){
-          lastSeq = j.seq;
-          if(j.cmd === 'start' && (!recorder || recorder.state === 'inactive')) startPhoneRec();
-          else if(j.cmd === 'stop' && recorder && recorder.state !== 'inactive') stopPhoneRec();
-        }
-      }
-    }catch(_){}
     await pollWebRTC();
     await new Promise(r=>setTimeout(r, 300));
   }

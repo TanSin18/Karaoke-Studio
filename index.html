@@ -2320,15 +2320,32 @@ function wireBacking(a){
 }
 
 // ---- phone pairing / remote camera sync -------------------------------------
-// Pairs a phone (opened on the same WiFi) so clicking Record also remote-
-// triggers the phone's camera. A synthetic "chirp" tone played through the
-// speakers at the exact moment recording starts lets the server later
-// auto-align the phone's video to this app's finished audio mix — see
-// audio_fx.py's align_and_mux_video for the matched-filter side of this.
+// Pairs a phone (opened on the same WiFi) as a live camera source over
+// WebRTC (see selfViewPc below). Recording it is this page's own job — see
+// phoneVideoRecorder in the record section — started in the same tick as
+// the vocal MediaRecorder so both share one clock from t=0. An earlier
+// design had the phone record+upload independently and used a synthetic
+// audio "chirp" to align the two afterward; dropped because that chirp had
+// to be audible to the phone's own mic through a real speaker, which
+// silently failed for anyone monitoring through headphones.
 let phonePaired=false, phoneStatus='unpaired';
-let chirpParams={f0:800,f1:3200,durMs:120};
-window._chirpMusicPos=null;      // song-time when the chirp actually played
+let phoneVideoRecorder=null, phoneVideoChunks=[], phoneVideoUploading=false;
 window._combineTriggered=false;
+function pickVideoMime(){
+  for(const m of ['video/webm;codecs=vp8','video/webm','video/mp4']){
+    if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+async function uploadPhoneVideoFromDesktop(){
+  phoneVideoUploading=true;
+  try{
+    const blob=new Blob(phoneVideoChunks, {type: phoneVideoRecorder.mimeType || 'video/webm'});
+    await fetch('/phone/upload?id='+encodeURIComponent(SID)+'&mime='+encodeURIComponent(blob.type),
+      {method:'POST', body: blob});
+  }catch(_){}
+  phoneVideoUploading=false;
+}
 
 // Shared with checkPhoneStatus() below — both set this same "not yet
 // paired" prompt, so it's a constant rather than two copies that can
@@ -2338,7 +2355,6 @@ const PHONE_PAIR_HINT='Pair your phone (it\'ll warn "not secure" once — tap Ad
 async function loadPhoneSyncInfo(){
   try{
     const j=await(await fetch('/phone_sync_info?id='+SID)).json();
-    if(j.chirp) chirpParams=j.chirp;
     const box=$('phoneUrlBox'), txt=$('phoneUrlText'), status=$('phoneStatusText');
     if(j.phone_url){
       txt.textContent=j.phone_url;
@@ -2361,31 +2377,23 @@ if($('phoneCopyBtn')) $('phoneCopyBtn').addEventListener('click',()=>{
   navigator.clipboard?.writeText($('phoneUrlText').textContent).catch(()=>{});
 });
 
-function playSyncChirp(){
-  const {f0,f1,durMs}=chirpParams, dur=durMs/1000, t0=audioCtx.currentTime;
-  const osc=audioCtx.createOscillator(), gain=audioCtx.createGain();
-  osc.type='sine';
-  osc.frequency.setValueAtTime(f0,t0);
-  osc.frequency.linearRampToValueAtTime(f1,t0+dur);
-  gain.gain.setValueAtTime(0,t0);
-  gain.gain.linearRampToValueAtTime(0.6,t0+dur*0.1);
-  gain.gain.setValueAtTime(0.6,t0+dur*0.9);
-  gain.gain.linearRampToValueAtTime(0,t0+dur);
-  osc.connect(gain).connect(audioCtx.destination);   // to speakers, NOT into the mic graph
-  osc.start(t0); osc.stop(t0+dur+0.02);
-}
-
 function checkPhoneStatus(){
   fetch('/status?id='+SID).then(r=>r.json()).then(j=>{
     phonePaired=!!j.phone_paired;
     phoneStatus=j.phone_status||'unpaired';
     const status=$('phoneStatusText');
     if(status){
+      // "recording"/"uploading" are shown straight from local state (this
+      // page drives both directly now) rather than round-tripped through
+      // the server, which only ever knows "paired" or "uploaded".
       if(!phonePaired){
         if($('phoneUrlBox').style.display!=='none') status.textContent=PHONE_PAIR_HINT;
+      }else if(phoneVideoRecorder && phoneVideoRecorder.state==='recording'){
+        status.textContent='📱 Recording video…';
+      }else if(phoneVideoUploading){
+        status.textContent='📱 Uploading video…';
       }else{
-        const labels={paired:'📱 Phone connected — ready',recording:'📱 Recording…',
-          stopping:'📱 Stopping…',uploaded:'📱 Video received ✓'};
+        const labels={paired:'📱 Phone connected — ready',uploaded:'📱 Video received ✓'};
         status.textContent=labels[phoneStatus]||('📱 '+phoneStatus);
       }
     }
@@ -2509,7 +2517,7 @@ async function startRec(){
   recorder=new MediaRecorder(mediaStream,{mimeType:pickMime(),audioBitsPerSecond:512000});
   recorder.ondataavailable=e=>{ if(e.data.size) recChunks.push(e.data); };
   recorder.onstop=finishRec;
-  window._chirpMusicPos=null;
+  window._videoRecordedThisTake=false;
   window._combineTriggered=false;
 
   const startAt = punch ? punchAt : 0;
@@ -2522,28 +2530,33 @@ async function startRec(){
   }
   await backingAudio.play().catch(()=>{});
 
-  // Start the recorder, then capture the PRECISE alignment anchors the instant
-  // it begins. onstart fires when capture truly starts — best reference we have.
-  const phoneThisTake=phonePaired && phoneStatus!=='recording' && !punch;  // v1: fresh takes only
-  window._phoneThisTake=phoneThisTake;
+  // If the phone's live camera feed is up (v1: fresh takes only — punch-ins
+  // aren't captured), record it right alongside the vocal take: starting
+  // both MediaRecorders back to back here means they share this page's one
+  // clock from t=0, so the phone's video and the vocal take are already in
+  // sync with no alignment step needed later. This replaced an earlier
+  // design where the phone recorded+uploaded independently, using a sync
+  // chirp its own mic would pick up through a real speaker — silently
+  // broken for anyone monitoring on headphones.
+  const phoneStream=$('phoneSelfView').srcObject;
+  const videoThisTake=phonePaired && !punch && phoneStream;
+  if(videoThisTake){
+    phoneVideoChunks=[];
+    phoneVideoRecorder=new MediaRecorder(phoneStream,
+      {mimeType:pickVideoMime(), videoBitsPerSecond:8000000});
+    phoneVideoRecorder.ondataavailable=e=>{ if(e.data.size) phoneVideoChunks.push(e.data); };
+    phoneVideoRecorder.onstop=uploadPhoneVideoFromDesktop;
+    window._videoRecordedThisTake=true;
+  }
   recorder.onstart=()=>{
     recStartCtxTime=audioCtx.currentTime;
     musicPosAtRecStart=backingAudio.currentTime||startAt;
-    if(phoneThisTake){
-      fetch('/phone/cmd',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({id:SID,cmd:'start'})}).catch(()=>{});
-      // give the phone's MediaRecorder time to actually spin up before the
-      // chirp fires — network trigger timing is sloppy, so this buffer just
-      // needs to make it LIKELY the phone is already capturing; the chirp
-      // itself is what gets matched precisely afterward, not this timing.
-      setTimeout(()=>{
-        if(!recording) return;   // stopped already (very short take) — skip the chirp
-        playSyncChirp();
-        window._chirpMusicPos=backingAudio.currentTime||startAt;
-      },450);
-    }
   };
   recorder.start();
+  // A timeslice arg (periodic chunks) rather than a single final blob avoids
+  // a known Chrome quirk where a WebM recorded with no timeslice can end up
+  // with wrong/estimated duration metadata in the container.
+  if(videoThisTake) phoneVideoRecorder.start(1000);
   if(metro.clickOn) startMetroScheduler();
 
   $('play').textContent='❚❚ Pause music'; $('play').classList.add('amber');
@@ -2556,12 +2569,9 @@ function stopRec(){ if(!recording)return;
   // remember how long we actually sang (song time) so we can trim precisely
   window._recEndMusicPos = backingAudio.currentTime || 0;
   recorder.stop(); backingAudio.pause();
+  if(phoneVideoRecorder && phoneVideoRecorder.state!=='inactive') phoneVideoRecorder.stop();
   stopMetroScheduler();
   if(ytReady){ try{ ytPlayer.pauseVideo(); }catch(_){} }
-  if(window._phoneThisTake){
-    fetch('/phone/cmd',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:SID,cmd:'stop'})}).catch(()=>{});
-  }
   recording=false; showRecUI(false); showTuner(false);
   $('play').disabled=false; resetMusicBtn();
   window._lastPitchScore=computeScore();
@@ -3215,8 +3225,7 @@ async function doRender(){
   $('renderbar').style.display='block'; $('renderfill').style.width='30%';
   const body={id:SID, fx:collectFx(), mix:{
     vocal_gain_db:+$('vgain').value, music_gain_db:+$('mgain').value,
-    music_key:musicKey, format:$('ofmt').value, loudnorm:true,
-    chirp_music_pos_sec:window._chirpMusicPos }};
+    music_key:musicKey, format:$('ofmt').value, loudnorm:true }};
   if(activeHarmonyTakeId){
     body.mix.harmony_take_id=activeHarmonyTakeId;
     body.mix.harmony_gain_db=+$('hgain').value;
@@ -3262,7 +3271,7 @@ async function checkRender(){
     if(window._finalAudio){ try{window._finalAudio.pause();}catch(_){}}
     window._finalAudio=fa;
     buildPlayer($('finalPlayer'), fa, {label:'Your finished song'});
-    if(window._chirpMusicPos!=null) tryCombineVideo();
+    if(window._videoRecordedThisTake) tryCombineVideo();
     if(autoAdvanceOn && queue.length){
       toast('Rendered. Auto-advancing to the next song…','ok',2500);
       setTimeout(playNext, 2500);
