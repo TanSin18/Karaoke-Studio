@@ -1012,6 +1012,14 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       <h3><svg class="icon"><use href="#i-bulb"/></svg> Stage lighting</h3>
       <div class="hint">
         <label class="tunertog"><input type="checkbox" id="lightsEnabled"> react to my singing</label>
+        <div class="mt" style="display:flex;gap:12px;flex-wrap:wrap">
+          <label class="tunertog"><input type="radio" name="lightsMode" value="multi" id="lightsModeMulti" checked> Multi-color (by note)</label>
+          <label class="tunertog"><input type="radio" name="lightsMode" value="mono" id="lightsModeMono"> Single color</label>
+        </div>
+        <div class="mt" id="lightsColorPickWrap" style="display:none;align-items:center;gap:8px">
+          <input type="color" id="lightsColorPick" value="#00ff78" style="width:36px;height:28px;padding:0;border-radius:6px;border:1px solid var(--edge)">
+          <span style="font-size:11px;opacity:.75">brightness still follows your singing</span>
+        </div>
         <div class="mt">
           <button class="btn small" id="lightsDiscoverBtn" type="button">Find my lights</button>
         </div>
@@ -2278,12 +2286,21 @@ function startMeterAndPitch(){
 // actual color math and rate limiting happen server-side in /lights/update
 // since that's where the UDP socket to the lights lives. -------------------
 let lightsEnabledOn=false, lightsSelectedIps=[], lastLightsSend=0;
+let lightsMode='multi', lightsMonoColor={r:0,g:255,b:120};
+function hexToRgb(hex){ const n=parseInt((hex||'#00ff78').slice(1),16); return {r:(n>>16)&255, g:(n>>8)&255, b:n&255}; }
+function rgbToHex(c){ const h=v=>v.toString(16).padStart(2,'0'); return '#'+h(c.r)+h(c.g)+h(c.b); }
 function loadLightsPrefs(){
   try{
     lightsEnabledOn = localStorage.getItem('kstudio.lightsEnabled')==='1';
     lightsSelectedIps = JSON.parse(localStorage.getItem('kstudio.lightsIps')||'[]');
+    lightsMode = localStorage.getItem('kstudio.lightsMode')||'multi';
+    lightsMonoColor = JSON.parse(localStorage.getItem('kstudio.lightsMonoColor')||'null') || lightsMonoColor;
   }catch(e){}
   $('lightsEnabled').checked = lightsEnabledOn;
+  const modeInput=document.querySelector('input[name=lightsMode][value="'+lightsMode+'"]');
+  if(modeInput) modeInput.checked=true;
+  $('lightsColorPickWrap').style.display = lightsMode==='mono' ? 'flex' : 'none';
+  $('lightsColorPick').value = rgbToHex(lightsMonoColor);
   // the server's selection is fresh in-memory state each restart — push
   // back whatever we remembered so reactive lighting works immediately,
   // without waiting for a re-discover.
@@ -2296,10 +2313,21 @@ function saveLightsPrefs(){
   try{
     localStorage.setItem('kstudio.lightsEnabled', lightsEnabledOn?'1':'0');
     localStorage.setItem('kstudio.lightsIps', JSON.stringify(lightsSelectedIps));
+    localStorage.setItem('kstudio.lightsMode', lightsMode);
+    localStorage.setItem('kstudio.lightsMonoColor', JSON.stringify(lightsMonoColor));
   }catch(e){}
 }
 $('lightsEnabled').addEventListener('change', ()=>{
   lightsEnabledOn=$('lightsEnabled').checked;
+  saveLightsPrefs();
+});
+document.querySelectorAll('input[name=lightsMode]').forEach(r=>r.addEventListener('change', ()=>{
+  lightsMode = document.querySelector('input[name=lightsMode]:checked').value;
+  $('lightsColorPickWrap').style.display = lightsMode==='mono' ? 'flex' : 'none';
+  saveLightsPrefs();
+}));
+$('lightsColorPick').addEventListener('input', ()=>{
+  lightsMonoColor = hexToRgb($('lightsColorPick').value);
   saveLightsPrefs();
 });
 $('lightsDiscoverBtn').addEventListener('click', async ()=>{
@@ -2351,8 +2379,10 @@ function updateLights(note, level){
   const now=performance.now();
   if(now-lastLightsSend<110) return;   // matches the server's per-device rate limit
   lastLightsSend=now;
+  const body={midi: note? note.midi : null, cents: note? note.cents : 0, level, mode: lightsMode};
+  if(lightsMode==='mono') body.color=lightsMonoColor;
   fetch('/lights/update',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({midi: note? note.midi : null, cents: note? note.cents : 0, level})}).catch(()=>{});
+    body:JSON.stringify(body)}).catch(()=>{});
 }
 loadLightsPrefs();
 

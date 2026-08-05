@@ -154,23 +154,78 @@ LIGHTS_SELECTED = set()  # device IPs
 LIGHTS_LOCK = threading.Lock()
 
 
-def _pitch_to_rgb(midi, cents, level):
+# Adaptive per-performance pitch range for brightness: tracks the lowest
+# and highest notes actually sung in the current unbroken phrase, so "full
+# bright" always means THIS performance's climax note, whether that's a
+# bass singer's B3 or a soprano's A5 — a single fixed vocal range would
+# make one voice type look dramatic and another look permanently dim.
+# Resets after a gap (silence between takes/songs) so a new take gets the
+# full range back instead of inheriting wherever the last one topped out.
+_LIGHTS_RANGE_RESET_GAP = 2.5  # seconds of silence before resetting
+_lights_range = {"low": None, "high": None, "last_ts": 0.0}
+
+
+def _pitch_to_rgb(midi, cents, level, mode="multi", mono_color=None):
     """Map live tuner data to a color + brightness for the lights.
     midi:  detected note as a MIDI number, or None while silent/no pitch.
     cents: how far off the nearest note you are (-50..+50ish).
     level: mic input level, roughly 0..1.
-    Hue cycles once per octave (each of the 12 pitch classes gets its own
-    color around the wheel) so the lights visibly track the melody rather
-    than just pulsing brightness; saturation dips when you're off-pitch so
-    "locked in" notes read as the richest color."""
+    mode:  "multi" (color follows the note, the original behavior) or
+           "mono" (one fixed color from mono_color={r,g,b}; only brightness
+           reacts to your singing).
+    Height within your current range — not raw mic volume — drives
+    brightness in both modes: volume alone sat in a narrow "loud enough to
+    sing" band and made every note look about the same, which is exactly
+    what felt flat; a big high note should read as the moment, a low note
+    as comparatively moody."""
+    now = time.monotonic()
+    gap = now - _lights_range["last_ts"]
+    _lights_range["last_ts"] = now
+
     if midi is None:
         return (0, 0, 0), 0
-    hue = (midi % 12) / 12.0
+
+    if gap > _LIGHTS_RANGE_RESET_GAP or _lights_range["low"] is None:
+        # fresh phrase: seed a modest span around this note rather than a
+        # single point, so the very first note doesn't instantly read as
+        # both the floor AND the ceiling (which would force it to 100%).
+        _lights_range["low"] = midi - 4
+        _lights_range["high"] = midi + 4
+    else:
+        _lights_range["low"] = min(_lights_range["low"], midi)
+        _lights_range["high"] = max(_lights_range["high"], midi)
+
+    span = max(1, _lights_range["high"] - _lights_range["low"])
+    pitch_norm = max(0.0, min(1.0, (midi - _lights_range["low"]) / span))
     in_tune = abs(cents or 0) <= 15
+
+    # Volume still matters, but as a secondary modifier on top of pitch
+    # height rather than the primary signal — a loud low note shouldn't
+    # outshine a soft high one.
+    level_norm = max(0.0, min(1.0, (level or 0) * 3))
+    floor = 22
+    brightness = (floor + pitch_norm * (100 - floor)) * (0.75 + 0.25 * level_norm)
+    brightness = max(15, min(100, round(brightness)))
+
+    if mode == "mono" and mono_color:
+        # Single fixed color, exactly as picked — only the separate
+        # brightness command above varies, so it doesn't also get muted/
+        # desaturated the way the multi-color mode's own value-ramp does.
+        r = max(0, min(255, int(mono_color.get("r", 255))))
+        g = max(0, min(255, int(mono_color.get("g", 255))))
+        b = max(0, min(255, int(mono_color.get("b", 255))))
+        return (r, g, b), brightness
+
+    # multi mode: hue cycles once per octave (each of the 12 pitch classes
+    # gets its own color around the wheel) so the lights visibly track the
+    # melody. The color itself also gets punchier for higher/brighter notes
+    # (full HSV value+saturation), not just the brightness % — together
+    # those two make a big high note look like a big moment instead of
+    # "same color, slightly higher number."
+    hue = (midi % 12) / 12.0
     sat = 1.0 if in_tune else 0.55
-    val = 1.0
+    val = 0.75 + 0.25 * pitch_norm
     r, g, b = colorsys.hsv_to_rgb(hue, sat, val)
-    brightness = max(15, min(100, round((level or 0) * 130)))
     return (round(r * 255), round(g * 255), round(b * 255)), brightness
 
 
@@ -1914,7 +1969,9 @@ class Handler(BaseHTTPRequestHandler):
             midi = body.get("midi")
             cents = body.get("cents") or 0
             level = body.get("level") or 0
-            (r, g, b), brightness = _pitch_to_rgb(midi, cents, level)
+            mode = body.get("mode") if body.get("mode") in ("multi", "mono") else "multi"
+            mono_color = body.get("color") if mode == "mono" else None
+            (r, g, b), brightness = _pitch_to_rgb(midi, cents, level, mode, mono_color)
             for ip in targets:
                 if brightness <= 0:
                     continue
