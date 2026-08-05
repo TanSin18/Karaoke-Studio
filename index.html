@@ -499,6 +499,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
   <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.6c.6.5 1 1.3 1 2.4h6c0-1.1.4-1.9 1-2.4A7 7 0 0 0 12 2z"/></symbol>
   <symbol id="i-mail" viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22 6 12 13 2 6"/></symbol>
   <symbol id="i-takes" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" class="filled"/></symbol>
@@ -987,6 +988,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       <h3><svg class="icon"><use href="#i-phone"/></svg> Phone camera sync</h3>
       <div class="hint" id="phonePairPanel">
         <span id="phoneStatusText">Loading phone-pairing link…</span>
+        <button class="btn small" id="phoneDisconnectBtn" type="button"
+          style="display:none;margin-left:8px" title="End the phone connection without touching the phone">Disconnect</button>
         <div id="phoneUrlBox" style="display:none;margin-top:8px">
           <img id="phoneQrImg" class="hidden" alt="Scan with your phone to pair" style="width:100%;max-width:160px;border-radius:8px">
           <div class="mt" style="min-width:0">
@@ -998,6 +1001,22 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             first time (that's the local self-signed cert, not a real problem); tap Advanced/Details
             → Proceed to continue.</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Stage lighting: Govee lights on the local network react live to
+         pitch (color) and volume (brightness) while recording. Requires
+         "LAN Control" turned on per-light in the Govee Home app first —
+         that's a Govee-side setting this page can't flip for you. -->
+    <div class="railCard">
+      <h3><svg class="icon"><use href="#i-bulb"/></svg> Stage lighting</h3>
+      <div class="hint">
+        <label class="tunertog"><input type="checkbox" id="lightsEnabled"> react to my singing</label>
+        <div class="mt">
+          <button class="btn small" id="lightsDiscoverBtn" type="button">Find my lights</button>
+        </div>
+        <div id="lightsList" class="mt"></div>
+        <div id="lightsStatus" class="mt" style="font-size:11px;opacity:.8"></div>
       </div>
     </div>
   </aside>
@@ -2246,11 +2265,96 @@ function startMeterAndPitch(){
     if(recording && tunerOn){
       micAnalyser.getFloatTimeDomainData(pitchBuf);
       const f=autoCorrelate(pitchBuf, audioCtx.sampleRate);
-      updateTuner(f>0? freqToNote(f) : null, f);
+      const note=f>0? freqToNote(f) : null;
+      updateTuner(note, f);
+      updateLights(note, peak);
     }
     rafMeter=requestAnimationFrame(loop);
   })();
 }
+
+// ---- stage lighting: Govee lights (LAN Control) react live to pitch/
+// volume while recording. All state here is just UI convenience — the
+// actual color math and rate limiting happen server-side in /lights/update
+// since that's where the UDP socket to the lights lives. -------------------
+let lightsEnabledOn=false, lightsSelectedIps=[], lastLightsSend=0;
+function loadLightsPrefs(){
+  try{
+    lightsEnabledOn = localStorage.getItem('kstudio.lightsEnabled')==='1';
+    lightsSelectedIps = JSON.parse(localStorage.getItem('kstudio.lightsIps')||'[]');
+  }catch(e){}
+  $('lightsEnabled').checked = lightsEnabledOn;
+  // the server's selection is fresh in-memory state each restart — push
+  // back whatever we remembered so reactive lighting works immediately,
+  // without waiting for a re-discover.
+  if(lightsSelectedIps.length){
+    fetch('/lights/select',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ips:lightsSelectedIps})}).catch(()=>{});
+  }
+}
+function saveLightsPrefs(){
+  try{
+    localStorage.setItem('kstudio.lightsEnabled', lightsEnabledOn?'1':'0');
+    localStorage.setItem('kstudio.lightsIps', JSON.stringify(lightsSelectedIps));
+  }catch(e){}
+}
+$('lightsEnabled').addEventListener('change', ()=>{
+  lightsEnabledOn=$('lightsEnabled').checked;
+  saveLightsPrefs();
+});
+$('lightsDiscoverBtn').addEventListener('click', async ()=>{
+  $('lightsDiscoverBtn').disabled=true;
+  $('lightsStatus').textContent='Scanning your WiFi for Govee lights (a few seconds)…';
+  let devices=[];
+  try{
+    const r=await fetch('/lights/discover');
+    const j=await r.json();
+    devices=j.devices||[];
+  }catch(e){}
+  $('lightsDiscoverBtn').disabled=false;
+  if(!devices.length){
+    $('lightsStatus').textContent='No lights found. In the Govee Home app, open each light\'s '+
+      'Settings and turn on "LAN Control" — off by default, and the only way lights can react '+
+      'this fast (Govee\'s cloud API is far too slow for live singing).';
+    $('lightsList').innerHTML='';
+    return;
+  }
+  $('lightsStatus').textContent=devices.length+' light'+(devices.length>1?'s':'')+' found — pick which ones react.';
+  renderLightsList(devices);
+});
+function renderLightsList(devices){
+  const box=$('lightsList'); box.innerHTML='';
+  devices.forEach(d=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:8px;margin-top:6px';
+    const checked = lightsSelectedIps.includes(d.ip) ? 'checked' : '';
+    row.innerHTML =
+      '<label class="tunertog" style="flex:1"><input type="checkbox" class="lightPick" data-ip="'+d.ip+'" '+checked+'> '+
+      escapeHtml(d.sku)+' <span style="opacity:.6">('+d.ip+')</span></label>'+
+      '<button class="btn small lightTestBtn" data-ip="'+d.ip+'" type="button">Test</button>';
+    box.appendChild(row);
+  });
+  box.querySelectorAll('.lightPick').forEach(cb=>cb.addEventListener('change', onLightPickChange));
+  box.querySelectorAll('.lightTestBtn').forEach(b=>b.addEventListener('click', ()=>{
+    fetch('/lights/test',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ip:b.dataset.ip})}).catch(()=>{});
+  }));
+}
+function onLightPickChange(){
+  lightsSelectedIps = Array.from($('lightsList').querySelectorAll('.lightPick:checked')).map(cb=>cb.dataset.ip);
+  saveLightsPrefs();
+  fetch('/lights/select',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ips:lightsSelectedIps})}).catch(()=>{});
+}
+function updateLights(note, level){
+  if(!lightsEnabledOn || !lightsSelectedIps.length) return;
+  const now=performance.now();
+  if(now-lastLightsSend<110) return;   // matches the server's per-device rate limit
+  lastLightsSend=now;
+  fetch('/lights/update',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({midi: note? note.midi : null, cents: note? note.cents : 0, level})}).catch(()=>{});
+}
+loadLightsPrefs();
 
 // ---- tuner (live singing feedback) ----------------------------------------
 let tunerOn=true;
@@ -2778,6 +2882,18 @@ async function loadPhoneSyncInfo(){
 if($('phoneCopyBtn')) $('phoneCopyBtn').addEventListener('click',()=>{
   navigator.clipboard?.writeText($('phoneUrlText').textContent).catch(()=>{});
 });
+if($('phoneDisconnectBtn')) $('phoneDisconnectBtn').addEventListener('click', async ()=>{
+  $('phoneDisconnectBtn').disabled=true;
+  try{
+    await fetch('/phone/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID})});
+  }catch(_){}
+  phonePaired=false; phoneStatus='disconnected';
+  stopSelfViewReceiver();
+  $('phoneStatusText').textContent=PHONE_PAIR_HINT;
+  $('phoneDisconnectBtn').style.display='none';
+  $('phoneDisconnectBtn').disabled=false;
+});
 
 function checkPhoneStatus(){
   fetch('/status?id='+SID).then(r=>r.json()).then(j=>{
@@ -2795,10 +2911,17 @@ function checkPhoneStatus(){
       }else if(phoneVideoUploading){
         status.textContent='📱 Uploading video…';
       }else{
-        const labels={paired:'📱 Phone connected — ready',uploaded:'📱 Video received ✓'};
+        // "uploaded" here means "last take's video was received" — it does
+        // NOT mean the connection ended, so word it as still-ready rather
+        // than sounding finished (this used to read like "done", which is
+        // exactly the kind of thing that makes you go re-scan the QR code
+        // for the next take when the connection was fine the whole time).
+        const labels={paired:'📱 Phone connected — ready',
+          uploaded:'📱 Connected — last take received, ready for another'};
         status.textContent=labels[phoneStatus]||('📱 '+phoneStatus);
       }
     }
+    $('phoneDisconnectBtn').style.display = phonePaired ? '' : 'none';
     // webrtc_gen changes whenever the phone (re)registers — a fresh camera
     // stream that any existing peer connection here would no longer match,
     // so rebuild rather than trying to reuse it.

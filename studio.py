@@ -17,6 +17,7 @@ Run:  python3 studio.py   ->  http://127.0.0.1:8770
 """
 
 import base64
+import colorsys
 import json
 import os
 import queue as pyqueue
@@ -32,6 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
 import audio_fx
+import govee_lights
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(HERE, "index.html")
@@ -142,6 +144,34 @@ JOBS = {}
 LOCK = threading.Lock()
 
 YT_ID_RE = re.compile(r"(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})")
+
+
+# ---- Stage lighting (Govee LAN Control) -------------------------------------
+# Which discovered lights currently react to the singer — a physical-room
+# setting, not tied to any one karaoke session, so it's simple global state
+# rather than something stored per-jid like everything else here.
+LIGHTS_SELECTED = set()  # device IPs
+LIGHTS_LOCK = threading.Lock()
+
+
+def _pitch_to_rgb(midi, cents, level):
+    """Map live tuner data to a color + brightness for the lights.
+    midi:  detected note as a MIDI number, or None while silent/no pitch.
+    cents: how far off the nearest note you are (-50..+50ish).
+    level: mic input level, roughly 0..1.
+    Hue cycles once per octave (each of the 12 pitch classes gets its own
+    color around the wheel) so the lights visibly track the melody rather
+    than just pulsing brightness; saturation dips when you're off-pitch so
+    "locked in" notes read as the richest color."""
+    if midi is None:
+        return (0, 0, 0), 0
+    hue = (midi % 12) / 12.0
+    in_tune = abs(cents or 0) <= 15
+    sat = 1.0 if in_tune else 0.55
+    val = 1.0
+    r, g, b = colorsys.hsv_to_rgb(hue, sat, val)
+    brightness = max(15, min(100, round((level or 0) * 130)))
+    return (round(r * 255), round(g * 255), round(b * 255)), brightness
 
 
 def set_job(jid, **kw):
@@ -951,6 +981,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def _base_url(self):
+        """Base URL guests should actually use to reach this server — derived
+        from the Host header the browser sent, not from a hardcoded LAN IP.
+        On a plain LAN request that's still e.g. http://10.0.0.6:8770 (same
+        as before), but it also comes out right automatically when the
+        request arrived through a tunnel (Tailscale Funnel, Cloudflare
+        Tunnel, etc.), which terminates HTTPS at some public hostname and
+        forwards here — those set X-Forwarded-Proto so we know to say
+        https:// instead of http:// even though this process only ever
+        speaks plain HTTP itself. Falls back to LAN-IP detection if there's
+        no Host header, OR if Host is localhost/127.0.0.1 — the host opens
+        the TV screen at exactly that address (it's what the YouTube embed
+        needs), but "localhost" in a join link means something different on
+        every device that opens it, so it's useless to a guest's phone."""
+        host = self.headers.get("Host")
+        hostname = (host or "").split(":")[0]
+        if not host or hostname in ("localhost", "127.0.0.1"):
+            lan = _lan_ip()
+            return f"http://{lan}:{PORT}" if lan else None
+        proto = self.headers.get("X-Forwarded-Proto", "http")
+        return f"{proto}://{host}"
+
     def do_GET(self):
         p = urlparse(self.path)
         if p.path in ("/", "/index.html"):
@@ -1261,6 +1313,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(os.path.join(SESS_DIR, jid, take["file"]), "audio/wav")
             return
 
+        if p.path == "/lights/discover":
+            devices = govee_lights.discover()
+            with LIGHTS_LOCK:
+                selected = set(LIGHTS_SELECTED)
+            for d in devices:
+                d["selected"] = d["ip"] in selected
+            self._json(200, {"devices": devices})
+            return
+
         self._json(404, {"error": "not found"})
 
     def _send_file(self, path, ctype, dl_name=None):
@@ -1535,6 +1596,20 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, "webrtc_gen": gen})
             return
 
+        if p.path == "/phone/disconnect":
+            # Lets the desktop end the pairing on demand ("Disconnect phone"
+            # button) without needing to touch the phone — the phone's own
+            # poll loop notices phone_paired flipping to False and tears down
+            # its camera/peer connection on its own next tick.
+            body = self._read_body()
+            jid = body.get("id")
+            if not job_or_disk(jid):
+                self._json(404, {"error": "unknown session"})
+                return
+            set_job(jid, phone_paired=False, phone_status="disconnected")
+            self._json(200, {"ok": True})
+            return
+
         if p.path == "/phone/upload":
             # The phone posts the raw video blob as the request body (id/mime
             # as query params, not JSON) — a base64-in-JSON body used to be
@@ -1718,9 +1793,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if p.path == "/room/start":
             code = start_room()
-            lan = _lan_ip()
-            join_url = f"http://{lan}:{PORT}/join?room={code}" if lan else None
-            host_url = f"http://{lan}:{PORT}/host" if lan else None
+            base = self._base_url()
+            join_url = f"{base}/join?room={code}" if base else None
+            host_url = f"{base}/host" if base else None
             self._json(200, {"code": code, "join_url": join_url, "host_url": host_url})
             return
 
@@ -1820,6 +1895,55 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, room_state())
             return
 
+        if p.path == "/lights/select":
+            body = self._read_body()
+            ips = [ip for ip in (body.get("ips") or []) if isinstance(ip, str)]
+            with LIGHTS_LOCK:
+                LIGHTS_SELECTED.clear()
+                LIGHTS_SELECTED.update(ips)
+            self._json(200, {"ok": True, "selected": ips})
+            return
+
+        if p.path == "/lights/update":
+            body = self._read_body()
+            with LIGHTS_LOCK:
+                targets = list(LIGHTS_SELECTED)
+            if not targets:
+                self._json(200, {"ok": True, "targets": 0})
+                return
+            midi = body.get("midi")
+            cents = body.get("cents") or 0
+            level = body.get("level") or 0
+            (r, g, b), brightness = _pitch_to_rgb(midi, cents, level)
+            for ip in targets:
+                if brightness <= 0:
+                    continue
+                govee_lights.set_color(ip, r, g, b)
+                govee_lights.set_brightness(ip, brightness)
+            self._json(200, {"ok": True, "targets": len(targets), "rgb": [r, g, b], "brightness": brightness})
+            return
+
+        if p.path == "/lights/test":
+            body = self._read_body()
+            ip = body.get("ip")
+            if not ip:
+                self._json(400, {"error": "missing ip"})
+                return
+            govee_lights.turn(ip, True)
+            govee_lights.set_color(ip, 0, 255, 120)
+            govee_lights.set_brightness(ip, 80)
+            self._json(200, {"ok": True})
+            return
+
+        if p.path == "/lights/off":
+            body = self._read_body()
+            with LIGHTS_LOCK:
+                targets = list(LIGHTS_SELECTED)
+            for ip in body.get("ips") or targets:
+                govee_lights.turn(ip, False)
+            self._json(200, {"ok": True})
+            return
+
         self._json(404, {"error": "not found"})
 
 
@@ -1852,7 +1976,9 @@ PHONE_HTML = r"""<meta charset="utf-8">
   </div>
   <div id="bar">
     <div id="status"><span class="dot" id="dot"></span><span id="statusText">Starting camera…</span></div>
-    <div id="hint">Keep this tab open and the phone plugged in / screen on while you record.</div>
+    <div id="hint">Keep this tab open while you record — if your screen locks between takes,
+      this page reconnects the camera on its own once you unlock it, no rescanning needed.</div>
+    <button id="reconnectBtn" onclick="manualReconnect()" style="display:none">🔄 Reconnect</button>
     <div id="err"></div>
   </div>
 </div>
@@ -1891,20 +2017,36 @@ if(!id){
 // the "video not even getting recorded" failure this replaces.
 async function startCamera(){
   try{
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facing, width: {ideal:1920}, height: {ideal:1080} },
-      audio: false,   // no phone-side audio needed anymore — nothing here
-                       // ever gets used for sync or for the final mix.
-    });
-    video.srcObject = stream;
-    await register();
-    requestWakeLock();
-    setStatus('Connected — streaming to desktop', 'ok');
-    pollLoop();
+    await acquireCameraAndConnect();
+    pollLoop();   // started exactly once, for the lifetime of this page
   }catch(e){
     setStatus('Camera access failed', 'warn');
     showErr((e && e.message) || String(e));
   }
+}
+
+// The actual get-camera + register + WebRTC-connect steps, split out from
+// startCamera() so the same sequence can re-run later without starting a
+// second concurrent pollLoop() (register()/startWebRTC() already close any
+// previous peer connection, so this is safe to call again at any time).
+async function acquireCameraAndConnect(){
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: facing, width: {ideal:1920}, height: {ideal:1080} },
+    audio: false,   // no phone-side audio needed anymore — nothing here
+                     // ever gets used for sync or for the final mix.
+  });
+  video.srcObject = stream;
+  showErr('');
+  $('reconnectBtn').style.display='none';
+  await register();
+  requestWakeLock();
+  setStatus('Connected — streaming to desktop', 'ok');
+}
+function $(id){ return document.getElementById(id); }
+async function manualReconnect(){
+  setStatus('Reconnecting…', 'warn');
+  try{ await acquireCameraAndConnect(); }
+  catch(e){ setStatus('Camera access failed', 'warn'); showErr((e && e.message) || String(e)); }
 }
 
 // Swap the camera in place (new getUserMedia + replaceTrack on both the
@@ -1995,13 +2137,53 @@ async function requestWakeLock(){
     if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
   }catch(_){}  // best-effort; not supported on iOS Safari — user keeps screen on manually
 }
+// Locking the screen (or switching apps) backgrounds this tab, and mobile
+// browsers — iOS Safari especially, where the Wake Lock API above doesn't
+// even exist — routinely kill the camera track while backgrounded rather
+// than just pausing it. Without this, that meant walking back to the phone
+// and re-scanning the QR code after every take. Instead: the instant the
+// page becomes visible again, check whether the video track actually
+// survived, and if not, silently re-run the exact same get-camera/register/
+// reconnect sequence startCamera() used the first time — no rescan needed,
+// the desktop picks up the new webrtc_gen automatically.
 document.addEventListener('visibilitychange', async ()=>{
-  if(document.visibilityState==='visible') requestWakeLock();
+  if(document.visibilityState!=='visible' || !id) return;
+  requestWakeLock();
+  const track = stream && stream.getVideoTracks()[0];
+  if(!track || track.readyState==='ended'){
+    setStatus('Reconnecting camera…', 'warn');
+    try{ await acquireCameraAndConnect(); }
+    catch(e){ setStatus('Camera access failed', 'warn'); showErr((e && e.message) || String(e)); }
+  }
 });
+
+// Lets the desktop end the pairing remotely (a "Disconnect phone" button
+// there) without needing to touch the phone at all — checked at a slower
+// cadence than the WebRTC signaling poll since it only needs to catch a
+// one-time flip, not track something continuously changing.
+let lastPairCheck=0;
+async function checkStillPaired(){
+  if(!id || Date.now()-lastPairCheck<2000) return;
+  lastPairCheck=Date.now();
+  try{
+    const r=await fetch('/status?id='+encodeURIComponent(id));
+    if(!r.ok) return;
+    const j=await r.json();
+    if(j.phone_paired===false && pc) disconnectCamera();
+  }catch(_){}
+}
+function disconnectCamera(){
+  if(pc){ try{ pc.close(); }catch(_){} pc=null; }
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  setStatus('Disconnected from desktop', 'warn');
+  showErr('Tap Reconnect below when you\'re ready to pair again.');
+  $('reconnectBtn').style.display='';
+}
 
 async function pollLoop(){
   while(true){
     await pollWebRTC();
+    await checkStillPaired();
     await new Promise(r=>setTimeout(r, 300));
   }
 }
