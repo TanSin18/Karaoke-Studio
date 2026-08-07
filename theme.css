@@ -103,6 +103,19 @@
 *{box-sizing:border-box}
 body{font-family:var(--body)}
 
+/* Native browser media controls (e.g. the quick <audio controls> preview in
+   index.html's post-recording choice card — kept deliberately un-rebuilt,
+   see the comment at its call site) still shouldn't look like they belong
+   to a different app. accent-color reskins the scrubber/volume thumb to the
+   app's own primary color; color-scheme swaps the whole control between the
+   browser's light and dark chrome to match whichever theme is active,
+   mirroring the same data-theme override pattern used for every other
+   token above. */
+audio{accent-color:var(--amber);color-scheme:dark}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) audio{color-scheme:light}}
+:root[data-theme="light"] audio{color-scheme:light}
+:root[data-theme="dark"] audio{color-scheme:dark}
+
 /* real icon system: sized inline SVGs via <svg class="icon"><use href="#i-x"/></svg>,
    sprite defs injected once per page (see #icon-sprite in each HTML page).
    Replaces color-emoji-as-icon, which is one of the fastest tells of an

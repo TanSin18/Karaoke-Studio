@@ -126,7 +126,13 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .npTitle{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .npSub{font-family:var(--mono);font-size:11px;color:var(--ok);letter-spacing:.06em;margin-top:2px}
 
-  .sessionNav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  /* #nowPlayingBar and #sessionNav stack directly below the sticky header
+     (top offsets kept in sync with its actual rendered height by
+     syncStickyOffsets() in JS) so a scroll never leaves them caught between
+     "still in the document flow" and "under the header" — they either
+     scroll fully into view together with it, or don't move at all. */
+  #nowPlayingBar{position:sticky;z-index:35}
+  .sessionNav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;position:sticky;z-index:30}
   .sessionTab{flex:1;min-width:120px;padding:12px 14px;border-radius:14px;border:1px solid var(--edge);
     background:var(--metal);color:var(--muted);font-weight:650;font-size:13px;cursor:pointer;
     display:inline-flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.02em;
@@ -334,7 +340,11 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .te-lane{position:relative;border-bottom:1px solid var(--edge)}
   .te-lane:last-child{border-bottom:none}
   .te-lane.assignable{cursor:crosshair}
-  .te-lanelabel{position:absolute;top:2px;left:4px;z-index:3;font-family:var(--mono);font-size:9px;
+  /* left:20px, not 4px — the trim-in handle (.te-trimhandle, 14px wide,
+     z-index:5) sits right at x=0 whenever trim starts at the very
+     beginning of the timeline (the default/common case) and was
+     rendering on top of this label's first couple characters. */
+  .te-lanelabel{position:absolute;top:2px;left:20px;z-index:3;font-family:var(--mono);font-size:9px;
     letter-spacing:.08em;text-transform:uppercase;color:var(--dim);background:rgba(0,0,0,.35);
     padding:1px 5px;border-radius:4px;pointer-events:none}
   .te-canvas{display:block;width:100%;height:64px}
@@ -529,6 +539,11 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     .ksmall{min-width:44px}
     .results{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
     .toaststack{left:12px;right:12px;top:auto;bottom:12px;max-width:none}
+    /* the toast becomes a fixed bottom banner at this width (rule above) —
+       reserve real space for it at the end of the page instead of letting
+       it float on top of whatever content happens to end up under it
+       (e.g. a saved-take card's own delete button). */
+    body{padding-bottom:96px}
     /* keep record controls reachable while scrolling a tall page on a phone */
     #stageCard .transport:has(#rec){position:sticky;bottom:0;z-index:20;
       background:var(--glass),linear-gradient(180deg,var(--panel2),var(--panel));
@@ -738,7 +753,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <!-- music transport (independent of recording) -->
         <div class="transport">
           <button id="play" class="btn" disabled title="Play / pause the soundtrack (P)">▶ Play music</button>
-          <button id="stopmusic" class="btn" disabled title="Stop and go back to the start">■ Stop</button>
+          <button id="stopmusic" class="btn" disabled title="Stop and go back to the start">■ Stop music</button>
           <div class="keybox" title="Transpose the soundtrack to your key">
             <span class="klabel">KEY</span>
             <button id="keydn" class="ksmall" disabled>−</button>
@@ -1221,6 +1236,36 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
 <script>
 const $=id=>document.getElementById(id);
+
+// ---- keep #nowPlayingBar / #sessionNav's sticky offsets glued to the
+// header's ACTUAL rendered height, instead of a guessed pixel constant that
+// would drift out of sync the moment the header wraps to a second line,
+// the theme changes its font metrics, or the logo/nav grows. Re-measures on
+// resize and whenever the header's own size changes (ResizeObserver), plus
+// once whenever #nowPlayingBar's visibility toggles (its own height only
+// matters to #sessionNav's offset while it's actually shown).
+function syncStickyOffsets(){
+  const header=document.querySelector('header');
+  if(!header) return;
+  const headerTop=12;   // matches header{top:12px} in CSS
+  const gap=10;
+  let top=headerTop+header.offsetHeight+gap;
+  const np=$('nowPlayingBar');
+  if(np){
+    np.style.top=top+'px';
+    if(getComputedStyle(np).display!=='none') top+=np.offsetHeight+gap;
+  }
+  const nav=$('sessionNav');
+  if(nav) nav.style.top=top+'px';
+}
+window.addEventListener('resize', syncStickyOffsets);
+if(window.ResizeObserver){
+  const header=document.querySelector('header');
+  if(header) new ResizeObserver(syncStickyOffsets).observe(header);
+  const np=$('nowPlayingBar');
+  if(np) new ResizeObserver(syncStickyOffsets).observe(np);
+}
+syncStickyOffsets();
 
 // ---- toasts: small reusable status/error popups (replaces scattered inline
 // error text for anything transient) ----
@@ -3640,6 +3685,7 @@ if($('phoneDisconnectBtn')) $('phoneDisconnectBtn').addEventListener('click', as
 });
 
 function checkPhoneStatus(){
+  if(!SID) return;   // polls start at page load, before a song is ever loaded
   fetch('/status?id='+SID).then(r=>r.json()).then(j=>{
     phonePaired=!!j.phone_paired;
     phoneStatus=j.phone_status||'unpaired';
