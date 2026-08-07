@@ -23,6 +23,7 @@ import os
 import queue as pyqueue
 import random
 import re
+import shutil
 import socket
 import ssl
 import subprocess
@@ -151,6 +152,15 @@ YT_ID_RE = re.compile(r"(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})")
 # setting, not tied to any one karaoke session, so it's simple global state
 # rather than something stored per-jid like everything else here.
 LIGHTS_SELECTED = set()  # device IPs
+# IPs that /lights/discover actually saw answer on the LAN. /lights/select,
+# /lights/test, and /lights/off all used to take an ip/ips straight from the
+# request body with no check against this — meaning any client that can
+# reach this server (including, notably, anyone with a Tailscale Funnel
+# link once one's turned on) could make it fire arbitrary UDP packets at
+# arbitrary IPs on the local network, repeatedly, for as long as singing
+# continued. Every route that accepts a caller-supplied IP now validates
+# against this allowlist first.
+LIGHTS_DISCOVERED = set()  # device IPs ever seen from a real discover() scan
 LIGHTS_LOCK = threading.Lock()
 
 
@@ -386,6 +396,25 @@ def _session_outputs(jid):
     return {"audio": audio, "video": video}
 
 
+def _dir_size(path):
+    """Total bytes under a directory — used to show each History entry's
+    real disk cost, which used to be completely invisible anywhere in the
+    app despite sessions/ being the single biggest disk consumer this app
+    has (7.9GB across 74 sessions with no cleanup, before the automatic
+    cleanup added alongside this)."""
+    total = 0
+    try:
+        for root, _dirs, files in os.walk(path):
+            for f in files:
+                try:
+                    total += os.path.getsize(os.path.join(root, f))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+
 def list_recent_sessions(profile=None, limit=8):
     """Sessions with a downloaded backing track, newest first, for the
     'resume a recent song' panel and the History page. Survives server
@@ -414,6 +443,7 @@ def list_recent_sessions(profile=None, limit=8):
                 created_at = 0
         vid = meta.get("video_id")
         outputs = _session_outputs(jid)
+        take_count = len([t for t in (meta.get("takes") or []) if not t.get("deleted")])
         out.append({
             "id": jid,
             "title": meta.get("title") or "Karaoke",
@@ -423,6 +453,11 @@ def list_recent_sessions(profile=None, limit=8):
             "created_at": created_at,
             "has_audio": bool(outputs["audio"]),
             "has_video": bool(outputs["video"]),
+            "take_count": take_count,
+            "size_bytes": _dir_size(sdir),
+            # backing track downloaded, never actually sung into — pure
+            # disk waste with nothing of yours to lose by clearing it out.
+            "abandoned": take_count == 0 and not outputs["audio"] and not outputs["video"],
         })
     out.sort(key=lambda s: s["created_at"] or 0, reverse=True)
     return out[:limit]
@@ -810,6 +845,13 @@ def do_render(jid, vocal_path, fx, mix_opts, scope_id=None):
              display_name=f"{safe} (karaoke).{out_fmt}",
              render_trim_start=trim_start)
 
+    # tmp/ is scratch space for pitch_correct's per-segment rubberband
+    # files — dead weight the instant a render finishes, and one real
+    # contributor to sessions/ growing unbounded with no cleanup anywhere
+    # in this codebase. Best-effort: a render having finished successfully
+    # is worth more than a leftover temp file blocking on it.
+    shutil.rmtree(tmp, ignore_errors=True)
+
 
 def do_combine_video(jid, scope_id, phone_video_file, final_mix_file):
     """Mux the phone's video with the finished audio mix into one final
@@ -845,6 +887,17 @@ def do_combine_video(jid, scope_id, phone_video_file, final_mix_file):
         set_video(status="error", error=str(e)[:400])
         return
     set_video(status="done", error=None, final_video_file=out_name)
+
+    # The raw phone-camera recording (often the single biggest file in a
+    # session now that 1080p video is the default) is fully consumed the
+    # moment it's muxed into final_video — /combine_video's own guard above
+    # never lets this scope_id combine again, so nothing will ever read it
+    # a second time. This is the other big contributor to sessions/ growing
+    # unbounded with no cleanup anywhere in this codebase.
+    try:
+        os.remove(phone_video)
+    except OSError:
+        pass
 
 
 def _run_render_locked(jid, vocal_path, fx, mix_opts, lock, scope_id=None):
@@ -1475,6 +1528,7 @@ class Handler(BaseHTTPRequestHandler):
         if p.path == "/lights/discover":
             devices = govee_lights.discover()
             with LIGHTS_LOCK:
+                LIGHTS_DISCOVERED.update(d["ip"] for d in devices)
                 selected = set(LIGHTS_SELECTED)
             for d in devices:
                 d["selected"] = d["ip"] in selected
@@ -1981,39 +2035,49 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"take": _get_take(jid, tid)})
             return
 
-        if p.path == "/comp":
+        if p.path == "/session_delete":
+            # There was no way to reclaim disk space at all before this —
+            # every take, raw phone video, and render just accumulated
+            # forever (sessions/ reached 7.8GB across 74 sessions with zero
+            # cleanup anywhere). This is the manual side of fixing that;
+            # do_render/do_combine_video separately clean up their own
+            # provably-dead intermediates automatically.
             body = self._read_body()
             jid = body.get("id")
-            head = _get_take(jid, body.get("head_take"))
-            tail = _get_take(jid, body.get("tail_take"))
-            if not head or not tail:
-                self._json(404, {"error": "unknown take"})
-                return
-            try:
-                punch_sec = float(body.get("punch_sec", 0))
-            except (TypeError, ValueError):
-                self._json(400, {"error": "punch_sec must be a number"})
+            if not jid or not re.fullmatch(r"[A-Za-z0-9]{6,32}", jid):
+                self._json(400, {"error": "invalid session id"})
                 return
             sdir = os.path.join(SESS_DIR, jid)
-            tid = uuid.uuid4().hex[:8]
-            fname = f"take_{tid}.wav"
-            out_path = os.path.join(sdir, fname)
-            try:
-                audio_fx.stitch_vocals(
-                    os.path.join(sdir, head["file"]),
-                    os.path.join(sdir, tail["file"]),
-                    out_path, punch_sec,
-                    crossfade_ms=float(body.get("crossfade_ms", 40)),
-                )
-            except Exception as e:
-                self._json(500, {"error": "Could not join those takes: " + str(e)[:300]})
+            if not os.path.isdir(sdir):
+                self._json(404, {"error": "unknown session"})
                 return
-            take = _add_take(
-                jid, file=fname, duration=_probe_duration(out_path), kind="comp",
-                punch_sec=punch_sec, source_take_ids=[head["id"], tail["id"]],
-                tid=tid,
-            )
-            self._json(200, {"take": take})
+            shutil.rmtree(sdir, ignore_errors=True)
+            with LOCK:
+                JOBS.pop(jid, None)
+            self._json(200, {"ok": True})
+            return
+
+        if p.path == "/sessions_delete":
+            # Bulk form of /session_delete — one confirm, one request,
+            # instead of the History page firing N sequential deletes for
+            # a multiselect action. Best-effort per id: one bad/missing id
+            # in the batch doesn't abort the rest.
+            body = self._read_body()
+            ids = [i for i in (body.get("ids") or []) if isinstance(i, str)]
+            deleted, failed = [], []
+            for jid in ids:
+                if not re.fullmatch(r"[A-Za-z0-9]{6,32}", jid):
+                    failed.append(jid)
+                    continue
+                sdir = os.path.join(SESS_DIR, jid)
+                if not os.path.isdir(sdir):
+                    failed.append(jid)
+                    continue
+                shutil.rmtree(sdir, ignore_errors=True)
+                with LOCK:
+                    JOBS.pop(jid, None)
+                deleted.append(jid)
+            self._json(200, {"ok": True, "deleted": deleted, "failed": failed})
             return
 
         if p.path == "/comp_multi":
@@ -2165,8 +2229,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if p.path == "/lights/select":
             body = self._read_body()
-            ips = [ip for ip in (body.get("ips") or []) if isinstance(ip, str)]
+            requested = [ip for ip in (body.get("ips") or []) if isinstance(ip, str)]
             with LIGHTS_LOCK:
+                ips = [ip for ip in requested if ip in LIGHTS_DISCOVERED]
                 LIGHTS_SELECTED.clear()
                 LIGHTS_SELECTED.update(ips)
             self._json(200, {"ok": True, "selected": ips})
@@ -2199,6 +2264,11 @@ class Handler(BaseHTTPRequestHandler):
             if not ip:
                 self._json(400, {"error": "missing ip"})
                 return
+            with LIGHTS_LOCK:
+                known = ip in LIGHTS_DISCOVERED
+            if not known:
+                self._json(403, {"error": "unknown device — run discover first"})
+                return
             govee_lights.turn(ip, True)
             govee_lights.set_color(ip, 0, 255, 120)
             govee_lights.set_brightness(ip, 80)
@@ -2209,7 +2279,10 @@ class Handler(BaseHTTPRequestHandler):
             body = self._read_body()
             with LIGHTS_LOCK:
                 targets = list(LIGHTS_SELECTED)
-            for ip in body.get("ips") or targets:
+                requested_ips = body.get("ips")
+                if requested_ips:
+                    targets = [ip for ip in requested_ips if isinstance(ip, str) and ip in LIGHTS_DISCOVERED]
+            for ip in targets:
                 govee_lights.turn(ip, False)
             self._json(200, {"ok": True})
             return

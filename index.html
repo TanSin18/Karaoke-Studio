@@ -218,6 +218,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
   /* transport */
   .transport{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+  .recPhoneChip{font-family:var(--mono);font-size:11px;margin-top:6px;color:var(--dim)}
+  .recPhoneChip.on{color:var(--ok)}
+  .recPhoneChip.off{color:var(--amber2)}
   .seekwrap{display:flex;align-items:center;gap:12px}
   #seek{flex:1}
   #seek:disabled{opacity:.4}
@@ -330,30 +333,30 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .queuebtn:hover{color:var(--amber)}
   .queuebtn.rm:hover{color:var(--rec)}
 
-  /* take history strip */
-  .takestrip{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 8px}
-  .takecard{flex:none;width:132px;background:var(--well);border:1px solid var(--edge);border-radius:10px;
-    padding:9px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
-  .takecard.active{border-color:var(--amber2);box-shadow:var(--glow-amber)}
-  .takecard.previewing{border-color:var(--pink2);box-shadow:var(--glow-pink)}
-  .takecard-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  /* take history strip — compact informative rows, not bare square cards:
+     kind + number, duration, pitch score, status, and whether it's the one
+     currently loaded in the Track Editor below, all in one scannable line. */
+  .takestrip{display:flex;flex-direction:column;gap:5px;padding:4px 2px 8px}
+  .takerow{display:flex;align-items:center;gap:10px;background:var(--well);border:1px solid var(--edge);
+    border-radius:8px;padding:7px 10px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .takerow:hover{border-color:var(--amber2)}
+  .takerow.active{border-color:var(--amber2);box-shadow:var(--glow-amber)}
   .takebadge{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
-    color:var(--dim);background:var(--well2);border-radius:4px;padding:2px 5px}
+    color:var(--dim);background:var(--well2);border-radius:4px;padding:2px 5px;flex:none}
   .takebadge.comp{color:var(--ok)}
   .takebadge.harmony{color:var(--amber)}
-  .takex{color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:2px}
-  .takex:hover{color:var(--rec)}
-  .takedur{font-family:var(--mono);font-size:11px;color:var(--muted)}
-  .takestatusrow{margin-top:5px;min-height:14px}
+  .takerow-dur{font-family:var(--mono);font-size:11px;color:var(--muted);flex:none}
   .takestatus{font-size:10px;font-family:var(--mono);text-decoration:none;display:inline-block}
   .takestatus.busy{color:var(--amber2);animation:takepulse 1.4s ease-in-out infinite}
   .takestatus.err{color:var(--rec)}
   .takestatus.ok{color:var(--ok)}
   .takestatus.ok:hover{text-decoration:underline}
+  .takerow-active{font-family:var(--mono);font-size:10px;color:var(--amber2);flex:none}
+  .takerow-spacer{flex:1}
+  .takex{color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:2px;flex:none;
+    background:none;border:none}
+  .takex:hover{color:var(--rec)}
   @keyframes takepulse{0%,100%{opacity:.55}50%{opacity:1}}
-  .comprow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;
-    background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:10px}
-  .comprow select{max-width:150px}
 
   /* track editor: vocal + karaoke waveforms on one shared, zoomable timeline */
   .trackeditor{margin-top:12px;background:var(--well);border:1px solid var(--edge);
@@ -390,8 +393,6 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .te-trimhandle.in{transform:translateX(-1px)}
   .te-trimhandle.out{transform:translateX(-13px)}
   .te-trimshade{position:absolute;top:0;bottom:0;background:rgba(0,0,0,.5);z-index:2;pointer-events:none}
-  .te-punchmarker{position:absolute;top:0;bottom:0;width:2px;background:var(--ok);z-index:4;
-    cursor:ew-resize;box-shadow:0 0 6px var(--ok)}
   .te-tracks{display:flex;flex-direction:column;gap:6px}
   .te-trackctl{display:flex;align-items:center;gap:8px}
   .te-tname{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
@@ -446,6 +447,60 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .rchan{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:5px;letter-spacing:.03em;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rcard.loading{opacity:.5;pointer-events:none}
+  .rcard{position:relative}
+  .rselchk{position:absolute;top:6px;left:6px;z-index:2;width:18px;height:18px;accent-color:var(--amber2)}
+
+  /* ---- History page: toolbar, filters, view modes, multiselect ---------- */
+  .histToolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+  .histToolbar input[type=text]{flex:1;min-width:160px}
+  .histToolbar select{flex:none}
+  .histChips{display:flex;flex-wrap:wrap;gap:6px}
+  .histChip{background:var(--well2);border:1px solid var(--edge);border-radius:14px;color:var(--muted);
+    font-family:var(--mono);font-size:11px;padding:5px 11px;cursor:pointer}
+  .histChip.on{background:var(--amber2);color:#1a1400;border-color:var(--amber2);font-weight:600}
+  .histViewToggle{display:flex;border:1px solid var(--edge);border-radius:8px;overflow:hidden;margin-left:auto}
+  .histViewToggle button{background:var(--well2);color:var(--muted);border:none;padding:6px 10px;
+    font-family:var(--mono);font-size:11px;cursor:pointer;border-right:1px solid var(--edge)}
+  .histViewToggle button:last-child{border-right:none}
+  .histViewToggle button.on{background:var(--amber2);color:#1a1400;font-weight:600}
+  .histSelectBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;
+    background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:8px 12px}
+  .histSelAll{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;
+    color:var(--muted);cursor:pointer}
+  #histSelSummary{font-family:var(--mono);font-size:11px;color:var(--amber2)}
+
+  /* compact list view (default) — the actual fix for "unnecessarily big
+     thumbnails": a small fixed-size thumb instead of a full-width 16:9 hero
+     image, everything on one dense row. */
+  .histList{display:flex;flex-direction:column;gap:1px;margin-top:14px}
+  .histDateHeader{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--dim);margin:14px 0 4px;padding-left:2px}
+  .histDateHeader:first-child{margin-top:0}
+  .hrow{display:flex;align-items:center;gap:10px;background:var(--well);border:1px solid var(--edge);
+    border-radius:8px;padding:7px 10px;cursor:pointer;transition:border-color .12s}
+  .hrow:hover{border-color:var(--amber2)}
+  .hrow.loading{opacity:.5;pointer-events:none}
+  .hrow input[type=checkbox]{width:16px;height:16px;accent-color:var(--amber2);flex:none}
+  .hrow-thumb{width:56px;height:32px;border-radius:4px;object-fit:cover;flex:none;background:var(--well2)}
+  .hrow-meta{flex:1;min-width:0}
+  .hrow-title{font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hrow-sub{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:2px;
+    display:flex;gap:8px;flex-wrap:wrap}
+  .hrow-badges{display:flex;gap:5px;flex:none}
+  .hrow-badge{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:4px;
+    background:var(--well2);color:var(--dim);white-space:nowrap}
+  .hrow-badge.video{color:var(--ok)} .hrow-badge.audio{color:var(--amber2)}
+  .hrow-badge.abandoned{color:var(--rec)}
+  .hrow-actions{display:flex;gap:4px;flex:none}
+
+  /* grouped-by-song view */
+  .histGroup{margin-top:10px;background:var(--well);border:1px solid var(--edge);border-radius:10px;overflow:hidden}
+  .histGroupHeader{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;
+    font-size:12.5px;color:var(--ink);background:var(--well2)}
+  .histGroupHeader img{width:40px;height:24px;object-fit:cover;border-radius:3px;flex:none}
+  .histGroupCount{font-family:var(--mono);font-size:10px;color:var(--dim);margin-left:auto}
+  .histGroupBody{padding:6px}
+  .histGroupBody .hrow{border-radius:6px}
   /* live pitch tuner */
   .tuner{background:var(--well);border:1px solid var(--edge);border-radius:12px;padding:14px;margin-top:12px;text-align:center}
   .tuner-note{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--dim);line-height:1;letter-spacing:.02em;transition:color .1s,text-shadow .1s}
@@ -537,6 +592,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .toast.ok{border-color:var(--ok);box-shadow:0 8px 24px rgba(0,0,0,.5),var(--glow-ok)}
   .toast.warn{border-color:var(--amber2);box-shadow:0 8px 24px rgba(0,0,0,.5),var(--glow-amber)}
   .toast.error{border-color:var(--rec);box-shadow:0 8px 24px rgba(0,0,0,.5),var(--glow-rec)}
+  .toast{display:flex;align-items:center;gap:10px;justify-content:space-between}
+  .toastAction{flex:none;background:var(--amber2);color:#1a1400;border:none;border-radius:6px;
+    padding:5px 10px;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer}
+  .toastAction:hover{filter:brightness(1.1)}
   @keyframes toastin{from{opacity:0;transform:translateX(12px)} to{opacity:1;transform:translateX(0)}}
 
   /* ---- gamified random-song picker overlay ---------------------------- */
@@ -648,7 +707,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       </div>
     </div>
     <button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme"><svg class="icon"><use href="#i-moon"/></svg></button>
-    <a class="btn pink" id="partyLink" href="/party" style="text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones"><svg class="icon"><use href="#i-sparkle"/></svg> Party mode</a>
+    <a class="btn ghost small" id="partyLink" href="/party" style="text-decoration:none" title="Turn this into a Jackbox-style karaoke party — TV screen + guests join from their phones"><svg class="icon"><use href="#i-sparkle"/></svg> Party mode</a>
   </header>
 
   <!-- Home: search/paste-link/upload flow, plus the recording session once
@@ -671,7 +730,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
   <!-- STEP 1: find a song -->
   <div class="card" id="step1Card" style="margin-bottom:16px">
-    <h2>1 · Find a song</h2>
+    <h2>Find a song</h2>
 
     <div class="tabs">
       <button class="tab on" id="tabSearch">Search YouTube</button>
@@ -750,7 +809,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <!-- LEFT: stage + transport + recorder -->
     <div>
       <div class="card step" id="stageCard">
-        <h2>2 · Sing along · record vocals</h2>
+        <h2>Sing along · record vocals</h2>
         <!-- stageWrap, not #stage itself, is the fullscreen target and the
              overlay's positioning parent: mountVideo()/showVideoFallback()
              both do $('stage').innerHTML=... wholesale (swapping between the
@@ -860,6 +919,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <button id="rec" class="btn rec" disabled title="Start recording (Space)">● Record</button>
           <button id="stop" class="btn" disabled title="Stop recording (Space)">■ Stop</button>
         </div>
+        <!-- whether THIS take will include phone video used to live only in
+             the sidebar's "phone camera sync" box, entirely outside this
+             tab — meaning you could be here about to hit Record with the
+             phone quietly disconnected and find out only after singing the
+             whole take. Mirrored here, right where the decision happens. -->
+        <div class="recPhoneChip" id="recPhoneChip"></div>
 
         <!-- pitch-STEADINESS score: aggregates the live tuner's in-tune/off-pitch
              judgments over the take into a fun, gamified score. This is NOT
@@ -906,38 +971,22 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
          a simple shared preview player + "Use this take" to promote them
          into the rich player above. -->
     <div class="card step" id="takesCard">
-      <h2>3 · Takes</h2>
+      <h2>Takes</h2>
       <div class="hint mt" id="noTakesHint">Record a take on the Record tab and it'll show up here.</div>
 
-      <!-- your recorded take: full play/pause/stop/seek, appears after recording -->
-      <div class="player" id="takePlayer" style="display:none"></div>
-
-      <!-- take history: every take you've kept, pick one (or a comp) to render -->
+      <!-- take history: every take you've kept, pick one (or a comp) to render.
+           No separate preview player here anymore — selecting a take loads it
+           straight into the Track Editor below, which is now the ONLY
+           playback surface in this tab (previously there were three: this
+           strip's own mini-player, a "rich player" with its own transport
+           and a redundant Vocal/Music mixer, and the Track Editor — all
+           three showing the same take at once). -->
       <div id="takeHistory" style="display:none;margin-top:12px">
         <div class="metlabel" style="display:flex;align-items:center">
-          <span>SAVED TAKES <span style="color:var(--dim)">— click one to use it for render</span></span>
+          <span>SAVED TAKES <span style="color:var(--dim)">— click one to load it into the editor below</span></span>
           <button id="undoDeleteBtn" class="ksmall" style="width:auto;padding:0 8px;margin-left:auto;display:none" title="Restore the take you just deleted">↺ Undo delete</button>
         </div>
-        <!-- shared preview: one simple play/pause/stop/seek transport for
-             whichever saved take is selected, instead of a bare fire-and-
-             forget "Play" button per card with no other controls. -->
-        <div class="takePreviewBar hidden" id="takePreviewBar">
-          <button class="btn small" id="tpbRewind" title="Back to start"><svg class="icon"><use href="#i-rewind"/></svg></button>
-          <button class="btn small amber" id="tpbPlayPause" title="Play/pause"><svg class="icon"><use href="#i-play"/></svg></button>
-          <button class="btn small" id="tpbStop" title="Stop"><svg class="icon"><use href="#i-stop"/></svg></button>
-          <input type="range" id="tpbSeek" min="0" max="1000" value="0" step="1">
-          <span class="tpbTime" id="tpbTime">0:00 / 0:00</span>
-          <button class="btn small ghost" id="tpbUseTake" title="Load into the rich player above with the mixer and effects preview">Use this take</button>
-        </div>
         <div class="takestrip" id="takeStrip"></div>
-        <div class="comprow" id="compRow" style="display:none">
-          <select id="compHead"></select>
-          <span class="klabel">JOIN AT</span>
-          <input type="text" id="compPunch" value="0" style="width:56px;padding:6px 8px" title="Seconds into the head take where the tail take should take over">
-          <span class="klabel">s WITH</span>
-          <select id="compTail"></select>
-          <button class="btn" id="compBtn">↳ Join takes</button>
-        </div>
       </div>
       <!-- Track editor: vocal + karaoke waveforms on one shared, zoomable
            timeline, with per-track faders/mute/solo, drag-to-trim, a
@@ -959,6 +1008,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <button class="btn small amber" id="tePlayBtn" title="Play/Pause (Space, while hovering the editor)"><svg class="icon"><use href="#i-play"/></svg></button>
             <button class="btn small" id="teStopBtn" title="Stop">■</button>
             <span class="te-time" id="teTime">0:00 / 0:00</span>
+            <span class="te-time" id="teTrimReadout" title="This is the exact export range — same numbers as the Export tab's trim fields, updated live as you drag"></span>
             <span style="flex:1"></span>
             <label class="te-chk" title="Show every take as its own lane, for region-based comping"><input type="checkbox" id="teCompareMode"> Compare takes</label>
             <button class="btn small ghost" id="teZoomOut" title="Zoom out">−</button>
@@ -979,7 +1029,6 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
               <div class="te-markerrow" id="teMarkerRow"></div>
               <div class="te-trimhandle in" id="teTrimIn" title="Drag to set trim start"><div class="te-handlegrip">◢</div></div>
               <div class="te-trimhandle out" id="teTrimOut" title="Drag to set trim end"><div class="te-handlegrip">◣</div></div>
-              <div class="te-punchmarker hidden" id="tePunchMarker" title="Drag to move the comp join point"></div>
               <div class="te-playhead" id="tePlayhead"></div>
             </div>
           </div>
@@ -1010,6 +1059,17 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <button class="btn small" id="teClearSegments">Clear regions</button>
             <button class="btn" id="teBuildCompBtn">↳ Build comp from regions</button>
           </div>
+          <!-- re-record/sing-along used to live in a separate "rich player"
+               block above this whole editor, punching in from ITS OWN
+               hidden transport position. Now there's one timeline and one
+               playhead — these act on exactly the position you're looking
+               at here. -->
+          <div class="takemix" style="margin-top:10px">
+            <span class="monlbl">Re-record</span>
+            <button class="btn small" id="teRecFromHere" title="Keep the take up to the playhead, re-sing from there">● From playhead</button>
+            <button class="btn small amber" id="teSingAlong" title="Play this take and sing along; it auto-records when the take runs out">▶ Sing-along + continue</button>
+            <span class="tp-note" id="teRecNote"></span>
+          </div>
           <div class="te-hint">Click the timeline to seek · drag the ◢◣ handles to trim · drag the vertical join line to move the comp point · I/O set trim at playhead, Space play/pause, Z/⇧Z undo/redo (while hovering here)</div>
           </div>
       </div>
@@ -1018,7 +1078,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <!-- RIGHT: fx rack + mixer + export -->
     <div>
       <div class="card step" id="fxCard">
-        <h2>4 · Voice FX rack
+        <h2>Voice FX rack
           <span style="margin-left:auto;display:flex;gap:6px">
             <button id="fxUndoBtn" class="ksmall" style="width:auto;padding:0 8px" title="Undo last FX change (Ctrl/Cmd+Z)" disabled>↺ Undo</button>
             <button id="fxRedoBtn" class="ksmall" style="width:auto;padding:0 8px" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↻ Redo</button>
@@ -1074,7 +1134,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       </div>
 
       <div class="card step mt" id="duetCard" style="margin-top:16px">
-        <h2>5 · Duet / harmony</h2>
+        <h2>Duet / harmony</h2>
         <div class="status" id="duetHint">Keep at least one take (see the Takes tab) to sing a harmony against it.</div>
         <div class="row mt" id="duetPicker" style="display:none">
           <select id="duetLead" style="flex:1"></select>
@@ -1085,7 +1145,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       </div>
 
       <div class="card step mt" id="mixCard" style="margin-top:16px">
-        <h2>6 · Mix &amp; export</h2>
+        <h2>Mix &amp; export</h2>
         <div class="mixrow">
           <div class="fxname">Vocal</div>
           <input type="range" id="vgain" min="-12" max="12" value="0">
@@ -1136,6 +1196,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           </select>
           <button id="render" class="btn amber wide" disabled>Render final song</button>
         </div>
+        <div class="hint" style="margin-top:6px">Rendering re-runs pitch correction and the full effects
+          chain — it's not instant. If you're comparing takes, Keep a few in the
+          Takes tab first and pick your favorite, rather than rendering every one.</div>
         <div class="bar" id="renderbar" style="display:none"><div class="fill" id="renderfill"></div></div>
         <div class="status mt" id="renderstatus"></div>
         <div id="result"></div>
@@ -1239,7 +1302,42 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
        status. -->
   <div class="hidden" id="historyPage">
     <div class="card">
-      <h2><svg class="icon"><use href="#i-clock"/></svg> History</h2>
+      <h2><svg class="icon"><use href="#i-clock"/></svg> History
+        <span id="histCount" style="font-weight:400;color:var(--dim);font-size:13px;margin-left:6px"></span>
+      </h2>
+
+      <div class="histToolbar">
+        <input type="text" id="histSearch" placeholder="Search by title…">
+        <select id="histSort">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="title">Title A–Z</option>
+          <option value="duration">Longest first</option>
+          <option value="size">Largest first</option>
+        </select>
+        <div class="histChips" id="histFilterChips">
+          <button class="histChip on" data-filter="all">All</button>
+          <button class="histChip" data-filter="video">Has video</button>
+          <button class="histChip" data-filter="audio">Audio only</button>
+          <button class="histChip" data-filter="none">No output</button>
+          <button class="histChip" data-filter="abandoned">Abandoned</button>
+        </div>
+        <div class="histViewToggle" id="histViewToggle">
+          <button class="on" data-view="list" title="Compact list">☰ List</button>
+          <button data-view="grid" title="Thumbnail grid">▦ Grid</button>
+          <button data-view="grouped" title="Grouped by song">≡ By song</button>
+        </div>
+      </div>
+
+      <div class="histSelectBar" id="histSelectBar">
+        <label class="histSelAll"><input type="checkbox" id="histSelectAll"> Select all</label>
+        <span id="histSelSummary" class="hidden"></span>
+        <span style="flex:1"></span>
+        <button class="btn small ghost" id="histSelAbandoned" title="Select every session with a backing track but no takes ever recorded">Select abandoned</button>
+        <button class="btn small" id="histClearSel" style="display:none">Clear selection</button>
+        <button class="btn small amber" id="histDeleteSel" style="display:none" title="Delete every selected session — cannot be undone">🗑 Delete selected</button>
+      </div>
+
       <div class="results stagger-in" id="recentResults"></div>
       <div class="hint" id="recentEmpty">No recent sessions for this profile yet.</div>
     </div>
@@ -1302,16 +1400,26 @@ syncStickyOffsets();
 
 // ---- toasts: small reusable status/error popups (replaces scattered inline
 // error text for anything transient) ----
-function toast(msg, kind='info', ms=4000){
+// action: optional {label, onClick} — renders a button in the toast itself,
+// e.g. so "take saved" can offer a one-click way to actually render it
+// instead of leaving you to find your own way to the Export tab.
+function toast(msg, kind='info', ms=4000, action=null){
   const stack=$('toasts'); if(!stack) return {update(){},dismiss(){}};
   const el=document.createElement('div');
   el.className='toast '+kind;
-  el.textContent=msg;
+  const msgSpan=document.createElement('span'); msgSpan.textContent=msg;
+  el.appendChild(msgSpan);
+  if(action){
+    const btn=document.createElement('button');
+    btn.type='button'; btn.className='toastAction'; btn.textContent=action.label;
+    btn.addEventListener('click',()=>{ action.onClick(); dismiss(); });
+    el.appendChild(btn);
+  }
   stack.appendChild(el);
   let timer = ms>0 ? setTimeout(()=>dismiss(), ms) : null;
   function dismiss(){ if(timer) clearTimeout(timer); el.remove(); }
   function update(newMsg, newKind){
-    el.textContent=newMsg;
+    msgSpan.textContent=newMsg;
     if(newKind){ el.className='toast '+newKind; kind=newKind; }
     if(timer) clearTimeout(timer);
     timer = ms>0 ? setTimeout(()=>dismiss(), ms) : null;
@@ -1324,7 +1432,7 @@ let mediaStream=null, recorder=null, recChunks=[], audioCtx=null;
 let backingAudio=null, recording=false, startT=0, dur=0, rafMeter=null;
 // declared early so applyLiveFx() (called during init via bindVal) never hits a
 // temporal-dead-zone error that would halt the whole top-level script.
-let takeAudio=null, takePlayerUI=null, takeGraph=null, monitorGraph=null;
+let monitorGraph=null;
 
 // ---- FX toggle state ----
 // Pitch correction defaults OFF: it snaps to a chosen key/scale (C major
@@ -1545,6 +1653,7 @@ async function applyProChainValues(overrides){
     $('pc_'+f.key+'v').textContent=fmtProVal(v,f);
   }));
   liveFxIfPlaying();
+  saveFxPrefs();
 }
 $('proReset').addEventListener('click', ()=>applyProChainValues(null));
 
@@ -1613,14 +1722,47 @@ function applyFxUI(s){
   FX_SNAPSHOT_IDS.forEach(id=>$(id).dispatchEvent(new Event('input')));  // refresh .val labels
   liveFxIfPlaying();
 }
-function pushFxHistory(){ fxHistory.push(snapshotFxUI()); }
+function pushFxHistory(){ fxHistory.push(snapshotFxUI()); saveFxPrefs(); }
 function refreshHistoryBtns(){
   $('fxUndoBtn').disabled = fxHistory.past.length<2;
   $('fxRedoBtn').disabled = !fxHistory.future.length;
 }
-$('fxUndoBtn').addEventListener('click',()=>{ const s=fxHistory.undo(); if(s) applyFxUI(s); });
-$('fxRedoBtn').addEventListener('click',()=>{ const s=fxHistory.redo(); if(s) applyFxUI(s); });
+$('fxUndoBtn').addEventListener('click',()=>{ const s=fxHistory.undo(); if(s) applyFxUI(s); saveFxPrefs(); });
+$('fxRedoBtn').addEventListener('click',()=>{ const s=fxHistory.redo(); if(s) applyFxUI(s); saveFxPrefs(); });
 FX_SNAPSHOT_IDS.forEach(id=>$(id).addEventListener('change',pushFxHistory));
+
+// Persist the whole FX rack (same reasoning, same fix shape as the vocal-
+// timing calibration bug: this used to be pure in-memory JS state, so a
+// reload or the server restarts this session already required for other
+// fixes silently wiped out however long you'd spent dialing in a vocal
+// chain, back to defaults, with zero warning it was about to happen.
+function saveFxPrefs(){
+  try{
+    localStorage.setItem('kstudio.fxOn', JSON.stringify(fxOn));
+    localStorage.setItem('kstudio.proChainValues', JSON.stringify(PRO_CHAIN_VALUES));
+    localStorage.setItem('kstudio.pitchFx', JSON.stringify(
+      {key:$('pkey').value, scale:$('pscale').value, strength:$('pstr').value}));
+    localStorage.setItem('kstudio.denoise', $('denoise').value);
+  }catch(e){}
+}
+async function loadFxPrefs(){
+  try{
+    const savedOn=localStorage.getItem('kstudio.fxOn');
+    if(savedOn) Object.assign(fxOn, JSON.parse(savedOn));
+    const savedPitch=localStorage.getItem('kstudio.pitchFx');
+    if(savedPitch){
+      const p=JSON.parse(savedPitch);
+      if(p.key) $('pkey').value=p.key;
+      if(p.scale) $('pscale').value=p.scale;
+      if(p.strength!=null){ $('pstr').value=p.strength; $('pstrv').textContent=p.strength+'%'; }
+    }
+    const savedDenoise=localStorage.getItem('kstudio.denoise');
+    if(savedDenoise!=null){ $('denoise').value=savedDenoise; $('denoisev').textContent=savedDenoise+'%'; }
+    const savedPro=localStorage.getItem('kstudio.proChainValues');
+    if(savedPro) await applyProChainValues(JSON.parse(savedPro));
+  }catch(e){}
+  refreshTogs();
+}
 
 // live-apply FX to the take while it's playing back (safe no-op otherwise)
 function liveFxIfPlaying(){ if(typeof applyLiveFx==='function') applyLiveFx(); }
@@ -1633,7 +1775,13 @@ bindVal('pstr',v=>v+'%'); bindVal('denoise',v=>v+'%');
 bindVal('vgain',v=>(v>=0?'+':'')+v+' dB'); bindVal('mgain',v=>(v>=0?'+':'')+v+' dB');
 bindVal('hgain',v=>(v>=0?'+':'')+v+' dB');
 refreshTogs();
-fxHistory.push(snapshotFxUI());   // seed undo history with the starting FX state
+// Restore any FX rack state saved from a previous session BEFORE seeding
+// undo history, so the seeded state (and everything Ctrl+Z can ever get
+// back to) reflects what you last tuned, not hardcoded defaults.
+(async()=>{
+  await loadFxPrefs();
+  fxHistory.push(snapshotFxUI());
+})();
 
 // ---- STEP 1: search / load track ----
 $('load').addEventListener('click', ()=>loadTrack());
@@ -1998,40 +2146,254 @@ async function removeFromLibraryById(video_id){
 }
 
 // ---- History: profile-scoped session history, resume + saved outputs -----
+// Search/sort/filter/multiselect + three view modes (compact list, thumbnail
+// grid, grouped-by-song) over one cached session list — everything here
+// operates on `historySessions` client-side, so switching sort/filter/view
+// is instant and never re-hits the server.
+let historySessions=[];
+let historyView='list', historySort='newest', historyFilter='all', historySearch='';
+let historySelected=new Set();
+try{ const v=localStorage.getItem('kstudio.historyView'); if(v) historyView=v; }catch(e){}
+
 async function refreshRecentSessions(){
   let sessions=[];
-  // History shows a lot more than the old 8-item "resume a recent song"
-  // drawer needed — it's a dedicated page now, not a compact panel.
-  try{ sessions=(await(await fetch('/sessions?profile='+encodeURIComponent(activeProfile)+'&limit=40')).json()).sessions||[]; }
+  // Bumped from 40 to 200 (the server's own cap) now that multiselect/bulk-
+  // delete exist — those are exactly for cleaning up everything, not just
+  // the most recent handful.
+  try{ sessions=(await(await fetch('/sessions?profile='+encodeURIComponent(activeProfile)+'&limit=200')).json()).sessions||[]; }
   catch(e){}
-  $('recentEmpty').style.display=sessions.length?'none':'';
-  const box=$('recentResults'); box.innerHTML='';
-  sessions.forEach(s=>{
+  historySessions=sessions;
+  historySelected.clear();
+  document.querySelectorAll('#histViewToggle button').forEach(b=>b.classList.toggle('on', b.dataset.view===historyView));
+  renderHistory();
+}
+
+function fmtBytes(n){
+  if(!n) return '0 MB';
+  const mb=n/1048576;
+  return mb<1000 ? mb.toFixed(mb<10?1:0)+' MB' : (mb/1024).toFixed(2)+' GB';
+}
+function fmtHistDate(ts){
+  if(!ts) return '';
+  return new Date(ts*1000).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+}
+function histDateGroup(ts){
+  if(!ts) return 'Unknown date';
+  const startOfDay=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();
+  const diffDays=Math.round((startOfDay(new Date())-startOfDay(new Date(ts*1000)))/86400000);
+  if(diffDays<=0) return 'Today';
+  if(diffDays===1) return 'Yesterday';
+  if(diffDays<7) return 'This week';
+  if(diffDays<30) return 'This month';
+  return 'Older';
+}
+
+function getFilteredSortedSessions(){
+  let list=historySessions.slice();
+  const q=historySearch.trim().toLowerCase();
+  if(q) list=list.filter(s=>(s.title||'').toLowerCase().includes(q));
+  if(historyFilter==='video') list=list.filter(s=>s.has_video);
+  else if(historyFilter==='audio') list=list.filter(s=>s.has_audio && !s.has_video);
+  else if(historyFilter==='none') list=list.filter(s=>!s.has_audio && !s.has_video && !s.abandoned);
+  else if(historyFilter==='abandoned') list=list.filter(s=>s.abandoned);
+  const cmp={
+    newest:(a,b)=>(b.created_at||0)-(a.created_at||0),
+    oldest:(a,b)=>(a.created_at||0)-(b.created_at||0),
+    title:(a,b)=>(a.title||'').localeCompare(b.title||''),
+    duration:(a,b)=>(b.duration||0)-(a.duration||0),
+    size:(a,b)=>(b.size_bytes||0)-(a.size_bytes||0),
+  }[historySort];
+  list.sort(cmp);
+  return list;
+}
+
+function renderHistory(){
+  const list=getFilteredSortedSessions();
+  $('recentEmpty').style.display=list.length?'none':'';
+  $('histCount').textContent=historySessions.length?('('+list.length+' of '+historySessions.length+')'):'';
+  const box=$('recentResults');
+  box.innerHTML='';
+  box.className=historyView==='grid' ? 'results stagger-in' : 'histList stagger-in';
+  if(historyView==='grid') renderHistoryGrid(box, list);
+  else if(historyView==='grouped') renderHistoryGrouped(box, list);
+  else renderHistoryList(box, list);
+  updateSelectionUI();
+}
+
+function renderHistoryList(box, list){
+  let lastGroup=null;
+  list.forEach(s=>{
+    const g=histDateGroup(s.created_at);
+    if(g!==lastGroup){
+      const h=document.createElement('div'); h.className='histDateHeader'; h.textContent=g;
+      box.appendChild(h); lastGroup=g;
+    }
+    box.appendChild(buildHistoryRow(s));
+  });
+}
+function historyBadges(s){
+  return (s.has_video?'<span class="hrow-badge video">VIDEO</span>':'')+
+    (s.has_audio?'<span class="hrow-badge audio">AUDIO</span>':'')+
+    (s.abandoned?'<span class="hrow-badge abandoned">ABANDONED</span>':'');
+}
+function historyDlLinks(s){
+  return (s.has_audio?'<a class="btn small ghost" href="/final?id='+encodeURIComponent(s.id)+'" download onclick="event.stopPropagation()" title="Download audio"><svg class="icon"><use href="#i-download"/></svg></a>':'')+
+    (s.has_video?'<a class="btn small ghost" href="/final_video?id='+encodeURIComponent(s.id)+'" download onclick="event.stopPropagation()" title="Download video"><svg class="icon"><use href="#i-download"/></svg></a>':'');
+}
+function buildHistoryRow(s){
+  const row=document.createElement('div'); row.className='hrow';
+  row.innerHTML=
+    '<input type="checkbox" class="histRowChk">'+
+    (s.thumb?'<img class="hrow-thumb" loading="lazy" src="'+s.thumb+'" alt="">':'<div class="hrow-thumb"></div>')+
+    '<div class="hrow-meta">'+
+      '<div class="hrow-title">'+escapeHtml(s.title)+'</div>'+
+      '<div class="hrow-sub">'+
+        (s.duration!=null?'<span>'+fmt(s.duration)+'</span>':'')+
+        '<span>'+fmtHistDate(s.created_at)+'</span>'+
+        '<span>'+s.take_count+' take'+(s.take_count===1?'':'s')+'</span>'+
+        '<span>'+fmtBytes(s.size_bytes)+'</span>'+
+      '</div>'+
+    '</div>'+
+    '<div class="hrow-badges">'+historyBadges(s)+'</div>'+
+    '<div class="hrow-actions">'+historyDlLinks(s)+
+      '<button class="btn small ghost hrowDelete" title="Delete this session (frees its disk space — cannot be undone)">✕</button>'+
+    '</div>';
+  wireHistoryItemEvents(row, s, '.histRowChk', '.hrowDelete');
+  return row;
+}
+function renderHistoryGrid(box, list){
+  list.forEach(s=>{
     const card=document.createElement('div'); card.className='rcard';
-    const dur=(s.duration!=null)?fmt(s.duration):'';
-    // finished outputs are detected on disk server-side (see
-    // _session_outputs in studio.py) so these links stay valid even after
-    // a server restart, not just within the run that rendered them.
-    const outputs=(s.has_audio||s.has_video)?
-      '<div class="row" style="gap:6px;margin-top:6px">'+
-        (s.has_audio?'<a class="btn small ghost" href="/final?id='+encodeURIComponent(s.id)+'" download onclick="event.stopPropagation()"><svg class="icon"><use href="#i-download"/></svg> Audio</a>':'')+
-        (s.has_video?'<a class="btn small ghost" href="/final_video?id='+encodeURIComponent(s.id)+'" download onclick="event.stopPropagation()"><svg class="icon"><use href="#i-download"/></svg> Video</a>':'')+
-      '</div>' : '';
+    const outputs=(s.has_audio||s.has_video)?('<div class="row" style="gap:6px;margin-top:6px">'+historyDlLinks(s)+'</div>'):'';
     card.innerHTML=
       '<div style="position:relative">'+
+        '<input type="checkbox" class="rselchk">'+
         (s.thumb?'<img class="rthumb" loading="lazy" src="'+s.thumb+'" alt="">':'<div class="rthumb"></div>')+
-        (dur?'<span class="rdur">'+dur+'</span>':'')+
+        (s.duration!=null?'<span class="rdur">'+fmt(s.duration)+'</span>':'')+
+        '<button class="rremove" title="Delete this session (frees its disk space — cannot be undone)">✕</button>'+
       '</div>'+
-      '<div class="rmeta"><div class="rtitle">'+escapeHtml(s.title)+'</div>'+outputs+'</div>';
-    card.addEventListener('click',()=>{
-      document.querySelectorAll('.rcard').forEach(c=>c.classList.remove('loading'));
-      card.classList.add('loading');
-      switchAppPage('home');
-      resumeSession(s.id);
-    });
+      '<div class="rmeta"><div class="rtitle">'+escapeHtml(s.title)+'</div>'+
+        '<div class="rchan">'+fmtHistDate(s.created_at)+' · '+s.take_count+' take'+(s.take_count===1?'':'s')+' · '+fmtBytes(s.size_bytes)+'</div>'+
+        outputs+
+      '</div>';
+    wireHistoryItemEvents(card, s, '.rselchk', '.rremove');
     box.appendChild(card);
   });
 }
+function renderHistoryGrouped(box, list){
+  const groups=new Map();
+  list.forEach(s=>{
+    const key=s.video_id || ('title:'+(s.title||''));
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  });
+  const ordered=[...groups.values()].sort((a,b)=>
+    Math.max(...b.map(s=>s.created_at||0)) - Math.max(...a.map(s=>s.created_at||0)));
+  ordered.forEach(group=>{
+    const first=group[0];
+    const g=document.createElement('div'); g.className='histGroup';
+    const header=document.createElement('div'); header.className='histGroupHeader';
+    header.innerHTML=
+      (first.thumb?'<img src="'+first.thumb+'" alt="">':'')+
+      '<span>'+escapeHtml(first.title)+'</span>'+
+      '<span class="histGroupCount">'+group.length+' session'+(group.length===1?'':'s')+'</span>';
+    const bodyEl=document.createElement('div'); bodyEl.className='histGroupBody'+(group.length>1?' hidden':'');
+    group.forEach(s=>bodyEl.appendChild(buildHistoryRow(s)));
+    header.addEventListener('click',()=>bodyEl.classList.toggle('hidden'));
+    g.appendChild(header); g.appendChild(bodyEl);
+    box.appendChild(g);
+  });
+}
+
+function wireHistoryItemEvents(el, s, chkSel, delSel){
+  el.addEventListener('click', e=>{
+    if(e.target.closest('input,button,a')) return;
+    document.querySelectorAll('.hrow.loading,.rcard.loading').forEach(c=>c.classList.remove('loading'));
+    el.classList.add('loading');
+    switchAppPage('home');
+    resumeSession(s.id);
+  });
+  const chk=el.querySelector(chkSel);
+  chk.checked=historySelected.has(s.id);
+  chk.addEventListener('click', e=>e.stopPropagation());
+  chk.addEventListener('change', ()=>{
+    if(chk.checked) historySelected.add(s.id); else historySelected.delete(s.id);
+    updateSelectionUI();
+  });
+  el.querySelector(delSel).addEventListener('click', async e=>{
+    e.stopPropagation();
+    if(!confirm('Delete "'+s.title+'" permanently? This removes all its takes, renders, and video, and can\'t be undone.')) return;
+    try{
+      const r=await fetch('/session_delete',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id:s.id})});
+      if(!r.ok){ toast('Could not delete that session.','error'); return; }
+      historySessions=historySessions.filter(x=>x.id!==s.id);
+      historySelected.delete(s.id);
+      renderHistory();
+      toast('Session deleted.','ok',2000);
+    }catch(err){ toast('Could not reach server.','error'); }
+  });
+}
+
+function updateSelectionUI(){
+  const n=historySelected.size;
+  const totalBytes=historySessions.filter(s=>historySelected.has(s.id)).reduce((a,s)=>a+(s.size_bytes||0),0);
+  $('histSelSummary').classList.toggle('hidden', n===0);
+  $('histSelSummary').textContent=n?(n+' selected · '+fmtBytes(totalBytes)):'';
+  $('histClearSel').style.display=n?'':'none';
+  $('histDeleteSel').style.display=n?'':'none';
+  const visibleIds=getFilteredSortedSessions().map(s=>s.id);
+  $('histSelectAll').checked=visibleIds.length>0 && visibleIds.every(id=>historySelected.has(id));
+}
+$('histSearch').addEventListener('input',()=>{ historySearch=$('histSearch').value; renderHistory(); });
+$('histSort').addEventListener('change',()=>{ historySort=$('histSort').value; renderHistory(); });
+document.querySelectorAll('#histFilterChips .histChip').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('#histFilterChips .histChip').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    historyFilter=btn.dataset.filter;
+    renderHistory();
+  });
+});
+document.querySelectorAll('#histViewToggle button').forEach(btn=>{
+  btn.classList.toggle('on', btn.dataset.view===historyView);
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('#histViewToggle button').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    historyView=btn.dataset.view;
+    try{ localStorage.setItem('kstudio.historyView', historyView); }catch(e){}
+    renderHistory();
+  });
+});
+$('histSelectAll').addEventListener('change',()=>{
+  const ids=getFilteredSortedSessions().map(s=>s.id);
+  if($('histSelectAll').checked) ids.forEach(id=>historySelected.add(id));
+  else ids.forEach(id=>historySelected.delete(id));
+  renderHistory();
+});
+$('histSelAbandoned').addEventListener('click',()=>{
+  historySessions.filter(s=>s.abandoned).forEach(s=>historySelected.add(s.id));
+  renderHistory();
+});
+$('histClearSel').addEventListener('click',()=>{ historySelected.clear(); renderHistory(); });
+$('histDeleteSel').addEventListener('click', async()=>{
+  const ids=[...historySelected];
+  if(!ids.length) return;
+  const totalBytes=historySessions.filter(s=>ids.includes(s.id)).reduce((a,s)=>a+(s.size_bytes||0),0);
+  if(!confirm('Delete '+ids.length+' session'+(ids.length===1?'':'s')+' ('+fmtBytes(totalBytes)+') permanently? This cannot be undone.')) return;
+  $('histDeleteSel').disabled=true;
+  try{
+    const r=await fetch('/sessions_delete',{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids})});
+    const d=await r.json();
+    if(!r.ok){ toast('Could not delete sessions.','error'); return; }
+    historySessions=historySessions.filter(s=>!d.deleted.includes(s.id));
+    historySelected.clear();
+    renderHistory();
+    toast(d.deleted.length+' session'+(d.deleted.length===1?'':'s')+' deleted.'+(d.failed.length?(' '+d.failed.length+' failed.'):''),'ok',3000);
+  }catch(e){ toast('Could not reach server.','error'); }
+  finally{ $('histDeleteSel').disabled=false; }
+});
+
 function resumeSession(sid){
   SID=sid;
   $('loaderr').textContent='';
@@ -2040,12 +2402,12 @@ function resumeSession(sid){
   fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
     if(j && (j.status==='ready'||j.stage==='ready')){ onReady(j); }
     else{
-      document.querySelectorAll('.rcard.loading,.libRow.loading').forEach(c=>c.classList.remove('loading'));
+      document.querySelectorAll('.rcard.loading,.libRow.loading,.hrow.loading').forEach(c=>c.classList.remove('loading'));
       $('loadbar').style.display='none';
       $('loaderr').textContent='That session is no longer available.';
     }
   }).catch(()=>{
-    document.querySelectorAll('.rcard.loading,.libRow.loading').forEach(c=>c.classList.remove('loading'));
+    document.querySelectorAll('.rcard.loading,.libRow.loading,.hrow.loading').forEach(c=>c.classList.remove('loading'));
     $('loadbar').style.display='none';
     $('loaderr').textContent='Could not reach the local server.';
   });
@@ -2153,10 +2515,17 @@ function resetForNewSong(){
   takes=[]; activeTakeId=null; activeHarmonyTakeId=null; lastDeletedTakeId=null;
   keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
   $('undoDeleteBtn').style.display='none';
-  $('takePlayer').innerHTML=''; $('takePlayer').style.display='none';
   $('takeHistory').style.display='none';
   $('noTakesHint').style.display='';
-  stopSavedTakePreview(); $('takePreviewBar').classList.add('hidden'); takePreviewTakeId=null;
+  // The Track Editor caches decoded buffers by take id (TE.vocalBuffers) and
+  // the karaoke buffer for whatever song was previously loaded — without
+  // clearing these, switching to a new song could show stale waveforms/audio
+  // for a moment, or worse, mix audio from the wrong song if a take id ever
+  // collided. _zoomInitialized resets too so the new song's (likely
+  // different-length) timeline gets its own auto-fit zoom.
+  teStopPlayback();
+  TE.karaokeBuffer=null; TE.vocalBuffers={}; TE.duration=0; TE.playhead=0;
+  TE.trimStart=0; TE.trimEnd=null; TE.segments=[]; TE.markers=[]; TE._zoomInitialized=false;
   $('result').innerHTML=''; $('rendererr').textContent='';
 }
 function playNext(){
@@ -2366,15 +2735,12 @@ function mountVideo(vid){
 function onVideoState(e){
   if(!backingAudio) return;
   const st=e.data;
-  // During take playback (`previewing`), the video is only running for
-  // visual lyrics sync — startTakePlayback() calls ytPlayer.playVideo() for
-  // that alone. Audio is owned entirely by the sample-accurate vSrc/mSrc
-  // AudioBufferSourceNodes it builds. Without this guard, that playVideo()
-  // call fires this same handler, which would start the OLD backingAudio
-  // <audio> element playing too — a second, unsynced copy of the backing
-  // track running alongside mSrc for the whole take: the "both tracks
-  // playing at once" bug. Take playback's own start/pause/stop functions
-  // are the only things allowed to touch backingAudio while previewing.
+  // `previewing` is permanently false now (see its declaration) — it used
+  // to guard against the old rich-player's sample-accurate take playback
+  // fighting with backingAudio over which one drives the YouTube video.
+  // The Track Editor's playback never touches ytPlayer/backingAudio at all,
+  // so there's nothing left for this guard to actually prevent; kept as a
+  // no-op rather than removed, in case a future feature needs it again.
   if(previewing) return;
   if(st===YT.PlayerState.PLAYING){
     // match audio to video and play
@@ -2876,7 +3242,6 @@ $('keepBtn').addEventListener('click',()=>{ $('stopChoice').style.display='none'
 $('redoBtn').addEventListener('click',()=>{
   keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
   pendingContinueAt=null; $('stopChoice').style.display='none';
-  $('takePlayer').style.display='none';
   $('renderstatus').textContent='Cleared. Record again from the start.';
   startRec();
 });
@@ -2886,7 +3251,7 @@ $('redoBtn').addEventListener('click',()=>{
 // instead of the old model where only the single most recent take existed.
 // `activeTakeId` (if set) is rendered by reference (take_id) instead of
 // re-uploading inline audio — see doRender().
-let takes=[], activeTakeId=null, takePreviewAudio=null, isPreviewingSavedTake=false;
+let takes=[], activeTakeId=null;
 
 async function loadTakes(){
   if(!SID) return;
@@ -2909,7 +3274,16 @@ async function saveCurrentTakeToHistory(kind){
   takes.push(d.take);
   activeTakeId=d.take.id;
   renderTakeStrip();
-  toast('Take saved — see it in the Takes tab.','ok',2500);
+  // The "happy path" journey used to be: Keep -> switch to Takes tab ->
+  // switch to Effects tab -> switch to Export tab -> hit Render — four
+  // tab hops for the simplest possible single-take case. This collapses
+  // that into one click for anyone who just wants this take rendered,
+  // while changing nothing for anyone who'd rather record more takes
+  // first (the toast just times out and does nothing).
+  toast('Take saved.', 'ok', 6000, {label:'Render now →', onClick:()=>{
+    switchSessionTab('mixCard');
+    doRender();
+  }});
 }
 
 function selectTake(tid){ activeTakeId=tid; renderTakeStrip(); }
@@ -2937,75 +3311,6 @@ $('undoDeleteBtn').addEventListener('click', async()=>{
   lastDeletedTakeId=null; $('undoDeleteBtn').style.display='none';
   renderTakeStrip();
   toast('Take restored.','ok',2000);
-});
-
-// ---- shared saved-take preview bar: ONE real <audio> element with real
-// play/pause/stop/rewind(=replay) controls, shared by every take card —
-// selecting a different card just repoints this element's src instead of
-// spawning a new overlapping audio source per click. ----------------------
-let takePreviewTakeId=null;
-function ensureTakePreviewAudio(){
-  if(takePreviewAudio) return takePreviewAudio;
-  takePreviewAudio=new Audio();
-  takePreviewAudio.addEventListener('timeupdate', paintTakePreviewBar);
-  takePreviewAudio.addEventListener('loadedmetadata', paintTakePreviewBar);
-  takePreviewAudio.addEventListener('ended', ()=>setTakePreviewPlaying(false));
-  return takePreviewAudio;
-}
-function setTakePreviewPlaying(playing){
-  $('tpbPlayPause').innerHTML='<svg class="icon"><use href="#i-'+(playing?'pause':'play')+'"/></svg>';
-}
-function stopSavedTakePreview(){
-  if(takePreviewAudio) takePreviewAudio.pause();
-  setTakePreviewPlaying(false);
-}
-function paintTakePreviewBar(){
-  if(!takePreviewAudio) return;
-  const dur=takePreviewAudio.duration||0, pos=takePreviewAudio.currentTime||0;
-  $('tpbSeek').max=Math.max(1,Math.floor(dur*10));
-  $('tpbSeek').value=Math.floor(pos*10);
-  $('tpbTime').textContent=fmt(pos)+' / '+fmt(dur);
-}
-function loadTakeIntoPreviewBar(tid){
-  takePreviewTakeId=tid;
-  stopAllPlayback();
-  const a=ensureTakePreviewAudio();
-  a.src='/take_audio?id='+SID+'&take='+tid+'&t='+Date.now();
-  a.currentTime=0;
-  $('takePreviewBar').classList.remove('hidden');
-  setTakePreviewPlaying(false);
-  paintTakePreviewBar();
-}
-$('tpbPlayPause').addEventListener('click',()=>{
-  const a=ensureTakePreviewAudio();
-  if(a.paused){ stopAllPlayback(); a.play().catch(()=>{}); setTakePreviewPlaying(true); }
-  else{ a.pause(); setTakePreviewPlaying(false); }
-});
-$('tpbStop').addEventListener('click',()=>{
-  const a=ensureTakePreviewAudio(); a.pause(); a.currentTime=0; setTakePreviewPlaying(false); paintTakePreviewBar();
-});
-// rewind doubles as "replay": jumps to the start, and if it was already
-// playing, keeps playing from there instead of just parking at 0.
-$('tpbRewind').addEventListener('click',()=>{
-  const a=ensureTakePreviewAudio(); const wasPlaying=!a.paused;
-  a.currentTime=0; paintTakePreviewBar();
-  if(wasPlaying) a.play().catch(()=>{});
-});
-$('tpbSeek').addEventListener('input',()=>{
-  const a=ensureTakePreviewAudio(); if(!a.duration) return;
-  a.currentTime=(+$('tpbSeek').value)/10;
-});
-$('tpbUseTake').addEventListener('click', async()=>{
-  if(!takePreviewTakeId) return;
-  const t=takes.find(x=>x.id===takePreviewTakeId); if(!t) return;
-  stopAllPlayback();
-  try{
-    const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
-    const r=await fetch('/take_audio?id='+SID+'&take='+takePreviewTakeId+'&t='+Date.now());
-    const buf=await ctx.decodeAudioData(await r.arrayBuffer());
-    buildTakeAudio(buf, (TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' — vocals locked to the music');
-    toast('Loaded above — mixer and effects preview available.','ok',2500);
-  }catch(e){ toast('Could not load that take.','error'); }
 });
 
 const TAKE_KIND_LABEL={lead:'take',comp:'comp',harmony:'harmony'};
@@ -3041,33 +3346,25 @@ function renderTakeStrip(){
   $('noTakesHint').style.display = (takes.length||window._lastVocalBuffer) ? 'none':'';
   const box=$('takeStrip'); box.innerHTML='';
   takes.forEach((t,i)=>{
-    const card=document.createElement('div');
-    card.className='takecard'+(t.id===activeTakeId?' active':'')+(t.id===takePreviewTakeId?' previewing':'');
-    const scoreBadge=t.pitch_score? '<span class="takeScoreBadge" title="Pitch steadiness — % of this take spent landing cleanly on a note, not a check against the song\'s actual melody">'+t.pitch_score.accuracy+'%</span>' : '';
-    card.innerHTML=
-      '<div class="takecard-top">'+
-        '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+scoreBadge+'</span>'+
-        '<span class="takex" title="Delete this take">✕</span>'+
-      '</div>'+
-      '<div class="takedur">'+fmt(t.duration||0)+'</div>'+
-      '<div class="takestatusrow">'+takeStatusLine(t)+'</div>';
-    card.addEventListener('click',e=>{
-      if(e.target.classList.contains('takex')||e.target.classList.contains('takestatus')) return;
-      loadTakeIntoPreviewBar(t.id);
+    const row=document.createElement('div');
+    row.className='takerow'+(t.id===activeTakeId?' active':'');
+    const scoreBadge=t.pitch_score? '<span class="takeScoreBadge" title="Pitch steadiness — % of this take spent landing cleanly on a note, not a check against the song\'s actual melody">'+t.pitch_score.accuracy+'% in tune</span>' : '';
+    row.innerHTML=
+      '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+'</span>'+
+      '<span class="takerow-dur">'+fmt(t.duration||0)+'</span>'+
+      scoreBadge+
+      '<span class="takerow-spacer"></span>'+
+      '<span class="takestatus-wrap">'+takeStatusLine(t)+'</span>'+
+      (t.id===activeTakeId?'<span class="takerow-active">● editing</span>':'')+
+      '<button class="takex" title="Delete this take" type="button">✕</button>';
+    row.addEventListener('click',e=>{
+      if(e.target.closest('.takex,.takestatus')) return;
       selectTake(t.id);
     });
-    card.querySelector('.takex').addEventListener('click',e=>{ e.stopPropagation(); deleteTakeFromHistory(t.id); });
-    box.appendChild(card);
+    row.querySelector('.takex').addEventListener('click',e=>{ e.stopPropagation(); deleteTakeFromHistory(t.id); });
+    box.appendChild(row);
   });
   ensureTakeStripPoll();
-  // comp controls: need at least 2 takes to join
-  $('compRow').style.display = takes.length>=2 ? 'flex' : 'none';
-  if(takes.length>=2){
-    const opt=t=>'<option value="'+t.id+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind)+' ('+fmt(t.duration||0)+')</option>';
-    $('compHead').innerHTML=takes.map(opt).join('');
-    $('compTail').innerHTML=takes.map(opt).join('');
-    $('compTail').selectedIndex=takes.length-1;
-  }
   refreshDuetUI();
   refreshTrackEditor();
 }
@@ -3077,8 +3374,11 @@ function renderTakeStrip(){
 // All state here is UI-only — every actual audio decision it drives (mix
 // gains, trim range, karaoke EQ, which takes comp into what) already flows
 // through the exact same fields/routes the rest of the app used before this
-// existed (#vgain/#mgain, #trimStart/#trimEnd, #compPunch, /comp_multi), so
-// nothing here can silently diverge from what /render actually does.
+// existed (#vgain/#mgain, #trimStart/#trimEnd, /comp_multi), so
+// nothing here can silently diverge from what /render actually does. Comping
+// happens in ONE place — drag regions in Compare mode below — there's no
+// separate head/tail take picker; that used to duplicate this with a plain
+// 2-take/1-punch-point special case of the same operation.
 const TE = {
   pxPerSec: 60, minPx: 8, maxPx: 400,
   karaokeBuffer: null, vocalBuffers: {},
@@ -3099,13 +3399,12 @@ const teHistory=makeHistory();
 
 function teSnapshot(){
   return {trimStart:TE.trimStart, trimEnd:TE.trimEnd, markers:TE.markers.map(m=>({...m})),
-          segments:TE.segments.map(s=>({...s})), punchSec:$('compPunch')?+$('compPunch').value:0};
+          segments:TE.segments.map(s=>({...s}))};
 }
 function teApplySnapshot(s){
   TE.trimStart=s.trimStart; TE.trimEnd=s.trimEnd;
   TE.markers=s.markers.map(m=>({...m}));
   TE.segments=s.segments.map(x=>({...x}));
-  if($('compPunch')) $('compPunch').value=s.punchSec;
   teSyncTrimInputs();
   teDrawSegmentOverlays(); teUpdateSegmentsSummary();
   teRedrawOverlays();
@@ -3177,7 +3476,6 @@ async function refreshTrackEditor(){
   teBuildLanes(tid);
   teLayout();
   teSyncTrimInputs();
-  teUpdatePunchMarkerVisibility();
   teRefreshHistoryBtns();
   if(!teHistory.past.length) tePushHistory();
 }
@@ -3236,7 +3534,6 @@ function teRedrawOverlays(){
   $('teTrimShadeRight').style.left=outPx+'px';
   $('teTrimShadeRight').style.width=Math.max(0,widthPx-outPx)+'px';
   $('teTrimShadeRight').style.height=inH+'px';
-  teUpdatePunchMarkerPos();
   $('teTime').textContent=fmt(TE.playhead)+' / '+fmt(TE.duration);
   // cheap: only the playhead position changes on every frame during
   // playback, so redraw just that instead of recomputing every waveform
@@ -3271,19 +3568,18 @@ function teDrawMarkers(){
     row.appendChild(el);
   });
 }
-function teUpdatePunchMarkerVisibility(){
-  const show = !TE.compareMode && takes.length>=2 && $('compRow').style.display!=='none';
-  $('tePunchMarker').classList.toggle('hidden', !show);
-}
-function teUpdatePunchMarkerPos(){
-  if($('tePunchMarker').classList.contains('hidden')) return;
-  const p=$('compPunch') ? (parseFloat($('compPunch').value)||0) : 0;
-  $('tePunchMarker').style.left=teTimeToPx(p)+'px';
-  $('tePunchMarker').style.height=($('teInner').offsetHeight||0)+'px';
-}
 function teSyncTrimInputs(){
   if($('trimStart')) $('trimStart').value = TE.trimStart>0.05 ? fmt(TE.trimStart) : '';
   if($('trimEnd')) $('trimEnd').value = (TE.trimEnd!=null && TE.trimEnd<TE.duration-0.05) ? fmt(TE.trimEnd) : '';
+  // Same two numbers as the Export tab's trim fields, shown right here too —
+  // otherwise dragging a handle in this tab means tab-hopping to Export just
+  // to confirm the number it actually wrote.
+  if($('teTrimReadout')){
+    const trimmed = TE.trimStart>0.05 || (TE.trimEnd!=null && TE.trimEnd<TE.duration-0.05);
+    $('teTrimReadout').textContent = trimmed
+      ? ('Export range: '+fmt(TE.trimStart)+' – '+fmt(TE.trimEnd==null?TE.duration:TE.trimEnd))
+      : '';
+  }
 }
 function teUpdateSegmentsSummary(){
   if(!$('teSegmentsSummary')) return;
@@ -3327,6 +3623,11 @@ function tePlay(){
     TE.vocalSrcs[id]=src; TE.vocalGains[id]=g;
   });
   TE.playing=true;
+  // The old rich player disabled Record/Play while its own sample-accurate
+  // playback ran, to stop you starting a second overlapping recording by
+  // accident. The Track Editor never had that guard — added here since
+  // it's the only playback engine left.
+  $('rec').disabled=true; $('play').disabled=true;
   $('tePlayBtn').innerHTML='<svg class="icon"><use href="#i-pause"/></svg>';
   const tick=()=>{
     if(!TE.playing) return;
@@ -3344,12 +3645,52 @@ function teStopPlayback(){
   if(TE.karaokeSrc){ try{ TE.karaokeSrc.stop(); }catch(_){} TE.karaokeSrc=null; }
   Object.values(TE.vocalSrcs).forEach(s=>{ try{ s.stop(); }catch(_){} });
   TE.vocalSrcs={};
+  $('rec').disabled=false; $('play').disabled=false;
   $('tePlayBtn').innerHTML='<svg class="icon"><use href="#i-play"/></svg>';
   teDrawAll();
 }
 function teTogglePlay(){ TE.playing? teStopPlayback() : tePlay(); }
 $('tePlayBtn').addEventListener('click', teTogglePlay);
 $('teStopBtn').addEventListener('click',()=>{ teStopPlayback(); TE.playhead=0; teRedrawOverlays(); });
+
+// ---- re-record from playhead / sing-along + continue ----------------------
+// Replaces the old rich player's identically-named buttons, which acted on
+// ITS OWN hidden transport position (tp.pos) rather than anything you could
+// actually see. These act on TE.playhead — the one timeline/playhead this
+// tab has now.
+$('teRecFromHere').addEventListener('click',()=>{
+  const at=TE.playhead||0;
+  teStopPlayback();
+  pendingContinueAt=at;                 // startRec uses this as the punch point
+  switchSessionTab('stageCard');
+  startRec();
+});
+let teSingAlongWatch=null;
+$('teSingAlong').addEventListener('click',()=>{
+  const buf=activeTakeId && TE.vocalBuffers[activeTakeId];
+  if(!buf) return;
+  const vocalEnd=buf.duration;      // where this take's recorded part ends
+  const from=Math.min(TE.playhead||0, Math.max(0,vocalEnd-0.25));
+  $('teRecNote').textContent='singing along… will record at '+fmt(vocalEnd);
+  teStopPlayback();
+  TE.playhead=from;
+  tePlay();
+  if(teSingAlongWatch) cancelAnimationFrame(teSingAlongWatch);
+  (function watch(){
+    if(!TE.playing){ return; }               // user paused/stopped → abort handoff
+    if(TE.playhead>=vocalEnd-0.08){
+      // reached the gap → switch to live recording, continuing from here
+      const handoff=vocalEnd;
+      teStopPlayback();
+      pendingContinueAt=handoff;             // stitch new recording onto the take
+      switchSessionTab('stageCard');
+      $('renderstatus').textContent='Recording your continuation from '+fmt(handoff)+'…';
+      startRec();
+      return;
+    }
+    teSingAlongWatch=requestAnimationFrame(watch);
+  })();
+});
 
 // ---- zoom / compare mode / markers ---------------------------------------
 function teSetZoom(px){
@@ -3363,7 +3704,6 @@ $('teZoomOut').addEventListener('click',()=>teSetZoom(TE.pxPerSec/1.5));
 $('teCompareMode').addEventListener('change', async()=>{
   TE.compareMode=$('teCompareMode').checked;
   $('teCompBuildRow').classList.toggle('hidden', !TE.compareMode);
-  teUpdatePunchMarkerVisibility();
   await refreshTrackEditor();
 });
 $('teMarkerBtn').addEventListener('click',()=>{
@@ -3408,9 +3748,9 @@ $('teKaraokeSolo').addEventListener('click',()=>teSetMS('karaoke','Solo', !TE.ka
 $('teVocalMute').addEventListener('click',()=>teSetMS('vocal','Mute', !TE.vocalMute));
 $('teVocalSolo').addEventListener('click',()=>teSetMS('vocal','Solo', !TE.vocalSolo));
 
-// ---- click-to-seek + drag-to-trim + draggable punch marker ---------------
+// ---- click-to-seek + drag-to-trim ------------------------------------------
 $('teInner').addEventListener('pointerdown', e=>{
-  if(e.target.closest('.te-trimhandle,.te-punchmarker,.te-marker,.te-lane.assignable')) return;
+  if(e.target.closest('.te-trimhandle,.te-marker,.te-lane.assignable')) return;
   const rect=$('teInner').getBoundingClientRect();
   teSeekTo(tePxToTime(e.clientX-rect.left));
 });
@@ -3434,14 +3774,12 @@ function teDragHandle(el, onMove, onCommit){
 }
 teDragHandle($('teTrimIn'), t=>{ TE.trimStart=Math.min(t, (TE.trimEnd==null?TE.duration:TE.trimEnd)-0.05); }, teSyncTrimInputs);
 teDragHandle($('teTrimOut'), t=>{ TE.trimEnd=Math.max(t, TE.trimStart+0.05); }, teSyncTrimInputs);
-teDragHandle($('tePunchMarker'), t=>{ if($('compPunch')) $('compPunch').value=t.toFixed(2); });
-if($('compPunch')) $('compPunch').addEventListener('input', teUpdatePunchMarkerPos);
 
 // ---- compare-mode lanes: drag-select a region to assign that take to it -
 function wireTeLaneEvents(){
   $('teVocalLanes').querySelectorAll('.te-lane.assignable').forEach(lane=>{
     lane.addEventListener('pointerdown', e=>{
-      if(e.target.closest('.te-trimhandle,.te-punchmarker')) return;
+      if(e.target.closest('.te-trimhandle')) return;
       e.preventDefault();
       const takeId=lane.dataset.takeId;
       const rect=lane.getBoundingClientRect();
@@ -3574,22 +3912,6 @@ async function finishHarmonyRec(){
   $('duetStatus').textContent='Harmony saved. Adjust its level in Step 5.';
   toast('Harmony take saved.','ok');
 }
-$('compBtn').addEventListener('click',async()=>{
-  const head=$('compHead').value, tail=$('compTail').value;
-  const punch=parseFloat($('compPunch').value)||0;
-  if(head===tail){ toast('Pick two different takes to join.','warn'); return; }
-  $('compBtn').disabled=true;
-  let r; try{
-    r=await fetch('/comp',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:SID, head_take:head, tail_take:tail, punch_sec:punch})});
-  }catch(e){ $('compBtn').disabled=false; toast('Could not reach the server.','error'); return; }
-  $('compBtn').disabled=false;
-  const d=await r.json();
-  if(!r.ok){ toast(d.error||'Could not join those takes.','error'); return; }
-  takes.push(d.take); activeTakeId=d.take.id; renderTakeStrip();
-  toast('Takes joined.','ok');
-});
-
 // ==== TRANSPORT STATE =======================================================
 // backingAudio = the clean music (this is what records + exports).
 // We keep a decoded copy of the previously-KEPT vocal (keptBuffer) so punch-in
@@ -3773,6 +4095,14 @@ function checkPhoneStatus(){
   fetch('/status?id='+SID).then(r=>r.json()).then(j=>{
     phonePaired=!!j.phone_paired;
     phoneStatus=j.phone_status||'unpaired';
+    // Same info the sidebar's phone-sync box shows, mirrored right next to
+    // the Record button — this is the moment it actually matters, not
+    // whichever tab you happened to be looking at when it disconnected.
+    const chip=$('recPhoneChip');
+    if(chip){
+      if(phonePaired){ chip.textContent='📹 Phone camera connected — this take will include video'; chip.className='recPhoneChip on'; }
+      else{ chip.textContent='📹 No phone camera paired — this take will be audio-only'; chip.className='recPhoneChip off'; }
+    }
     const status=$('phoneStatusText');
     if(status){
       // "recording"/"uploading" are shown straight from local state (this
@@ -4042,9 +4372,6 @@ async function finishRec(){
   applyAlignmentAndFinish(ctx);
   offerContinueOrKeep();
   populateStopChoicePreview();
-  // the rich player now lives in the Takes tab (not revealed inline in
-  // Record anymore) and always reflects the latest take once one exists.
-  buildTakeAudio();
 }
 
 // quick native <audio> preview in the stop-choice box — lets you hear the
@@ -4063,7 +4390,7 @@ function populateStopChoicePreview(){
   if(!stopChoicePreviewWired){
     stopChoicePreviewWired=true;
     a.addEventListener('play',()=>{
-      stopPreview(); stopSavedTakePreview();
+      teStopPlayback();
       if(backingAudio && !recording){ try{ backingAudio.pause(); }catch(_){} resetMusicBtn(); }
       if(harmonyLeadAudio){ try{ harmonyLeadAudio.pause(); }catch(_){} }
     });
@@ -4096,14 +4423,12 @@ function applyAlignmentAndFinish(ctx){
   window._lastVocalWav=encodeWav(finalBuffer);
 }
 
-// called live when the vocal-timing slider moves
+// called live when the vocal-timing slider moves — just recomputes the
+// aligned buffer/WAV that Keep will eventually save; there's no separate
+// player to rebuild/resume anymore (the rich player this used to rebuild
+// is gone).
 function realignCurrentTake(){
-  const wasOpen=$('takePlayer').style.display==='block';
-  const wasPlaying = tp && tp.playing;
-  const pos = tp? takePos() : 0;
   applyAlignmentAndFinish();
-  if(wasOpen){ buildTakeAudio(); tp.pos=pos;
-    if(wasPlaying){ startTakePlayback(pos); } }
 }
 
 // Align a take so its sample 0 corresponds to the intended song start time.
@@ -4200,64 +4525,6 @@ function drawWaveform(canvas, peaks, playheadFrac){
   }
 }
 
-function buildBufferPlayer(container, opts){
-  container.innerHTML=
-    (opts.label? '<div class="plabel">'+opts.label+'</div>':'')+
-    (opts.buffer? '<canvas class="pwave"></canvas>':'')+
-    '<div class="ctrls">'+
-      '<button class="pbtn play" data-a="play" title="Play/Pause">▶</button>'+
-      '<button class="pbtn" data-a="stop" title="Stop (back to start)">■</button>'+
-      '<input class="pseek" type="range" min="0" max="1000" value="0" step="1">'+
-      '<span class="ptime">00:00 / 00:00</span>'+
-    '</div>';
-  const btnPlay=container.querySelector('[data-a=play]');
-  const btnStop=container.querySelector('[data-a=stop]');
-  const seek=container.querySelector('.pseek');
-  const time=container.querySelector('.ptime');
-  const wave=container.querySelector('.pwave');
-  let dragging=false, playing=false;
-
-  const wavePeaks = (wave && opts.buffer) ? computeWavePeaks(opts.buffer, 400) : null;
-
-  if(wave){
-    drawWaveform(wave, wavePeaks, 0);
-    window.addEventListener('resize', ()=>drawWaveform(wave, wavePeaks, playheadFrac()));
-    wave.addEventListener('click',(e)=>{
-      const d=opts.getDur()||0; if(!d) return;
-      const rect=wave.getBoundingClientRect();
-      const t=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width))*d;
-      opts.onSeek&&opts.onSeek(t); paint();
-    });
-  }
-
-  function playheadFrac(){
-    const d=opts.getDur()||0; if(!d) return 0;
-    return Math.min(opts.getPos()||0, d)/d;
-  }
-
-  function paint(){
-    const d=opts.getDur()||0, t=Math.min(opts.getPos()||0, d);
-    time.textContent=fmt(t)+' / '+fmt(d);
-    if(!dragging && d) seek.value=Math.round(t/d*1000);
-    playing = (typeof tp!=='undefined' && tp)? tp.playing : playing;
-    btnPlay.textContent=playing?'❚❚':'▶'; btnPlay.classList.toggle('play',!playing);
-    if(wave) drawWaveform(wave, wavePeaks, playheadFrac());
-  }
-  btnPlay.addEventListener('click',()=>{
-    if(tp && tp.playing){ opts.onPause&&opts.onPause(); }
-    else { opts.onPlay&&opts.onPlay(); }
-    paint();
-  });
-  btnStop.addEventListener('click',()=>{ opts.onStop&&opts.onStop(); paint(); });
-  seek.addEventListener('input',()=>{ dragging=true;
-    const d=opts.getDur()||0; time.textContent=fmt(seek.value/1000*d)+' / '+fmt(d); });
-  seek.addEventListener('change',()=>{
-    const d=opts.getDur()||0; const t=seek.value/1000*d;
-    opts.onSeek&&opts.onSeek(t); dragging=false; paint(); });
-  paint();
-  return {paint};
-}
-
 // container: element to render into. audio: an HTMLAudioElement (seekable).
 // onPlay/onStop: optional hooks (e.g. to drive the muted lyrics video alongside).
 function buildPlayer(container, audio, opts={}){
@@ -4307,14 +4574,16 @@ function buildPlayer(container, audio, opts={}){
   return {paint, seekEl:seek, playBtn:btnPlay};
 }
 
-// ==== TAKE PLAYBACK — sample-accurate, drift-free ==========================
-// Both the vocal take AND the backing music play as AudioBufferSourceNodes in
-// ONE AudioContext, started at the SAME audioCtx.currentTime. Buffer sources
-// are sample-accurate, so vocal and music can NEVER drift — this eliminates the
-// "track way ahead of vocals" lag that element-based playback caused.
-let previewing=false;   // takeGraph etc. declared early up top
+// `previewing` used to flip true/false around the old rich-player's sample-
+// accurate take playback, guarding a couple of video/backingAudio-sync
+// checks elsewhere from fighting with it. That playback engine is gone
+// (the Track Editor has its own, fully separate one that never touches
+// backingAudio/ytPlayer), so this now permanently reads false — which is
+// the correct behavior, since there's nothing left for those guards to
+// avoid conflicting with.
+let previewing=false;
 
-let backingBuffer=null, backingBufKey=null, tp=null; // tp = live take-playback state
+let backingBuffer=null, backingBufKey=null; // decoded backing track, cached by transpose key
 
 async function decodeBackingBuffer(key){
   try{
@@ -4334,211 +4603,18 @@ function makeImpulse(seconds, decay){
   return buf;
 }
 
-// Build the rich take player UI — lives in the Takes tab now, always shows
-// the latest take once one exists (no more reveal-on-click from Record).
-// Optionally pass an explicit buffer+label to preview an older saved take
-// instead of window._lastVocalBuffer (see selectSavedTake in the Takes tab).
-function buildTakeAudio(overrideBuf, overrideLabel){
-  if(!overrideBuf && !window._lastVocalBuffer) return;
-  if(testMode){ testMode=false; const p=$('testPanel'); if(p) p.remove(); }
-  stopTakePlayback();
-  $('takePlayer').style.display='block';
-  const vocalBuf=overrideBuf||window._lastVocalBuffer;
-  isPreviewingSavedTake=!!overrideBuf;
-  const total=Math.max(vocalBuf?vocalBuf.duration:0, dur||0);
-  tp={ playing:false, startCtx:0, startPos:0, pos:0, dur:total, raf:null, nodes:null, buffer:vocalBuf };
-
-  takePlayerUI=buildBufferPlayer($('takePlayer'), {
-    label:overrideLabel||'Your take — vocals locked to the music',
-    buffer:vocalBuf,
-    getPos:()=>takePos(), getDur:()=>tp.dur,
-    onPlay:(t)=>startTakePlayback(t),
-    onPause:()=>pauseTakePlayback(),
-    onStop:()=>{ stopTakePlayback(); tp.pos=0; },
-    onSeek:(t)=>{ const was=tp.playing; pauseTakePlayback(); tp.pos=t; if(was) startTakePlayback(t); },
-  });
-  // balance mixer (mirrors the export Vocal/Music sliders — one source of truth)
-  // + a Test button to enter effects test mode.
-  const extra=document.createElement('div'); extra.className='takemix';
-  extra.innerHTML=
-    '<div class="monrow"><span class="monlbl">Vocal</span>'+
-      '<input type="range" id="tpVocal" min="-12" max="12" value="'+(+$('vgain').value)+'">'+
-      '<span class="monval" id="tpVocalV">'+fmtDb($('vgain').value)+'</span></div>'+
-    '<div class="monrow"><span class="monlbl">Music</span>'+
-      '<input type="range" id="tpMusic" min="-18" max="6" value="'+(+$('mgain').value)+'">'+
-      '<span class="monval" id="tpMusicV">'+fmtDb($('mgain').value)+'</span></div>'+
-    '<button class="btn" id="testModeBtn" title="Loop a section and audition each effect live"><svg class="icon"><use href="#i-sliders"/></svg> Test effects</button>';
-  $('takePlayer').appendChild(extra);
-  // re-record controls: from the scrubbed point, or sing-along continuation
-  const rec=document.createElement('div'); rec.className='takemix'; rec.style.marginTop='8px';
-  rec.innerHTML=
-    '<span class="monlbl">Re-record</span>'+
-    '<button class="btn" id="recFromHere" title="Keep the song up to the playhead, re-sing from there">● From playhead</button>'+
-    '<button class="btn amber" id="singAlong" title="Play your take and sing along; it auto-records when the recorded part runs out">▶ Sing-along + continue</button>'+
-    '<span class="tp-note" id="recFromNote"></span>';
-  $('takePlayer').appendChild(rec);
-  // link the mini-mixer to the real export sliders (keeps them in sync both ways)
-  $('tpVocal').addEventListener('input',()=>{ $('vgain').value=$('tpVocal').value;
-    $('tpVocalV').textContent=fmtDb($('tpVocal').value); $('vgainv').textContent=fmtDb($('vgain').value); applyLiveFx(); });
-  $('tpMusic').addEventListener('input',()=>{ $('mgain').value=$('tpMusic').value;
-    $('tpMusicV').textContent=fmtDb($('tpMusic').value); $('mgainv').textContent=fmtDb($('mgain').value); applyLiveFx(); });
-  $('testModeBtn').addEventListener('click',toggleTestMode);
-  // re-record / sing-along only make sense for the take you actually just
-  // sang (they punch into the live recording session's own alignment
-  // state) — hide them while previewing an older saved take instead.
-  rec.style.display=isPreviewingSavedTake?'none':'flex';
-  // record from the current scrub position (keeps 0→pos of the existing take)
-  $('recFromHere').addEventListener('click',()=>{
-    const at=takePos()||0;
-    stopTakePlayback();
-    pendingContinueAt=at;                 // startRec uses this as the punch point
-    switchSessionTab('stageCard');
-    startRec();
-  });
-  // sing-along + auto-continue at the gap
-  $('singAlong').addEventListener('click',()=>startSingAlong());
-}
-function fmtDb(v){ return (v>=0?'+':'')+v+' dB'; }
-
-// ==== SING-ALONG + AUTO-CONTINUE ============================================
+// ==== SING-ALONG + AUTO-CONTINUE (Track Editor versions live further down,
+// see teRecFromPlayhead/teStartSingAlong — these old ones acted on the
+// removed rich player's own hidden transport) ================================
 // Play the recorded take (with music) from the current position so you can sing
 // along; when playback reaches the END of the recorded vocal, seamlessly hand
 // off to LIVE recording so you continue the song from exactly there.
-let singAlongWatch=null;
-function startSingAlong(){
-  if(!window._lastVocalBuffer) return;
-  const vocalEnd=window._lastVocalBuffer.duration;      // where the recorded part ends
-  const from=Math.min(takePos()||0, Math.max(0,vocalEnd-0.25));
-  $('recFromNote').textContent='singing along… will record at '+fmt(vocalEnd);
-  stopTakePlayback();
-  tp.pos=from; startTakePlayback(from,false);
-  // watch playback; when it crosses the end of the recorded vocal, hand off to rec
-  if(singAlongWatch) cancelAnimationFrame(singAlongWatch);
-  (function watch(){
-    if(!tp.playing){ return; }               // user paused/stopped → abort handoff
-    if(takePos()>=vocalEnd-0.08){
-      // reached the gap → switch to live recording, continuing from here
-      const handoff=vocalEnd;
-      stopTakePlayback();
-      pendingContinueAt=handoff;             // stitch new recording onto the take
-      switchSessionTab('stageCard');
-      $('renderstatus').textContent='Recording your continuation from '+fmt(handoff)+'…';
-      startRec();
-      return;
-    }
-    singAlongWatch=requestAnimationFrame(watch);
-  })();
-}
+// (old rich-player sing-along + effects-test-mode code removed — see
+// teRecFromPlayhead/teStartSingAlong further down for the replacements,
+// and the Effects tab for the real, non-partial FX controls)
 
-// ==== EFFECTS TEST MODE =====================================================
-// Loop a chosen section of the take and audition FX live. Reverb/EQ/comp/volume
-// are exact; pitch-correction is an APPROXIMATE live preview (a constant shift
-// toward the key) — the exact per-note correction happens at final render.
-let testMode=false, loopA=0, loopB=0;
-function toggleTestMode(){ testMode? exitTestMode() : enterTestMode(); }
-
-function enterTestMode(){
-  testMode=true;
-  const total=tp.dur||0;
-  // default loop = first 8s (or whole take if shorter)
-  loopA=0; loopB=Math.min(8, total||8);
-  $('testModeBtn').classList.add('on'); $('testModeBtn').textContent='✕ Close test';
-  const p=document.createElement('div'); p.className='testpanel'; p.id='testPanel';
-  p.innerHTML=
-    '<h3>Effects test — loop &amp; audition</h3>'+
-    '<div class="tp-sub">Drag on the bar to pick a section. It loops so you can toggle effects and hear each change instantly.</div>'+
-    '<div class="loopbar" id="loopbar">'+
-      '<div class="loopregion" id="loopregion"></div>'+
-      '<div class="loopplay" id="loopplay"></div>'+
-    '</div>'+
-    '<div class="looprow">'+
-      '<button class="tp-btn on" id="loopPlayBtn">▶ Loop</button>'+
-      '<span class="tp-note" id="loopInfo"></span>'+
-    '</div>'+
-    '<div class="looprow" id="fxQuick"></div>'+
-    '<div class="tp-note" style="margin-top:8px">EQ / compression / de-ess / reverb send / volume preview approximately here. '+
-      'Saturation, the delay send, and pitch fix only apply exactly when you render.</div>';
-  $('takePlayer').appendChild(p);
-  // quick FX toggles that mirror the rack
-  const quick=[['pro','Pro chain'],['pitch','Pitch fix'],['denoise','De-noise']];
-  const fxq=p.querySelector('#fxQuick');
-  quick.forEach(([key,label])=>{
-    const b=document.createElement('button'); b.className='tp-btn'+(fxOn[key]?' on':''); b.textContent=label;
-    b.addEventListener('click',()=>{ fxOn[key]=!fxOn[key]; b.classList.toggle('on',fxOn[key]);
-      refreshTogs(); applyLiveFx(); restartLoopIfPlaying(); });
-    fxq.appendChild(b);
-  });
-  wireLoopBar();
-  paintLoop();
-  // jump playback into the loop
-  tp.pos=loopA; startTakePlayback(loopA, true);
-  $('loopPlayBtn').addEventListener('click',()=>{
-    if(tp.playing){ pauseTakePlayback(); $('loopPlayBtn').textContent='▶ Loop'; $('loopPlayBtn').classList.remove('on'); }
-    else { startTakePlayback(loopA,true); $('loopPlayBtn').textContent='❚❚ Pause'; $('loopPlayBtn').classList.add('on'); }
-  });
-}
-function exitTestMode(){
-  testMode=false;
-  $('testModeBtn').classList.remove('on'); $('testModeBtn').textContent='<svg class="icon"><use href="#i-sliders"/></svg> Test effects';
-  const p=$('testPanel'); if(p) p.remove();
-  stopTakePlayback(); tp.pos=0;
-}
-function restartLoopIfPlaying(){ if(testMode && tp.playing){ startTakePlayback(loopA,true); } }
-
-function wireLoopBar(){
-  const bar=$('loopbar'); let dragStart=null;
-  const posOf=(e)=>{ const r=bar.getBoundingClientRect();
-    return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*(tp.dur||1); };
-  bar.addEventListener('mousedown',e=>{ dragStart=posOf(e); loopA=dragStart; loopB=dragStart; paintLoop(); });
-  window.addEventListener('mousemove',e=>{ if(dragStart==null) return;
-    const cur=posOf(e); loopA=Math.min(dragStart,cur); loopB=Math.max(dragStart,cur); paintLoop(); });
-  window.addEventListener('mouseup',()=>{ if(dragStart==null) return; dragStart=null;
-    if(loopB-loopA<0.5) loopB=Math.min(tp.dur, loopA+2);   // min 2s loop
-    paintLoop(); if(testMode) startTakePlayback(loopA,true); });
-}
-function paintLoop(){
-  const d=tp.dur||1; const reg=$('loopregion'); if(!reg) return;
-  reg.style.left=(loopA/d*100)+'%'; reg.style.width=((loopB-loopA)/d*100)+'%';
-  const info=$('loopInfo'); if(info) info.textContent='looping '+fmt(loopA)+' – '+fmt(loopB);
-}
-function takePos(){
-  if(!tp.playing) return tp.pos;
-  let t=tp.startPos+(audioCtx.currentTime-tp.startCtx);
-  if(tp.looping && loopB>loopA){ const len=loopB-loopA;
-    if(t>=loopB) t=loopA+((t-loopA)%len); }
-  return t;
-}
-
-function buildTakeGraphNodes(){
-  // Approximate live preview of the pro vocal chain (exact version applies at
-  // render time via ffmpeg — see audio_fx.build_pro_chain_filter_complex):
-  //   src → hp → dip → nasal → tone1 → tone2 → air → deEss → comp → comp2 →
-  //   dry/wet(reverb) → vocalGain
-  // Saturation and the delay send aren't previewed live (WebAudio has no
-  // built-in soft-clipper/parallel-mix primitive worth the complexity here).
-  const hp=audioCtx.createBiquadFilter(); hp.type='highpass';
-  const dip=audioCtx.createBiquadFilter(); dip.type='peaking';
-  const nasal=audioCtx.createBiquadFilter(); nasal.type='peaking';
-  const tone1=audioCtx.createBiquadFilter(); tone1.type='peaking';
-  const tone2=audioCtx.createBiquadFilter(); tone2.type='peaking';
-  const air=audioCtx.createBiquadFilter(); air.type='highshelf';
-  const deEss=audioCtx.createBiquadFilter(); deEss.type='highshelf';
-  const comp=audioCtx.createDynamicsCompressor();
-  const comp2=audioCtx.createDynamicsCompressor();
-  const dry=audioCtx.createGain(), wet=audioCtx.createGain();
-  const conv=audioCtx.createConvolver(); conv.buffer=makeImpulse(2.2,2.0);
-  const vocalGain=audioCtx.createGain();
-  hp.connect(dip); dip.connect(nasal); nasal.connect(tone1); tone1.connect(tone2);
-  tone2.connect(air); air.connect(deEss); deEss.connect(comp); comp.connect(comp2);
-  comp2.connect(dry); comp2.connect(conv); conv.connect(wet);
-  dry.connect(vocalGain); wet.connect(vocalGain); vocalGain.connect(audioCtx.destination);
-  const musicGainNode=audioCtx.createGain(); musicGainNode.connect(audioCtx.destination);
-  takeGraph={hp,dip,nasal,tone1,tone2,air,deEss,comp,comp2,dry,wet,vocalGain,musicGainNode};
-  applyLiveFx();
-  return {hp, vocalGain, musicGainNode};
-}
-
-// Same chain as buildTakeGraphNodes() above, minus the music-mix half —
+// Same chain as the (removed) rich-player take-preview graph used to build,
+// minus the music-mix half —
 // this one sits between the LIVE mic and the headphone monitor (see
 // wireMonitorSource()), not between a stored take buffer and the speakers.
 function buildMonitorGraphNodes(){
@@ -4563,97 +4639,14 @@ function buildMonitorGraphNodes(){
   return monitorGraph;
 }
 
-async function startTakePlayback(fromT, loopIt){
-  const vocalBuf=(tp&&tp.buffer)||window._lastVocalBuffer;
-  if(!vocalBuf) return;
-  if(audioCtx.state==='suspended') await audioCtx.resume();
-  if(!backingBuffer){ await decodeBackingBuffer(musicKey); }
-  stopSources();
-  // this graph is the only vocal/music source that should ever be running —
-  // silence every OTHER playback path so nothing can double up with it.
-  try{ backingAudio&&backingAudio.pause(); }catch(_){}
-  stopSavedTakePreview();
-  try{ $('stopChoicePreview').pause(); }catch(_){}
-  if(harmonyLeadAudio){ try{ harmonyLeadAudio.pause(); }catch(_){} }
-  const g=buildTakeGraphNodes();
-  const looping = !!loopIt && testMode && loopB>loopA;
-  const at=looping ? loopA : ((fromT!=null?fromT:tp.pos)||0);
-
-  const vSrc=audioCtx.createBufferSource(); vSrc.buffer=vocalBuf;
-  vSrc.connect(g.hp);
-  let mSrc=null;
-  if(backingBuffer){ mSrc=audioCtx.createBufferSource(); mSrc.buffer=backingBuffer;
-    mSrc.connect(g.musicGainNode); }
-
-  // rough live pitch preview: shift the whole vocal toward the key centre.
-  // (Approximate — the exact per-note correction is done at render.)
-  if(fxOn.pitch){ const cents=roughPitchCents(); try{ vSrc.detune.value=cents; }catch(_){} }
-
-  if(looping){
-    vSrc.loop=true; vSrc.loopStart=loopA; vSrc.loopEnd=loopB;
-    if(mSrc){ mSrc.loop=true; mSrc.loopStart=loopA; mSrc.loopEnd=Math.min(loopB,mSrc.buffer.duration); }
-  }
-
-  const startCtx=audioCtx.currentTime+0.06;
-  try{ vSrc.start(startCtx, Math.min(at, vSrc.buffer.duration)); }catch(_){}
-  if(mSrc){ try{ mSrc.start(startCtx, Math.min(at, mSrc.buffer.duration)); }catch(_){} }
-
-  tp.nodes={vSrc,mSrc}; tp.startCtx=startCtx; tp.startPos=at; tp.playing=true; tp.looping=looping;
-  previewing=true; $('rec').disabled=true; $('play').disabled=true;
-  applyMusicMonitorVol_graph();
-
-  if(ytReady && !looping){ try{ ytPlayer.seekTo(at,true); ytPlayer.playVideo(); }catch(_){} }
-
-  vSrc.onended=()=>{ if(tp.playing && !tp.looping && takePos()>=tp.dur-0.1){ stopTakePlayback(); tp.pos=0; takePlayerUI&&takePlayerUI.paint(); } };
-  tickTake();
-}
-// approximate live pitch shift (cents) toward the chosen key — preview only
-function roughPitchCents(){
-  const strength=(+$('pstr').value)/100;
-  // a gentle nudge; real correction is per-note at render. Cap the preview shift.
-  return 0;   // 0 = no constant detune; per-note preview isn't possible live.
-               // We keep pitch preview honest: it shows the key/strength UI is
-               // active, but audible correction only appears in the final render.
-}
-function pauseTakePlayback(){
-  if(!tp||!tp.playing) return;
-  tp.pos=takePos(); tp.playing=false;
-  stopSources();
-  if(ytReady){ try{ ytPlayer.pauseVideo(); }catch(_){} }
-  // belt-and-suspenders: backingAudio should never be running during take
-  // playback (mSrc is the only intended backing-track source), but pause it
-  // directly rather than trusting the YT pause event to get there in time.
-  try{ backingAudio&&backingAudio.pause(); }catch(_){}
-  cancelAnimationFrame(tp.raf);
-  takePlayerUI&&takePlayerUI.paint();
-}
-function stopTakePlayback(){
-  if(tp){ tp.playing=false; if(tp.raf) cancelAnimationFrame(tp.raf); }
-  stopSources();
-  if(ytReady){ try{ ytPlayer.pauseVideo(); }catch(_){} }
-  try{ backingAudio&&backingAudio.pause(); }catch(_){}
-  previewing=false; $('rec').disabled=false; $('play').disabled=false; resetMusicBtn();
-  takePlayerUI&&takePlayerUI.paint();
-}
-function stopSources(){
-  if(tp&&tp.nodes){ try{tp.nodes.vSrc&&tp.nodes.vSrc.stop();}catch(_){}
-    try{tp.nodes.mSrc&&tp.nodes.mSrc.stop();}catch(_){} tp.nodes=null; }
-}
-function tickTake(){ if(!tp||!tp.playing) return; takePlayerUI&&takePlayerUI.paint();
-  if(testMode){ const lp=$('loopplay'); if(lp && tp.dur){ lp.style.left=(takePos()/tp.dur*100)+'%'; } }
-  tp.raf=requestAnimationFrame(tickTake); }
-function stopPreview(){ stopTakePlayback(); tp&&(tp.pos=0); }
-
 // ---- unified playback coordinator ------------------------------------
-// Starting any ONE of these — practice music, the rich take player, the
-// shared saved-take preview bar, or the stop-choice quick preview — stops
-// all the others first, so two audio sources are never audible at once.
-// Duet's own lead+harmony pair (played together on purpose while recording
-// a harmony) is a self-contained combo that's stopped BY this, but doesn't
-// stop itself.
+// Starting any ONE of these — practice music, the Track Editor, the duet
+// lead+harmony pair, or the stop-choice quick preview — stops all the
+// others first, so two audio sources are never audible at once. Duet's own
+// lead+harmony pair (played together on purpose while recording a harmony)
+// is a self-contained combo that's stopped BY this, but doesn't stop itself.
 function stopAllPlayback(){
-  stopPreview();
-  stopSavedTakePreview();
+  teStopPlayback();
   try{ $('stopChoicePreview').pause(); }catch(_){}
   if(!recording){
     // when a video is loaded, IT drives audible playback (backingAudio is
@@ -4668,25 +4661,16 @@ function stopAllPlayback(){
   if(harmonyLeadAudio){ try{ harmonyLeadAudio.pause(); }catch(_){} }
 }
 
-function applyMusicMonitorVol_graph(){
-  // music level during playback = the export Music (mgain) balance in dB,
-  // scaled by the monitor slider so you can still ride it in your headphones.
-  if(takeGraph&&takeGraph.musicGainNode){
-    const mdb=+$('mgain').value;
-    takeGraph.musicGainNode.gain.value=Math.pow(10,mdb/20)*Math.max(0,Math.min(1,musicMonitorVol));
-  }
-}
 // Reflect FX-rack + mix settings into the live take graph.
 function clampParam(param, min, max, v){ param.value = Math.max(min, Math.min(max, v)); }
 
-// Reflect the pro-chain sliders (+ mix gain) into whichever live WebAudio
-// graphs currently exist: the take-preview graph (test mode / take
-// playback) and/or the live studio-monitor graph (mic while recording).
-// This is an approximation for audition/monitoring — the exact chain
-// (incl. saturation and the delay send) is only applied by ffmpeg at
-// render time.
+// Reflect the pro-chain sliders into whichever live WebAudio graph currently
+// exists: the live studio-monitor graph (mic while recording). This used to
+// also drive a take-preview graph for the (removed) rich player's "Test
+// effects" mode — that was the ONLY place FX could be auditioned before a
+// full render, so removing it is a real loss of capability, not just tidying:
+// there is currently no live FX preview anywhere in the app anymore.
 function applyLiveFx(){
-  if(takeGraph){ applyLiveFxToGraph(takeGraph, true); applyMusicMonitorVol_graph(); }
   if(monitorGraph) applyLiveFxToGraph(monitorGraph, false);
 }
 function applyLiveFxToGraph(g, isTakeGraph){

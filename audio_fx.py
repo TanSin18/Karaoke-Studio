@@ -711,60 +711,20 @@ def transpose_backing(in_wav, out_wav, semitones):
         raise RuntimeError("transpose failed: " + r.stderr[-400:])
 
 
-# ---- Punch-in: stitch a kept head with a re-sung tail -----------------------
-
-def stitch_vocals(head_wav, tail_wav, out_wav, punch_sec, crossfade_ms=40):
-    """
-    Build one vocal track = head[0..punch] + tail[punch..end], joined with a
-    short equal-power crossfade so there's no click at the seam.
-
-    head_wav  : the previously-kept full vocal take (we use 0..punch of it)
-    tail_wav  : the newly recorded take that STARTS at `punch_sec` in song time
-                (i.e. its sample 0 corresponds to song time punch_sec)
-    punch_sec : where the redo begins, in seconds
-    """
-    head, sr = librosa.load(head_wav, sr=None, mono=True)
-    tail, sr2 = librosa.load(tail_wav, sr=sr, mono=True)  # resample tail to head sr
-
-    punch = int(punch_sec * sr)
-    xf = max(1, int(crossfade_ms / 1000.0 * sr))
-
-    punch = min(punch, len(head))
-    head_part = head[:punch]
-
-    # equal-power crossfade over the boundary
-    if punch >= xf and len(tail) >= xf and len(head) >= punch:
-        # overlap region: last xf of head_part vs first xf of tail
-        fade_out = np.cos(np.linspace(0, np.pi / 2, xf)) ** 1
-        fade_in = np.sin(np.linspace(0, np.pi / 2, xf)) ** 1
-        head_tailend = head_part[-xf:] * fade_out
-        tail_start = tail[:xf] * fade_in
-        joined_mid = head_tailend + tail_start
-        out = np.concatenate([head_part[:-xf], joined_mid, tail[xf:]])
-    else:
-        out = np.concatenate([head_part, tail])
-
-    peak = np.max(np.abs(out)) or 1.0
-    if peak > 0.99:
-        out = out * (0.99 / peak)
-
-    sf.write(out_wav, out.astype(np.float32), sr)
-
+# ---- Punch-in: comp an ordered list of take/region segments into one track -
 
 def stitch_multi(segments, out_wav, crossfade_ms=40):
     """
-    Generalizes stitch_vocals from exactly 2 takes joined at 1 punch point to
-    an arbitrary ordered list of takes/regions — non-destructive multi-region
-    comping: pick a different take for each stretch of the song instead of
-    being limited to one head take + one tail take.
+    Non-destructive multi-region comping: an arbitrary ordered list of
+    takes/regions, so you can pick a different take for each stretch of the
+    song instead of being limited to one head take + one tail take.
 
     segments: ordered list of {"path": wav_path, "start": float, "end": float}.
     start/end are in SONG time, not each take's own — every take's sample 0
     already corresponds to song position 0 (see alignTake() client-side), so
     slicing the same [start,end) out of each take's file lines them up with
-    no per-segment offset math needed. Adjacent segments are joined with the
-    same short equal-power crossfade stitch_vocals uses, just applied at
-    every boundary instead of a single one.
+    no per-segment offset math needed. Adjacent segments are joined with a
+    short equal-power crossfade applied at every boundary.
     """
     if not segments:
         raise ValueError("no segments to comp")
