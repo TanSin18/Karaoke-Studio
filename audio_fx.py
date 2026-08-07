@@ -186,10 +186,16 @@ PRO_CHAIN_DEFAULTS = {
     "hpf_freq": 85,
     "dip_freq": 250, "dip_gain": -2.5, "dip_q": 1.4,
     "nasal_freq": 900, "nasal_gain": -1.5, "nasal_q": 2.0,
-    # 2.2 fast peak compressor (FET/1176 style)
-    "fast_ratio": 4, "fast_attack": 1, "fast_release": 80, "fast_threshold_db": -18,
+    # 2.2 fast peak compressor (FET/1176 style). Thresholds sit a bit above
+    # where a well-gain-staged vocal actually lives (-18..-12 dBFS per the
+    # module docstring) on purpose — at -18/-20 both compressors were almost
+    # always in some amount of gain reduction, constantly shaving off the
+    # exact micro-dynamics (breath, consonant transients) that read as a
+    # voice's natural "grain"; catching only real peaks preserves that while
+    # still providing a safety net.
+    "fast_ratio": 4, "fast_attack": 1, "fast_release": 80, "fast_threshold_db": -15,
     # 3.3 smooth body compressor (opto/LA-2A style)
-    "smooth_ratio": 3, "smooth_attack": 25, "smooth_release": 500, "smooth_threshold_db": -20,
+    "smooth_ratio": 3, "smooth_attack": 25, "smooth_release": 500, "smooth_threshold_db": -17,
     # 4.4 de-esser
     "deess_freq": 6000, "deess_intensity": 40,
     # 5.5 additive tone EQ: chest warmth + presence + air shelf
@@ -205,6 +211,85 @@ PRO_CHAIN_DEFAULTS = {
     # AUX 2: slap/echo delay send (time is absolute ms — the app doesn't
     # detect song tempo, so this isn't beat-synced like "1/8 dotted")
     "delay_time_ms": 350, "delay_feedback": 13, "delay_lowcut": 300, "delay_highcut": 4000, "delay_send_db": -20,
+    # AUX 3: vocal doubler/thickener — a short, slow, shallow chorus blended
+    # in underneath the dry vocal (the classic ADT trick: makes one take
+    # sound like two voices in unison). Kept short/slow/shallow on purpose —
+    # push these too far and it turns into a swirly chorus effect rather
+    # than a subtle "double".
+    "double_delay_ms": 18, "double_speed": 0.15, "double_depth": 1.2, "double_send_db": -8,
+    # 7.7 parallel "punch" compression: a heavily squashed copy blended back
+    # UNDER the main vocal for extra perceived loudness/density without
+    # flattening the main path's own dynamics (the "New York compression"
+    # trick — a separate ADD-only layer, not a replacement for the fast/
+    # smooth compressors above).
+    "punch_ratio": 8, "punch_attack": 3, "punch_release": 150, "punch_threshold_db": -30,
+    "punch_makeup": 6.0, "punch_mix": 20,
+}
+
+# Genre/production-style presets: each is a set of overrides applied ON TOP
+# OF PRO_CHAIN_DEFAULTS (any key not listed here keeps its default value) —
+# selecting one is meant to be a full, reproducible reset to that style, not
+# a nudge from wherever the sliders currently sit.
+PRO_CHAIN_PRESETS = {
+    "clean": {
+        "label": "Clean & Natural",
+        "desc": "Just enough polish to sound intentional. Closest to your own voice.",
+        "values": {},
+    },
+    "pop_radio": {
+        "label": "Pop / Radio",
+        "desc": "Bright, upfront, and loud — tighter compression, more presence/air, "
+                "noticeable doubling and punch.",
+        "values": {
+            "dip_gain": -3.5, "nasal_gain": -2.0,
+            "fast_ratio": 5, "fast_threshold_db": -20,
+            "smooth_ratio": 4, "smooth_threshold_db": -22,
+            "deess_intensity": 55,
+            "tone2_gain": 3.0, "air_gain": 3.5,
+            "sat_drive_db": 10, "sat_mix": 18,
+            "double_send_db": -6, "punch_mix": 35,
+            "verb_send_db": -10, "delay_send_db": -22,
+        },
+    },
+    "warm_intimate": {
+        "label": "Warm & Intimate",
+        "desc": "Close and rich — gentle compression, extra low-mid warmth, a longer "
+                "smoother reverb tail. Acoustic ballad, not arena.",
+        "values": {
+            "tone1_gain": 2.5, "tone2_gain": 0.5, "air_gain": 1.0,
+            "sat_drive_db": 6, "sat_mix": 20,
+            "smooth_ratio": 2.5, "smooth_attack": 40, "smooth_release": 700,
+            "verb_decay": 2.4, "verb_send_db": -7, "delay_send_db": -30,
+            "double_send_db": -14, "punch_mix": 10,
+        },
+    },
+    "rock_powerful": {
+        "label": "Rock / Powerful",
+        "desc": "Aggressive and in-your-face — fast, hard-hitting compression, heavier "
+                "saturation, and a strong punch layer for a belted, arena-scale vocal.",
+        "values": {
+            "fast_ratio": 6, "fast_attack": 0.5, "fast_threshold_db": -16,
+            "smooth_ratio": 4, "smooth_threshold_db": -18,
+            "tone2_gain": 3.5, "air_gain": 2.0,
+            "sat_drive_db": 13, "sat_mix": 25,
+            "punch_mix": 45, "punch_ratio": 10,
+            "double_send_db": -7,
+            "verb_send_db": -11, "delay_send_db": -24,
+        },
+    },
+    "acoustic_natural": {
+        "label": "Acoustic / Unplugged",
+        "desc": "Light-touch processing that stays true to the performance — gentle "
+                "compression, subtle everything, a short natural room reverb.",
+        "values": {
+            "dip_gain": -1.5, "nasal_gain": -1.0,
+            "fast_ratio": 2.5, "smooth_ratio": 2,
+            "sat_mix": 6, "sat_drive_db": 4,
+            "air_gain": 1.5,
+            "verb_send_db": -12, "delay_send_db": -34,
+            "double_send_db": -18, "punch_mix": 8,
+        },
+    },
 }
 
 
@@ -254,6 +339,16 @@ def build_pro_chain_filter_complex(pro, sample_rate=48000):
     delay_lo, delay_hi = g("delay_lowcut"), g("delay_highcut")
     delay_send = _db_to_lin(g("delay_send_db"))
 
+    double_delay = max(1, g("double_delay_ms"))
+    double_speed = max(0.01, g("double_speed"))
+    double_depth = max(0.01, g("double_depth"))
+    double_send = _db_to_lin(g("double_send_db"))
+
+    punch_ratio, punch_atk, punch_rel = g("punch_ratio"), g("punch_attack"), g("punch_release")
+    punch_thr = max(0.000976, min(1, _db_to_lin(g("punch_threshold_db"))))
+    punch_makeup = max(1, min(64, g("punch_makeup")))
+    punch_mix = max(0, min(100, g("punch_mix"))) / 100
+
     # 1) linear pre-chain: clean EQ -> fast comp -> smooth comp -> de-esser -> tone EQ
     pre = (
         f"highpass=f={hpf:.1f}:poles=2,highpass=f={hpf:.1f}:poles=1,"
@@ -292,15 +387,43 @@ def build_pro_chain_filter_complex(pro, sample_rate=48000):
         f"volume={delay_send:.4f}"
     )
 
+    # 5) doubler AUX: a short, slow, shallow 2-voice chorus stands in for a
+    # second take sung in unison (the classic ADT trick) -> send level. Kept
+    # short/slow/shallow so it reads as "doubled", not a swirly chorus.
+    double_chain = (
+        f"chorus=0.5:0.5:{double_delay:.1f}|{double_delay * 1.25:.1f}:"
+        f"0.4|0.32:{double_speed:.3f}|{double_speed * 1.4:.3f}:"
+        f"{double_depth:.2f}|{double_depth * 0.75:.2f},"
+        f"volume={double_send:.4f}"
+    )
+
+    # 6) parallel "punch" bus: a heavily squashed, made-up copy blended back
+    # UNDER the dry+saturated signal — the "New York compression" trick for
+    # extra perceived density/loudness without flattening the main path's
+    # own dynamics. This is an ADD-only layer (not a dry/wet complement like
+    # saturation above), so punch_mix doesn't need to sum to 1 with anything.
+    punch_chain = (
+        f"acompressor=threshold={punch_thr:.5f}:ratio={punch_ratio:.2f}:"
+        f"attack={punch_atk:.2f}:release={punch_rel:.2f}:knee=2:makeup={punch_makeup:.2f},"
+        f"volume={punch_mix:.3f}"
+    )
+
     fc = (
         f"[0:a]{pre}[pre];"
         f"[pre]asplit=2[sdry][ssat];"
         f"[ssat]volume={sat_drive:.1f}dB,asoftclip=type=tanh,volume={-sat_drive * 0.7:.2f}dB[ssatw];"
-        f"[sdry][ssatw]amix=inputs=2:weights={dry_w:.3f} {wet_w:.3f}:normalize=0[postsat];"
-        f"[postsat]asplit=3[mdry][mverb][mdel];"
-        f"[mverb]{verb_chain}[verbwet];"
-        f"[mdel]{delay_chain}[delwet];"
-        f"[mdry][verbwet][delwet]amix=inputs=3:weights=1 1 1:normalize=0[outfx]"
+        f"[sdry][ssatw]amix=inputs=2:weights={dry_w:.3f} {wet_w:.3f}:normalize=0[postsat0];"
+        f"[postsat0]asplit=2[postsat_main][spunch];"
+        f"[spunch]{punch_chain}[spunchw];"
+        f"[postsat_main][spunchw]amix=inputs=2:weights=1 1:normalize=0[postsat];"
+        f"[postsat]asplit=4[mdry][mverb][mdel][mdbl];"
+        # dry vocal stays centered — only the AUX sends get stereo-widened,
+        # so the voice itself never loses focus/clarity.
+        f"[mdry]pan=stereo|c0=c0|c1=c0[drystereo];"
+        f"[mverb]{verb_chain},haas[verbwet];"
+        f"[mdel]{delay_chain},haas[delwet];"
+        f"[mdbl]{double_chain},haas[dblwet];"
+        f"[drystereo][verbwet][delwet][dblwet]amix=inputs=4:weights=1 1 1 1:normalize=0[outfx]"
     )
     return fc, "outfx"
 
@@ -444,10 +567,26 @@ def mixdown(vocal_path, music_path, out_path,
             vocal_gain_db=0.0, music_gain_db=0.0,
             harmony_path=None, harmony_gain_db=-3.0,
             out_format="wav", loudnorm=True,
-            trim_start=None, trim_end=None):
+            trim_start=None, trim_end=None,
+            master_wav_path=None, music_eq=None):
     """
     Mix processed vocal + backing music (+ optional harmony vocal) into a
     final high-quality file.
+
+    master_wav_path: if given (and out_format isn't already "wav"), also
+    write a second, lossless copy of the SAME mix to this path, from the
+    SAME filter graph run (ffmpeg supports mapping one filter output to
+    multiple encoded outputs in one pass — no second decode/process needed).
+    This exists for the phone-camera video mux, which used to pull its
+    audio from whatever format the singer picked for their own download —
+    if that was MP3, the video's audio was a lossy re-encode of an already-
+    lossy file, audibly worse than it needed to be. Muxing always prefers
+    this master instead, regardless of the download format chosen.
+
+    music_eq: optional {"low_gain","mid_gain","high_gain"} (dB) — the
+    karaoke/backing track used to only have a single gain slider, unlike
+    the vocal's own tone-shaping EQ; this gives it the same simple 3-band
+    control (rumble-range shelf, midrange bell, presence shelf).
     """
     # Vocal bus: gain + a gentle presence lift so the voice sits ON TOP of the
     # music instead of buried in it (a common "lack of quality" cause).
@@ -456,7 +595,17 @@ def mixdown(vocal_path, music_path, out_path,
         f"equalizer=f=4000:t=q:w=1.2:g=1.5,"     # air/presence
         f"equalizer=f=250:t=q:w=1.0:g=1.0"        # warmth
     )
+    music_eq = music_eq or {}
+    m_low = float(music_eq.get("low_gain") or 0)
+    m_mid = float(music_eq.get("mid_gain") or 0)
+    m_high = float(music_eq.get("high_gain") or 0)
     m_filter = f"volume={music_gain_db:.1f}dB"
+    if abs(m_low) > 0.01:
+        m_filter += f",bass=f=150:g={m_low:.2f}"
+    if abs(m_mid) > 0.01:
+        m_filter += f",equalizer=f=1000:t=q:w=1.0:g={m_mid:.2f}"
+    if abs(m_high) > 0.01:
+        m_filter += f",treble=f=6000:g={m_high:.2f}"
 
     # Glue bus compressor + loudness normalise for a cohesive, "produced" master.
     glue = "acompressor=threshold=0.1:ratio=2:knee=6:attack=15:release=250:makeup=1"
@@ -514,6 +663,10 @@ def mixdown(vocal_path, music_path, out_path,
         "-map", "[out]",
         "-ar", "48000", "-ac", "2",
     ] + codec + [out_path]
+
+    if master_wav_path and out_format != "wav":
+        cmd += ["-map", "[out]", "-ar", "48000", "-ac", "2",
+                "-c:a", "pcm_s24le", master_wav_path]
 
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
@@ -598,6 +751,53 @@ def stitch_vocals(head_wav, tail_wav, out_wav, punch_sec, crossfade_ms=40):
     sf.write(out_wav, out.astype(np.float32), sr)
 
 
+def stitch_multi(segments, out_wav, crossfade_ms=40):
+    """
+    Generalizes stitch_vocals from exactly 2 takes joined at 1 punch point to
+    an arbitrary ordered list of takes/regions — non-destructive multi-region
+    comping: pick a different take for each stretch of the song instead of
+    being limited to one head take + one tail take.
+
+    segments: ordered list of {"path": wav_path, "start": float, "end": float}.
+    start/end are in SONG time, not each take's own — every take's sample 0
+    already corresponds to song position 0 (see alignTake() client-side), so
+    slicing the same [start,end) out of each take's file lines them up with
+    no per-segment offset math needed. Adjacent segments are joined with the
+    same short equal-power crossfade stitch_vocals uses, just applied at
+    every boundary instead of a single one.
+    """
+    if not segments:
+        raise ValueError("no segments to comp")
+
+    sr = None
+    parts = []
+    for seg in segments:
+        y, this_sr = librosa.load(seg["path"], sr=sr, mono=True)
+        if sr is None:
+            sr = this_sr
+        start = max(0, int(float(seg["start"]) * sr))
+        end = len(y) if seg.get("end") is None else int(float(seg["end"]) * sr)
+        end = min(max(end, start), len(y))
+        parts.append(y[start:end])
+
+    xf = max(1, int(crossfade_ms / 1000.0 * sr))
+    out = parts[0]
+    for nxt in parts[1:]:
+        if len(out) >= xf and len(nxt) >= xf:
+            fade_out = np.cos(np.linspace(0, np.pi / 2, xf)) ** 1
+            fade_in = np.sin(np.linspace(0, np.pi / 2, xf)) ** 1
+            joined_mid = out[-xf:] * fade_out + nxt[:xf] * fade_in
+            out = np.concatenate([out[:-xf], joined_mid, nxt[xf:]])
+        else:
+            out = np.concatenate([out, nxt])
+
+    peak = np.max(np.abs(out)) or 1.0
+    if peak > 0.99:
+        out = out * (0.99 / peak)
+
+    sf.write(out_wav, out.astype(np.float32), sr)
+
+
 # ---- Phone-camera video: mux -------------------------------------------------
 #
 # The desktop records the phone's live WebRTC video stream itself, started in
@@ -631,7 +831,8 @@ def mux_video(phone_video_path, final_audio_path, out_video_path, trim_start=Non
         "-i", final_audio_path,
         "-map", "0:v:0", "-map", "1:a:0",
         "-c:v", "libx264", "-preset", "slow", "-crf", "18",
-        "-c:a", "aac", "-b:a", "256k",
+        "-ar", "48000",
+        "-c:a", "aac", "-b:a", "320k",
         "-shortest",
         out_video_path,
     ]

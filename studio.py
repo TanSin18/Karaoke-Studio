@@ -177,7 +177,16 @@ def _pitch_to_rgb(midi, cents, level, mode="multi", mono_color=None):
     brightness in both modes: volume alone sat in a narrow "loud enough to
     sing" band and made every note look about the same, which is exactly
     what felt flat; a big high note should read as the moment, a low note
-    as comparatively moody."""
+    as comparatively moody.
+
+    Intensity is baked directly into the RGB magnitude sent to the light
+    (not left to the separate Govee "brightness" command alone) — these
+    devices don't reliably apply a brightness command that arrives right
+    after a color command to the same light, so a dim note needs to
+    actually BE a dim color, not just "full-brightness red, allegedly at
+    22%". The brightness % is still sent too (harmless, helps if the device
+    does honor it), but the RGB scaling is what's actually guaranteed to
+    show up on the light."""
     now = time.monotonic()
     gap = now - _lights_range["last_ts"]
     _lights_range["last_ts"] = now
@@ -206,26 +215,26 @@ def _pitch_to_rgb(midi, cents, level, mode="multi", mono_color=None):
     floor = 22
     brightness = (floor + pitch_norm * (100 - floor)) * (0.75 + 0.25 * level_norm)
     brightness = max(15, min(100, round(brightness)))
+    scale = brightness / 100.0
 
     if mode == "mono" and mono_color:
-        # Single fixed color, exactly as picked — only the separate
-        # brightness command above varies, so it doesn't also get muted/
-        # desaturated the way the multi-color mode's own value-ramp does.
+        # Single fixed hue, exactly as picked — but scaled to the computed
+        # intensity so a low note is genuinely a dim version of your color,
+        # not the same full-strength color with an unreliable brightness
+        # command tacked on.
         r = max(0, min(255, int(mono_color.get("r", 255))))
         g = max(0, min(255, int(mono_color.get("g", 255))))
         b = max(0, min(255, int(mono_color.get("b", 255))))
-        return (r, g, b), brightness
+        return (round(r * scale), round(g * scale), round(b * scale)), brightness
 
     # multi mode: hue cycles once per octave (each of the 12 pitch classes
     # gets its own color around the wheel) so the lights visibly track the
-    # melody. The color itself also gets punchier for higher/brighter notes
-    # (full HSV value+saturation), not just the brightness % — together
-    # those two make a big high note look like a big moment instead of
-    # "same color, slightly higher number."
+    # melody; saturation dips when you're off-pitch. Value uses the SAME
+    # brightness fraction as above (not a separate narrow ramp) so the two
+    # numbers can't disagree with each other.
     hue = (midi % 12) / 12.0
     sat = 1.0 if in_tune else 0.55
-    val = 0.75 + 0.25 * pitch_norm
-    r, g, b = colorsys.hsv_to_rgb(hue, sat, val)
+    r, g, b = colorsys.hsv_to_rgb(hue, sat, scale)
     return (round(r * 255), round(g * 255), round(b * 255)), brightness
 
 
@@ -457,6 +466,32 @@ def _get_take(jid, tid):
     return None
 
 
+def _update_take(jid, tid, **fields):
+    """Merge fields (e.g. render/video progress) into one take's own record,
+    keyed by that take's id — not the session-wide JOBS dict. Render/video
+    generation used to live in one global per-session slot, so recording a
+    retake while the previous take's video was still combining (or had
+    already finished) silently clobbered or no-op'd against that old take's
+    state instead of tracking its own. Scoping status to the take itself is
+    what lets each take show its own "generating…" progress and end up with
+    its own result, independent of whatever else is happening in the
+    session."""
+    meta = _read_meta(jid)
+    takes = meta.get("takes") or []
+    found = False
+    for t in takes:
+        if t.get("id") == tid:
+            for k, v in fields.items():
+                if isinstance(v, dict) and isinstance(t.get(k), dict):
+                    t[k].update(v)
+                else:
+                    t[k] = v
+            found = True
+    if found:
+        _write_meta(jid, takes=takes)
+    return found
+
+
 def _set_take_deleted(jid, tid, deleted):
     meta = _read_meta(jid)
     takes = meta.get("takes") or []
@@ -683,8 +718,17 @@ def _render_lock(jid):
         return _RENDER_LOCKS.setdefault(jid, threading.Lock())
 
 
-def do_render(jid, vocal_path, fx, mix_opts):
-    set_job(jid, status="rendering", stage="starting", error=None)
+def do_render(jid, vocal_path, fx, mix_opts, scope_id=None):
+    has_take = bool(scope_id and _get_take(jid, scope_id))
+    def progress(stage=None, **kw):
+        fields = dict(kw)
+        if stage is not None:
+            fields["stage"] = stage
+        set_job(jid, **fields)
+        if has_take:
+            _update_take(jid, scope_id, render=fields)
+
+    progress(status="rendering", stage="starting", error=None)
     sdir = os.path.join(SESS_DIR, jid)
     # mix against whatever key the singer settled on (0 = original)
     try:
@@ -694,7 +738,7 @@ def do_render(jid, vocal_path, fx, mix_opts):
     music_key = max(-6, min(6, music_key))
     backing = backing_for_key(jid, music_key) or os.path.join(sdir, "backing.wav")
     if not backing or not os.path.exists(backing):
-        set_job(jid, status="error", error="Backing track missing; prepare again.")
+        progress(status="error", error="Backing track missing; prepare again.")
         return
 
     tmp = os.path.join(sdir, "tmp")
@@ -712,11 +756,16 @@ def do_render(jid, vocal_path, fx, mix_opts):
     except (TypeError, ValueError):
         trim_end = None
 
+    # Every output/intermediate file from here on is named with `scope_id`
+    # (when there is one) so a retake's render can run without touching, or
+    # racing against, whatever an earlier take's still-in-flight render or
+    # video combine is reading/writing under its OWN scoped filenames.
+    suffix = f"_{scope_id}" if scope_id else ""
     try:
-        processed_vocal = os.path.join(sdir, "vocal_fx.wav")
+        processed_vocal = os.path.join(sdir, f"vocal_fx{suffix}.wav")
         audio_fx.process_vocal(
             vocal_path, processed_vocal, fx, tmp,
-            progress=lambda stage: set_job(jid, stage=stage),
+            progress=lambda stage: progress(stage=stage),
         )
 
         harmony_path = None
@@ -726,8 +775,12 @@ def do_render(jid, vocal_path, fx, mix_opts):
             if harmony_take:
                 harmony_path = os.path.join(sdir, harmony_take["file"])
 
-        set_job(jid, stage="mixing", format=out_fmt)
-        final = os.path.join(sdir, f"final.{out_fmt}")
+        progress(stage="mixing", format=out_fmt)
+        final = os.path.join(sdir, f"final{suffix}.{out_fmt}")
+        # Kept as the video-mux audio source regardless of the download
+        # format chosen — if that's a lossy format (MP3), the video's audio
+        # would otherwise be a lossy re-encode of an already-lossy file.
+        master_wav = os.path.join(sdir, f"final_master{suffix}.wav") if out_fmt != "wav" else None
         audio_fx.mixdown(
             processed_vocal, backing, final,
             vocal_gain_db=float(mix_opts.get("vocal_gain_db", 0)),
@@ -738,9 +791,11 @@ def do_render(jid, vocal_path, fx, mix_opts):
             loudnorm=bool(mix_opts.get("loudnorm", True)),
             trim_start=trim_start,
             trim_end=trim_end,
+            master_wav_path=master_wav,
+            music_eq=mix_opts.get("music_eq"),
         )
     except Exception as e:
-        set_job(jid, status="error", error=str(e)[:400])
+        progress(status="error", error=str(e)[:400])
         return
 
     title = get_job(jid).get("title", "song")
@@ -749,40 +804,55 @@ def do_render(jid, vocal_path, fx, mix_opts):
     # seek the phone video by the same amount later — the render and the
     # video combine happen in separate requests/steps, so this is the only
     # way that later step knows the front of the mix got trimmed.
-    set_job(jid, status="done", stage="done",
-            final_file=os.path.basename(final),
-            display_name=f"{safe} (karaoke).{out_fmt}",
-            render_trim_start=trim_start)
+    progress(status="done", stage="done",
+             final_file=os.path.basename(final),
+             audio_master_file=os.path.basename(master_wav) if master_wav else os.path.basename(final),
+             display_name=f"{safe} (karaoke).{out_fmt}",
+             render_trim_start=trim_start)
 
 
-def do_combine_video(jid):
+def do_combine_video(jid, scope_id, phone_video_file, final_mix_file):
     """Mux the phone's video with the finished audio mix into one final
     video file. No alignment step needed: the desktop starts recording the
     live WebRTC stream from the phone in the same tick it starts the vocal
     recording, so both are already on the same clock from t=0 — unlike the
     old design, which had the phone record+upload independently and relied
     on a sync chirp (audible only through a real speaker, not headphones)
-    to find the offset after the fact."""
+    to find the offset after the fact.
+
+    scope_id ties output to one take (see /render) — without it, a retake's
+    combine used to overwrite a single shared "final_video.mp4" regardless
+    of which take actually finished last, and a guard meant to stop a
+    combine from double-running would also silently swallow a NEW take's
+    combine request if the previous take had already reached "done"."""
     sdir = os.path.join(SESS_DIR, jid)
     j = get_job(jid)
-    phone_video = os.path.join(sdir, j["phone_video_file"])
-    final_mix = os.path.join(sdir, j["final_file"])
-    out_video = os.path.join(sdir, "final_video.mp4")
+    has_take = bool(scope_id and _get_take(jid, scope_id))
+
+    def set_video(**fields):
+        set_job(jid, **fields)
+        if has_take:
+            _update_take(jid, scope_id, video=fields)
+
+    phone_video = os.path.join(sdir, phone_video_file)
+    final_mix = os.path.join(sdir, final_mix_file)
+    out_name = f"final_video_{scope_id}.mp4" if scope_id else "final_video.mp4"
+    out_video = os.path.join(sdir, out_name)
     try:
         audio_fx.mux_video(phone_video, final_mix, out_video,
                             trim_start=j.get("render_trim_start"))
     except Exception as e:
-        set_job(jid, video_status="error", video_error=str(e)[:400])
+        set_video(status="error", error=str(e)[:400])
         return
-    set_job(jid, video_status="done", final_video_file="final_video.mp4")
+    set_video(status="done", error=None, final_video_file=out_name)
 
 
-def _run_render_locked(jid, vocal_path, fx, mix_opts, lock):
+def _run_render_locked(jid, vocal_path, fx, mix_opts, lock, scope_id=None):
     """Thread target for /render: holds `lock` for the whole render so a
     second request for the same session can't start until this one is done
     (the lock itself was already acquired by the HTTP handler)."""
     try:
-        do_render(jid, vocal_path, fx, mix_opts)
+        do_render(jid, vocal_path, fx, mix_opts, scope_id)
     finally:
         lock.release()
 
@@ -1102,6 +1172,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, audio_fx.PRO_CHAIN_DEFAULTS)
             return
 
+        if p.path == "/pro_chain_presets":
+            self._json(200, audio_fx.PRO_CHAIN_PRESETS)
+            return
+
         if p.path == "/sessions":
             q = parse_qs(p.query)
             profile = (q.get("profile") or [""])[0]
@@ -1127,7 +1201,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/status":
-            jid = (parse_qs(p.query).get("id") or [""])[0]
+            q = parse_qs(p.query)
+            jid = (q.get("id") or [""])[0]
             # job_or_disk (not get_job) so a resumed session — from the
             # "resume a recent song" panel, or a bookmarked ?sid= link —
             # still works after a server restart wiped the in-memory JOBS
@@ -1135,8 +1210,24 @@ class Handler(BaseHTTPRequestHandler):
             j = job_or_disk(jid)
             if not j:
                 self._json(404, {"error": "unknown job"})
-            else:
-                self._json(200, j)
+                return
+            # &take=: overlay THIS take's own render/video progress on top of
+            # the session-level status, so polling for a specific take never
+            # reads whatever a different (earlier or later) take's render
+            # happens to be doing.
+            take_id = (q.get("take") or [""])[0]
+            take = _get_take(jid, take_id) if take_id else None
+            if take:
+                j = dict(j)
+                j.update(take.get("render") or {})
+                video = take.get("video")
+                if video:
+                    j["video_status"] = video.get("status")
+                    j["video_error"] = video.get("error")
+                    j["final_video_file"] = video.get("final_video_file")
+                else:
+                    j["video_status"] = None
+            self._json(200, j)
             return
 
         if p.path == "/backing":
@@ -1158,11 +1249,18 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/final":
-            jid = (parse_qs(p.query).get("id") or [""])[0]
+            q = parse_qs(p.query)
+            jid = (q.get("id") or [""])[0]
             j = get_job(jid)
-            final_file = j.get("final_file")
-            display_name = j.get("display_name")
-            if j.get("status") != "done" or not final_file:
+            # &take=: this specific take's own rendered result, so retakes
+            # never fetch whatever the session's single most-recent render
+            # happened to be.
+            take = _get_take(jid, (q.get("take") or [""])[0])
+            render = (take.get("render") or {}) if take else {}
+            final_file = render.get("final_file") if take else j.get("final_file")
+            display_name = render.get("display_name") if take else j.get("display_name")
+            done = (render.get("status") == "done") if take else (j.get("status") == "done")
+            if not done or not final_file:
                 # in-memory job status doesn't survive a server restart —
                 # fall back to whatever finished output actually exists on
                 # disk (see _session_outputs) so old History entries stay
@@ -1201,15 +1299,21 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/final_video":
-            jid = (parse_qs(p.query).get("id") or [""])[0]
+            q = parse_qs(p.query)
+            jid = (q.get("id") or [""])[0]
             j = get_job(jid)
-            video_file = j.get("final_video_file") if j.get("video_status") == "done" else None
+            take = _get_take(jid, (q.get("take") or [""])[0])
+            video = (take.get("video") or {}) if take else None
+            if take:
+                video_file = video.get("final_video_file") if video.get("status") == "done" else None
+            else:
+                video_file = j.get("final_video_file") if j.get("video_status") == "done" else None
             if not video_file:
                 video_file = _session_outputs(jid)["video"]
                 if not video_file:
                     self._json(404, {"error": "not ready"})
                     return
-            display_name = j.get("display_name")
+            display_name = (take.get("render") or {}).get("display_name") if take else j.get("display_name")
             if not display_name:
                 meta = _read_meta(jid)
                 display_name = re.sub(r'[\\/:*?"<>|\r\n]+', "_", meta.get("title") or "karaoke")[:100].strip() or "karaoke"
@@ -1619,6 +1723,18 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(400, {"error": "Could not decode recording."})
                     return
 
+            # scope_id ties this render's OUTPUT files (and, if a take
+            # record exists for it, that take's own progress/result) to one
+            # specific take instead of a single session-wide "final.wav"
+            # slot — otherwise recording a retake while an earlier render or
+            # video combine is still in flight clobbers or gets confused
+            # with that earlier one. take_id covers an already-saved take;
+            # rec_id (the id generated client-side at record-start) covers
+            # rendering directly from a fresh, not-yet-saved recording.
+            rec_id = body.get("rec_id")
+            rec_id = rec_id if re.fullmatch(r"[A-Za-z0-9]{4,32}", rec_id or "") else None
+            scope_id = take_id if (take_id and re.fullmatch(r"[A-Za-z0-9]{4,32}", take_id)) else rec_id
+
             lock = _render_lock(jid)
             if not lock.acquire(blocking=False):
                 self._json(409, {"error": "A render is already running for this session."})
@@ -1626,10 +1742,12 @@ class Handler(BaseHTTPRequestHandler):
             fx = body.get("fx", {})
             mix_opts = body.get("mix", {})
             set_job(jid, status="rendering")
+            if scope_id and _get_take(jid, scope_id):
+                _update_take(jid, scope_id, render={"status": "rendering", "stage": "starting", "error": None})
             threading.Thread(target=_run_render_locked,
-                             args=(jid, vocal_path, fx, mix_opts, lock),
+                             args=(jid, vocal_path, fx, mix_opts, lock, scope_id),
                              daemon=True).start()
-            self._json(200, {"ok": True})
+            self._json(200, {"ok": True, "scope_id": scope_id})
             return
 
         if p.path == "/phone/register":
@@ -1676,6 +1794,14 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(p.query)
             jid = (q.get("id") or [""])[0]
             mime = (q.get("mime") or ["video/webm"])[0]
+            # `rec`: the client-generated id for THIS recording (set at
+            # startRec() time, before either MediaRecorder starts) — saving
+            # each take's phone footage under its own filename, keyed by
+            # this id, is what lets a retake's video combine independently
+            # instead of racing/clobbering whatever the previous take's
+            # combine was doing with a single shared "phone_raw" file.
+            rec = (q.get("rec") or [""])[0]
+            rec = rec if re.fullmatch(r"[A-Za-z0-9]{4,32}", rec or "") else None
             j = job_or_disk(jid)
             if not j:
                 self._json(404, {"error": "unknown session"})
@@ -1687,7 +1813,8 @@ class Handler(BaseHTTPRequestHandler):
             ext = ".mp4" if "mp4" in mime else ".webm"
             sdir = os.path.join(SESS_DIR, jid)
             os.makedirs(sdir, exist_ok=True)
-            video_path = os.path.join(sdir, f"phone_raw{ext}")
+            fname = f"phone_{rec}{ext}" if rec else f"phone_raw{ext}"
+            video_path = os.path.join(sdir, fname)
             try:
                 remaining = length
                 with open(video_path, "wb") as fh:
@@ -1700,8 +1827,12 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 self._json(400, {"error": "Could not save video."})
                 return
+            phone_videos = dict(j.get("phone_videos") or {})
+            if rec:
+                phone_videos[rec] = os.path.basename(video_path)
             set_job(jid, phone_status="uploaded",
-                    phone_video_file=os.path.basename(video_path))
+                    phone_video_file=os.path.basename(video_path),  # legacy/global fallback
+                    phone_videos=phone_videos)
             self._json(200, {"ok": True})
             return
 
@@ -1745,14 +1876,46 @@ class Handler(BaseHTTPRequestHandler):
             body = self._read_body()
             jid = body.get("id")
             j = get_job(jid)
-            if not j or j.get("status") != "done" or j.get("phone_status") != "uploaded":
+            if not j:
                 self._json(409, {"error": "not ready"})
                 return
-            if j.get("video_status") in ("aligning", "done"):
-                self._json(200, {"ok": True})  # already running / done, avoid double-combine
+            take_id = body.get("take_id")
+            rec_id = body.get("rec_id")
+            scope_id = next((s for s in (take_id, rec_id)
+                              if s and re.fullmatch(r"[A-Za-z0-9]{4,32}", s)), None)
+            take = _get_take(jid, scope_id) if scope_id else None
+
+            # Resolve THIS take's own render result and phone footage rather
+            # than the single session-wide slot — otherwise a retake here
+            # would either combine against a stale take's finished mix, or
+            # (via the old status guard below) get silently skipped entirely
+            # because some OTHER take had already reached "done"/"aligning".
+            if take:
+                render = take.get("render") or {}
+                render_done = render.get("status") == "done"
+                final_file = render.get("audio_master_file") or render.get("final_file")
+                video_state = take.get("video") or {}
+            else:
+                render_done = j.get("status") == "done"
+                final_file = j.get("audio_master_file") or j.get("final_file")
+                video_state = j  # legacy: global video_status/video_error fields
+
+            phone_video_file = (j.get("phone_videos") or {}).get(scope_id) or j.get("phone_video_file")
+
+            if not render_done or not final_file or not phone_video_file:
+                self._json(409, {"error": "not ready"})
                 return
-            set_job(jid, video_status="aligning", video_error=None)
-            threading.Thread(target=do_combine_video, args=(jid,), daemon=True).start()
+            if video_state.get("video_status" if take is None else "status") in ("aligning", "done"):
+                self._json(200, {"ok": True})  # already running / done for THIS take, avoid double-combine
+                return
+
+            if take:
+                _update_take(jid, scope_id, video={"status": "aligning", "error": None})
+            else:
+                set_job(jid, video_status="aligning", video_error=None)
+            threading.Thread(target=do_combine_video,
+                             args=(jid, scope_id, phone_video_file, final_file),
+                             daemon=True).start()
             self._json(200, {"ok": True})
             return
 
@@ -1769,7 +1932,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             sdir = os.path.join(SESS_DIR, jid)
             os.makedirs(sdir, exist_ok=True)
-            tid = uuid.uuid4().hex[:8]
+            # rec_id: the same client-generated id used to tag this take's
+            # phone video upload (see /phone/upload). Reusing it as the
+            # take's own id means a take and "its" phone footage share one
+            # identifier from the moment recording started, with no separate
+            # linking step needed later.
+            rec_id = body.get("rec_id")
+            rec_id = rec_id if re.fullmatch(r"[A-Za-z0-9]{4,32}", rec_id or "") else None
+            tid = rec_id if (rec_id and not _get_take(jid, rec_id)) else uuid.uuid4().hex[:8]
             fname = f"take_{tid}.wav"
             fpath = os.path.join(sdir, fname)
             try:
@@ -1842,6 +2012,49 @@ class Handler(BaseHTTPRequestHandler):
                 jid, file=fname, duration=_probe_duration(out_path), kind="comp",
                 punch_sec=punch_sec, source_take_ids=[head["id"], tail["id"]],
                 tid=tid,
+            )
+            self._json(200, {"take": take})
+            return
+
+        if p.path == "/comp_multi":
+            # Generalizes /comp from exactly 2 takes at 1 punch point to an
+            # arbitrary ordered list of (take, region) segments — pick a
+            # different take for each stretch of the song instead of one
+            # head + one tail take.
+            body = self._read_body()
+            jid = body.get("id")
+            raw_segments = body.get("segments") or []
+            if len(raw_segments) < 1:
+                self._json(400, {"error": "need at least one segment"})
+                return
+            sdir = os.path.join(SESS_DIR, jid)
+            segments = []
+            source_ids = []
+            for s in raw_segments:
+                t = _get_take(jid, s.get("take_id"))
+                if not t:
+                    self._json(404, {"error": f"unknown take {s.get('take_id')}"})
+                    return
+                try:
+                    start = float(s.get("start", 0))
+                    end = float(s["end"]) if s.get("end") is not None else None
+                except (TypeError, ValueError):
+                    self._json(400, {"error": "segment start/end must be numbers"})
+                    return
+                segments.append({"path": os.path.join(sdir, t["file"]), "start": start, "end": end})
+                source_ids.append(t["id"])
+            tid = uuid.uuid4().hex[:8]
+            fname = f"take_{tid}.wav"
+            out_path = os.path.join(sdir, fname)
+            try:
+                audio_fx.stitch_multi(segments, out_path,
+                                       crossfade_ms=float(body.get("crossfade_ms", 40)))
+            except Exception as e:
+                self._json(500, {"error": "Could not join those takes: " + str(e)[:300]})
+                return
+            take = _add_take(
+                jid, file=fname, duration=_probe_duration(out_path), kind="comp",
+                source_take_ids=source_ids, tid=tid,
             )
             self._json(200, {"take": take})
             return
@@ -2011,7 +2224,10 @@ PHONE_HTML = r"""<meta charset="utf-8">
   html,body{height:100%;margin:0;background:#0b0b10;color:#eee;
     font:15px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;}
   #wrap{display:flex;flex-direction:column;height:100%;}
-  #preview{flex:1;width:100%;object-fit:cover;background:#000;}
+  #preview{flex:1;width:100%;height:100%;object-fit:cover;background:#000;}
+  #zoomRow{display:flex;align-items:center;gap:10px;}
+  #zoomRow input[type=range]{flex:1;accent-color:#f5a623;height:28px;}
+  #zoomVal{min-width:44px;text-align:right;font-variant-numeric:tabular-nums;font-size:14px;}
   #bar{padding:14px 16px calc(14px + env(safe-area-inset-bottom));
     background:#14141c;display:flex;flex-direction:column;gap:8px;}
   #status{font-weight:600;font-size:16px;}
@@ -2027,12 +2243,23 @@ PHONE_HTML = r"""<meta charset="utf-8">
   #err{color:#ff8080;font-size:13px;}
 </style>
 <div id="wrap">
-  <div style="position:relative;flex:1;">
-    <video id="preview" autoplay muted playsinline></video>
+  <div style="position:relative;flex:1;overflow:hidden;">
+    <!-- camVideo is the raw camera sink, never shown directly — it's only a
+         source for the zoom canvas below. Both the on-screen preview and
+         the WebRTC stream sent to the desktop are the CANVAS's output, so
+         zoom is a real crop+scale of every frame, not a cosmetic CSS effect
+         layered on top of an unzoomed recording. -->
+    <video id="camVideo" autoplay muted playsinline style="display:none"></video>
+    <canvas id="preview"></canvas>
     <button id="flip" onclick="flipCamera()">🔄 flip</button>
   </div>
   <div id="bar">
     <div id="status"><span class="dot" id="dot"></span><span id="statusText">Starting camera…</span></div>
+    <div id="zoomRow">
+      <span>🔍</span>
+      <input type="range" id="zoomSlider" min="1" max="8" step="0.1" value="1">
+      <span id="zoomVal">1.0x</span>
+    </div>
     <div id="hint">Keep this tab open while you record — if your screen locks between takes,
       this page reconnects the camera on its own once you unlock it, no rescanning needed.</div>
     <button id="reconnectBtn" onclick="manualReconnect()" style="display:none">🔄 Reconnect</button>
@@ -2045,9 +2272,37 @@ const id = params.get('id');
 const statusText = document.getElementById('statusText');
 const dot = document.getElementById('dot');
 const errEl = document.getElementById('err');
-const video = document.getElementById('preview');
+const camVideo = document.getElementById('camVideo');
+const canvas = document.getElementById('preview');
+const ctx = canvas.getContext('2d');
 let stream = null, facing = 'environment';
 let wakeLock = null;
+let zoomLevel = 1;
+
+// The canvas is both what the singer sees and what actually gets sent over
+// WebRTC (see startWebRTC below) — capturing at a fixed 30fps regardless of
+// how often the draw loop repaints keeps the outgoing track's frame rate
+// stable even if a slow phone occasionally skips a rAF tick.
+const canvasStream = canvas.captureStream(30);
+
+function drawFrame(){
+  const vw = camVideo.videoWidth, vh = camVideo.videoHeight;
+  if(vw && vh){
+    if(canvas.width !== vw || canvas.height !== vh){ canvas.width = vw; canvas.height = vh; }
+    const cropW = vw / zoomLevel, cropH = vh / zoomLevel;
+    const sx = (vw - cropW) / 2, sy = (vh - cropH) / 2;
+    ctx.drawImage(camVideo, sx, sy, cropW, cropH, 0, 0, vw, vh);
+  }
+  requestAnimationFrame(drawFrame);
+}
+requestAnimationFrame(drawFrame);
+
+const zoomSlider = document.getElementById('zoomSlider');
+const zoomVal = document.getElementById('zoomVal');
+zoomSlider.addEventListener('input', ()=>{
+  zoomLevel = parseFloat(zoomSlider.value) || 1;
+  zoomVal.textContent = zoomLevel.toFixed(1) + 'x';
+});
 
 function setStatus(text, cls){
   statusText.textContent = text;
@@ -2092,7 +2347,7 @@ async function acquireCameraAndConnect(){
     audio: false,   // no phone-side audio needed anymore — nothing here
                      // ever gets used for sync or for the final mix.
   });
-  video.srcObject = stream;
+  camVideo.srcObject = stream;
   showErr('');
   $('reconnectBtn').style.display='none';
   await register();
@@ -2106,11 +2361,15 @@ async function manualReconnect(){
   catch(e){ setStatus('Camera access failed', 'warn'); showErr((e && e.message) || String(e)); }
 }
 
-// Swap the camera in place (new getUserMedia + replaceTrack on both the
-// recorder's stream and the live WebRTC sender) rather than tearing down
-// and re-registering — a full re-register would bump webrtc_gen and force
-// the desktop to rebuild its peer connection, causing a visible glitch in
-// the live self-view every time you just want to flip front/back camera.
+// Swap the camera in place (new getUserMedia, pointed at the same hidden
+// camVideo sink the zoom canvas already reads from) rather than tearing
+// down and re-registering — a full re-register would bump webrtc_gen and
+// force the desktop to rebuild its peer connection, causing a visible
+// glitch in the live self-view every time you just want to flip front/back
+// camera. No sender.replaceTrack needed either: the WebRTC sender's track
+// is the canvas's own captureStream track (see startWebRTC), which keeps
+// drawing whatever camVideo shows regardless of which physical camera feeds
+// it — swapping camVideo.srcObject is the entire flip.
 async function flipCamera(){
   facing = facing === 'environment' ? 'user' : 'environment';
   let newStream;
@@ -2120,12 +2379,7 @@ async function flipCamera(){
   }catch(e){ showErr((e && e.message) || String(e)); return; }
   const oldStream = stream;
   stream = newStream;
-  video.srcObject = stream;
-  if(pc){
-    const sender = pc.getSenders().find(s=>s.track && s.track.kind==='video');
-    const newVideoTrack = stream.getVideoTracks()[0];
-    if(sender && newVideoTrack){ try{ await sender.replaceTrack(newVideoTrack); }catch(_){} }
-  }
+  camVideo.srcObject = stream;
   if(oldStream) oldStream.getTracks().forEach(t=>t.stop());
 }
 
@@ -2152,7 +2406,11 @@ async function startWebRTC(gen){
   if(pc){ try{ pc.close(); }catch(_){} pc = null; }
   answerApplied = false; iceRecvCount = 0;
   pc = new RTCPeerConnection({iceServers: []});
-  stream.getVideoTracks().forEach(t=>pc.addTrack(t, stream));
+  // Sending the CANVAS's track (post-zoom), not the raw camera track — the
+  // desktop should receive exactly the cropped/scaled frame the singer sees
+  // in the phone preview, since that's what gets recorded as the final
+  // video too.
+  canvasStream.getVideoTracks().forEach(t=>pc.addTrack(t, canvasStream));
   pc.onicecandidate = (e)=>{ if(e.candidate) postIce(e.candidate.toJSON()); };
   try{
     const offer = await pc.createOffer();

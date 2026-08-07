@@ -109,17 +109,26 @@ def _raw_send(ip, payload):
     return True
 
 
-def _send(ip, payload):
+def _send(key, ip, payload):
     """Rate-limited send — for the high-frequency reactive color/brightness
     stream ONLY. A dropped color update just means the lights are a beat
     behind, harmless; silently dropping a deliberate one-off action (turn
     on/off) would be a real bug, so that goes through _raw_send instead and
-    always fires regardless of how recently a reactive update landed."""
-    lk = _last_sent.get(ip, 0)
+    always fires regardless of how recently a reactive update landed.
+
+    `key` is (ip, command-kind), NOT just ip — /lights/update calls
+    set_color() then set_brightness() back-to-back for the same light on
+    every update. Keying the budget by ip alone meant the second call
+    always landed inside the window the first one had just opened, so
+    brightness was being silently dropped on literally every single
+    update: the light's color would visibly change but its brightness
+    command never actually reached the device. Each command kind now gets
+    its own independent budget per device."""
+    lk = _last_sent.get(key, 0)
     now = time.monotonic()
     if now - lk < MIN_INTERVAL_SEC:
-        return False  # dropped — too soon after the last command to this device
-    _last_sent[ip] = now
+        return False  # dropped — too soon after the last command of THIS KIND to this device
+    _last_sent[key] = now
     return _raw_send(ip, payload)
 
 
@@ -129,10 +138,10 @@ def turn(ip, on):
 
 def set_brightness(ip, pct):
     pct = max(1, min(100, int(pct)))
-    return _send(ip, {"msg": {"cmd": "brightness", "data": {"value": pct}}})
+    return _send((ip, "brightness"), ip, {"msg": {"cmd": "brightness", "data": {"value": pct}}})
 
 
 def set_color(ip, r, g, b):
     r, g, b = (max(0, min(255, int(v))) for v in (r, g, b))
-    return _send(ip, {"msg": {"cmd": "colorwc",
+    return _send((ip, "color"), ip, {"msg": {"cmd": "colorwc",
                  "data": {"color": {"r": r, "g": g, "b": b}, "colorTemInKelvin": 0}}})

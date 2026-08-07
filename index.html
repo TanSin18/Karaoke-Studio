@@ -311,9 +311,68 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .takex{color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:2px}
   .takex:hover{color:var(--rec)}
   .takedur{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .takestatusrow{margin-top:5px;min-height:14px}
+  .takestatus{font-size:10px;font-family:var(--mono);text-decoration:none;display:inline-block}
+  .takestatus.busy{color:var(--amber2);animation:takepulse 1.4s ease-in-out infinite}
+  .takestatus.err{color:var(--rec)}
+  .takestatus.ok{color:var(--ok)}
+  .takestatus.ok:hover{text-decoration:underline}
+  @keyframes takepulse{0%,100%{opacity:.55}50%{opacity:1}}
   .comprow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;
     background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:10px}
   .comprow select{max-width:150px}
+
+  /* track editor: vocal + karaoke waveforms on one shared, zoomable timeline */
+  .trackeditor{margin-top:12px;background:var(--well);border:1px solid var(--edge);
+    border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+  .te-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .te-time{font-family:var(--mono);font-size:12px;color:var(--muted);min-width:100px}
+  .te-chk{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer}
+  .te-scroll{overflow-x:auto;overflow-y:hidden;border:1px solid var(--edge);border-radius:8px;
+    background:var(--rack)}
+  .te-inner{position:relative;height:auto;min-width:100%}
+  .te-lane{position:relative;border-bottom:1px solid var(--edge)}
+  .te-lane:last-child{border-bottom:none}
+  .te-lane.assignable{cursor:crosshair}
+  .te-lanelabel{position:absolute;top:2px;left:4px;z-index:3;font-family:var(--mono);font-size:9px;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--dim);background:rgba(0,0,0,.35);
+    padding:1px 5px;border-radius:4px;pointer-events:none}
+  .te-canvas{display:block;width:100%;height:64px}
+  .te-region{position:absolute;top:0;bottom:0;background:rgba(255,180,84,.22);
+    border-left:1px solid var(--amber2);border-right:1px solid var(--amber2);pointer-events:none}
+  .te-markerrow{position:relative;height:16px}
+  .te-marker{position:absolute;top:0;width:0;height:0;border-left:5px solid transparent;
+    border-right:5px solid transparent;border-top:8px solid var(--pink2);cursor:pointer;transform:translateX(-5px)}
+  .te-marker .te-markerlabel{position:absolute;top:9px;left:6px;font-size:9px;font-family:var(--mono);
+    color:var(--pink2);white-space:nowrap}
+  .te-playhead{position:absolute;top:0;bottom:0;width:1.5px;background:var(--ink);z-index:4;pointer-events:none}
+  .te-trimhandle{position:absolute;top:0;bottom:0;width:14px;z-index:5;cursor:ew-resize;
+    display:flex;align-items:flex-start;justify-content:center}
+  .te-trimhandle .te-handlegrip{color:var(--amber2);font-size:14px;line-height:1;margin-top:1px;
+    text-shadow:var(--glow-amber)}
+  .te-trimhandle.in{transform:translateX(-1px)}
+  .te-trimhandle.out{transform:translateX(-13px)}
+  .te-trimshade{position:absolute;top:0;bottom:0;background:rgba(0,0,0,.5);z-index:2;pointer-events:none}
+  .te-punchmarker{position:absolute;top:0;bottom:0;width:2px;background:var(--ok);z-index:4;
+    cursor:ew-resize;box-shadow:0 0 6px var(--ok)}
+  .te-tracks{display:flex;flex-direction:column;gap:6px}
+  .te-trackctl{display:flex;align-items:center;gap:8px}
+  .te-tname{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--dim);width:64px}
+  .te-ms{width:22px;height:22px;border-radius:5px;border:1px solid var(--edge);background:var(--well2);
+    color:var(--dim);font-size:10px;font-family:var(--mono);cursor:pointer;padding:0}
+  .te-ms.on[id*="Mute"]{background:var(--rec);color:#fff;border-color:var(--rec)}
+  .te-ms.on[id*="Solo"]{background:var(--amber2);color:#1a1400;border-color:var(--amber2)}
+  .te-trackctl input[type=range]{flex:1;max-width:220px}
+  .te-fval{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:38px}
+  .te-eqrow{display:flex;gap:14px;padding-left:72px;flex-wrap:wrap}
+  .te-eqrow label{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+  .te-eqrow input[type=range]{width:80px}
+  .te-compbuild{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--well2);
+    border-radius:8px;padding:8px}
+  .te-hint{font-size:11px;color:var(--dim)}
+  .te-empty{font-size:12.5px;color:var(--muted);line-height:1.5;padding:10px 4px}
+  .te-empty b{color:var(--amber2)}
 
   /* shared saved-take preview bar: one real transport, reused by whichever
      take card was last clicked, instead of a bare fire-and-forget "Play"
@@ -717,6 +776,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <span class="monval" id="monVolV">off</span>
           </div>
           <label class="tunertog"><input type="checkbox" id="tunerToggle" checked> pitch guide</label>
+          <label class="tunertog" title="Hear yourself through your FX chain (reverb/compression/EQ) while singing — like a real vocal booth cue mix. What actually gets RECORDED is always your raw dry voice; this only changes what you hear.">
+            <input type="checkbox" id="studioMonitorToggle" checked> studio monitor</label>
         </div>
 
         <!-- practice/timing settings: less urgent, one-time setup — tucked away
@@ -836,6 +897,80 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <button class="btn" id="compBtn">↳ Join takes</button>
         </div>
       </div>
+      <!-- Track editor: vocal + karaoke waveforms on one shared, zoomable
+           timeline, with per-track faders/mute/solo, drag-to-trim, a
+           draggable comp punch point, multi-take compare lanes for
+           region-based comping, markers, and its own undo/redo. Deliberately
+           OUTSIDE #takeHistory (which stays display:none until a take
+           exists) — this panel must always be visible once a session is
+           loaded, with its own placeholder before any take exists, so the
+           feature is discoverable instead of being nested inside a
+           container that hides it along with everything else. -->
+      <div class="trackeditor" id="trackEditor">
+          <div class="te-empty" id="teEmptyState">
+            🎚️ Record a take and hit <b>Keep</b> to unlock the track editor —
+            separate vocal + karaoke waveforms, per-track faders, drag-to-trim,
+            comping, and more.
+          </div>
+          <div class="hidden" id="teContent">
+          <div class="te-toolbar">
+            <button class="btn small amber" id="tePlayBtn" title="Play/Pause (Space, while hovering the editor)"><svg class="icon"><use href="#i-play"/></svg></button>
+            <button class="btn small" id="teStopBtn" title="Stop">■</button>
+            <span class="te-time" id="teTime">0:00 / 0:00</span>
+            <span style="flex:1"></span>
+            <label class="te-chk" title="Show every take as its own lane, for region-based comping"><input type="checkbox" id="teCompareMode"> Compare takes</label>
+            <button class="btn small ghost" id="teZoomOut" title="Zoom out">−</button>
+            <button class="btn small ghost" id="teZoomIn" title="Zoom in">+</button>
+            <button class="btn small ghost" id="teMarkerBtn" title="Add marker at playhead">📍+</button>
+            <button class="btn small ghost" id="teUndoBtn" title="Undo (Z)" disabled>↺</button>
+            <button class="btn small ghost" id="teRedoBtn" title="Redo (Shift+Z)" disabled>↻</button>
+          </div>
+          <div class="te-scroll" id="teScroll">
+            <div class="te-inner" id="teInner">
+              <div class="te-trimshade" id="teTrimShadeLeft"></div>
+              <div class="te-trimshade" id="teTrimShadeRight"></div>
+              <div class="te-lane" id="teLaneKaraoke">
+                <div class="te-lanelabel">Karaoke</div>
+                <canvas class="te-canvas"></canvas>
+              </div>
+              <div id="teVocalLanes"></div>
+              <div class="te-markerrow" id="teMarkerRow"></div>
+              <div class="te-trimhandle in" id="teTrimIn" title="Drag to set trim start"><div class="te-handlegrip">◢</div></div>
+              <div class="te-trimhandle out" id="teTrimOut" title="Drag to set trim end"><div class="te-handlegrip">◣</div></div>
+              <div class="te-punchmarker hidden" id="tePunchMarker" title="Drag to move the comp join point"></div>
+              <div class="te-playhead" id="tePlayhead"></div>
+            </div>
+          </div>
+          <div class="te-tracks">
+            <div class="te-trackctl">
+              <span class="te-tname">Karaoke</span>
+              <button class="te-ms" id="teKaraokeMute" title="Mute karaoke">M</button>
+              <button class="te-ms" id="teKaraokeSolo" title="Solo karaoke">S</button>
+              <input type="range" id="teKaraokeFader" min="-18" max="6" step="0.5" value="-3">
+              <span class="te-fval" id="teKaraokeFaderV">−3dB</span>
+              <button class="btn small ghost" id="teKaraokeEqToggle" title="Karaoke tone EQ">EQ</button>
+            </div>
+            <div class="te-eqrow hidden" id="teKaraokeEq">
+              <label>Low<input type="range" id="teEqLow" min="-12" max="12" step="0.5" value="0"><span id="teEqLowV">0dB</span></label>
+              <label>Mid<input type="range" id="teEqMid" min="-12" max="12" step="0.5" value="0"><span id="teEqMidV">0dB</span></label>
+              <label>High<input type="range" id="teEqHigh" min="-12" max="12" step="0.5" value="0"><span id="teEqHighV">0dB</span></label>
+            </div>
+            <div class="te-trackctl">
+              <span class="te-tname">Vocal</span>
+              <button class="te-ms" id="teVocalMute" title="Mute vocal">M</button>
+              <button class="te-ms" id="teVocalSolo" title="Solo vocal">S</button>
+              <input type="range" id="teVocalFader" min="-12" max="12" step="0.5" value="0">
+              <span class="te-fval" id="teVocalFaderV">0dB</span>
+            </div>
+          </div>
+          <div class="te-compbuild hidden" id="teCompBuildRow">
+            <span id="teSegmentsSummary" class="klabel">Drag on a lane below to assign that take to a region</span>
+            <button class="btn small" id="teClearSegments">Clear regions</button>
+            <button class="btn" id="teBuildCompBtn">↳ Build comp from regions</button>
+          </div>
+          <div class="te-hint">Click the timeline to seek · drag the ◢◣ handles to trim · drag the vertical join line to move the comp point · I/O set trim at playhead, Space play/pause, Z/⇧Z undo/redo (while hovering here)</div>
+          </div>
+      </div>
     </div>
 
     <!-- RIGHT: fx rack + mixer + export -->
@@ -881,6 +1016,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             </div>
             <button id="proReset" class="btn" style="padding:4px 10px;font-size:11px" title="Reset every value below to the studio defaults">↺ Reset</button>
           </div>
+          <!-- vibe presets: one click sets every slider below to a curated
+               production style, instead of hand-tuning ~30 parameters to
+               chase "sounds professional". -->
+          <div class="fxrow" style="flex-wrap:wrap;gap:6px" id="proPresetRow"></div>
           <div id="proChainRack"></div>
           <!-- denoise: the one simple effect the pro chain doesn't fold in -->
           <div class="fxrow">
@@ -1107,7 +1246,7 @@ let mediaStream=null, recorder=null, recChunks=[], audioCtx=null;
 let backingAudio=null, recording=false, startT=0, dur=0, rafMeter=null;
 // declared early so applyLiveFx() (called during init via bindVal) never hits a
 // temporal-dead-zone error that would halt the whole top-level script.
-let takeAudio=null, takePlayerUI=null, takeGraph=null;
+let takeAudio=null, takePlayerUI=null, takeGraph=null, monitorGraph=null;
 
 // ---- FX toggle state ----
 // Pitch correction defaults OFF: it snaps to a chosen key/scale (C major
@@ -1149,7 +1288,7 @@ const PRO_CHAIN_FIELDS = [
       desc:'How quickly it reacts to a peak. Lower = catches sharper transients, but can sound clampy if too fast.'},
     {key:'fast_release', label:'Release', min:10, max:500, step:1, unit:'ms', dp:0, def:80,
       desc:'How quickly it lets go after a peak passes. Faster = more natural, slower = smoother but can "breathe".'},
-    {key:'fast_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-18,
+    {key:'fast_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-15,
       desc:'The volume level where compression kicks in. Lower = catches more of your voice, not just the loudest peaks.'},
   ]},
   {group:'Smooth compressor', desc:'A slower, gentler compressor that evens out overall loudness across the whole take, so quiet and loud lines sit closer together.', fields:[
@@ -1159,7 +1298,7 @@ const PRO_CHAIN_FIELDS = [
       desc:'How quickly it starts reacting. Slower keeps more natural dynamics.'},
     {key:'smooth_release', label:'Release', min:50, max:2000, step:10, unit:'ms', dp:0, def:500,
       desc:'How slowly it eases back off. Longer = smoother, more "glued" sound.'},
-    {key:'smooth_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20,
+    {key:'smooth_threshold_db', label:'Threshold', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-17,
       desc:'The volume level where evening-out starts.'},
   ]},
   {group:'De-esser', desc:null, fields:[
@@ -1215,6 +1354,30 @@ const PRO_CHAIN_FIELDS = [
       desc:'Removes harsh top-end from the echo repeats, so they sit further back than your main voice.'},
     {key:'delay_send_db', label:'Echo amount', min:-40, max:0, step:0.5, unit:'dB', dp:1, def:-20, essential:true,
       desc:'How much slap-back echo is blended in — adds depth and a classic vocal-doubling effect. Turn down for a cleaner, drier sound.'},
+  ]},
+  {group:'Vocal doubler', desc:'Blends in a short, slow, shallow chorus underneath your voice — the classic studio trick (automatic double tracking) that makes one take sound like two voices singing in unison.', fields:[
+    {key:'double_delay_ms', label:'Delay', min:5, max:40, step:1, unit:'ms', dp:0, def:18,
+      desc:'How far behind the "double" voice sits. Shorter feels tighter/more unison; longer starts to sound like a separate echo.'},
+    {key:'double_speed', label:'Speed', min:0.02, max:1, step:0.01, unit:'Hz', dp:2, def:0.15,
+      desc:'How fast the double drifts in pitch. Keep this low — higher speeds turn "doubled" into "chorus/wobble".'},
+    {key:'double_depth', label:'Depth', min:0.1, max:4, step:0.1, unit:'ms', dp:1, def:1.2,
+      desc:'How far the double\'s pitch drifts. Higher = a more noticeable, wider double; too high sounds seasick.'},
+    {key:'double_send_db', label:'Double amount', min:-30, max:0, step:0.5, unit:'dB', dp:1, def:-8, essential:true,
+      desc:'How loud the doubled layer is under your main voice. Turn up for a thicker, fuller vocal; down for a solo, single-voice sound.'},
+  ]},
+  {group:'Punch compression', desc:'A separate, heavily-squashed copy of your voice blended back in underneath everything else (the "New York compression" trick) — adds perceived loudness and density without flattening the main vocal\'s own natural dynamics.', fields:[
+    {key:'punch_ratio', label:'Ratio', min:2, max:20, step:0.5, unit:':1', dp:1, def:8,
+      desc:'How hard this separate layer gets squashed. This is intentionally much more aggressive than the main compressors above — it\'s a spice, not the main dish.'},
+    {key:'punch_attack', label:'Attack', min:0.5, max:50, step:0.5, unit:'ms', dp:1, def:3,
+      desc:'How quickly the punch layer reacts to your voice.'},
+    {key:'punch_release', label:'Release', min:20, max:500, step:10, unit:'ms', dp:0, def:150,
+      desc:'How quickly the punch layer lets go.'},
+    {key:'punch_threshold_db', label:'Threshold', min:-40, max:-5, step:0.5, unit:'dB', dp:1, def:-30,
+      desc:'Where the punch layer starts compressing — deliberately low so it\'s squashing most of your voice, not just the peaks.'},
+    {key:'punch_makeup', label:'Makeup gain', min:1, max:20, step:0.5, unit:'x', dp:1, def:6,
+      desc:'How much the squashed layer gets boosted back up before blending in.'},
+    {key:'punch_mix', label:'Punch amount', min:0, max:100, step:1, unit:'%', dp:0, def:20, essential:true,
+      desc:'How much of this extra squashed layer is blended in. Turn up for a denser, more "radio-loud" vocal; down to keep things more natural and dynamic.'},
   ]},
 ];
 const PRO_CHAIN_IDS = [];
@@ -1289,17 +1452,46 @@ function renderProChainRack(){
 }
 renderProChainRack();
 
-$('proReset').addEventListener('click', async ()=>{
+// Shared by Reset (no overrides) and preset buttons (overrides = that
+// preset's values) — always starts from a full reset to the backend's
+// defaults first, so applying a preset is fully reproducible regardless of
+// whatever the sliders happened to be set to before.
+async function applyProChainValues(overrides){
   let defaults=null;
   try{ const r=await fetch('/pro_chain_defaults'); if(r.ok) defaults=await r.json(); }catch(e){}
   PRO_CHAIN_FIELDS.forEach(grp=>grp.fields.forEach(f=>{
-    const v=(defaults && defaults[f.key]!=null) ? defaults[f.key] : f.def;
+    const base=(defaults && defaults[f.key]!=null) ? defaults[f.key] : f.def;
+    const v=(overrides && overrides[f.key]!=null) ? overrides[f.key] : base;
     const el=$('pc_'+f.key); if(!el) return;
     el.value=v; PRO_CHAIN_VALUES[f.key]=+v;
     $('pc_'+f.key+'v').textContent=fmtProVal(v,f);
   }));
   liveFxIfPlaying();
-});
+}
+$('proReset').addEventListener('click', ()=>applyProChainValues(null));
+
+// ---- vibe presets: curated combinations of the sliders above, fetched
+// from the backend so this UI and audio_fx.PRO_CHAIN_PRESETS can never
+// drift apart the way two hand-maintained copies eventually would. --------
+async function loadProChainPresets(){
+  let presets=null;
+  try{ const r=await fetch('/pro_chain_presets'); if(r.ok) presets=await r.json(); }catch(e){}
+  if(!presets) return;
+  const box=$('proPresetRow'); box.innerHTML='';
+  const label=document.createElement('span');
+  label.style.cssText='font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;align-self:center;margin-right:2px';
+  label.textContent='Vibe:';
+  box.appendChild(label);
+  Object.entries(presets).forEach(([key, p])=>{
+    const btn=document.createElement('button');
+    btn.className='btn small'; btn.type='button';
+    btn.textContent=p.label||key;
+    if(p.desc) btn.title=p.desc;
+    btn.addEventListener('click', ()=>applyProChainValues(p.values||{}));
+    box.appendChild(btn);
+  });
+}
+loadProChainPresets();
 
 function refreshTogs(){
   document.querySelectorAll('.tog').forEach(t=>{
@@ -2145,6 +2337,16 @@ document.addEventListener('fullscreenchange',()=>{
 let micSource=null, monitorGain=null, micAnalyser=null;
 let musicMonitorVol=1.0;   // 0..1 applied to backingAudio.volume while singing
 
+// ---- studio monitor: hear yourself through reverb/compression/EQ WHILE
+// singing, like a real vocal booth's cue mix — the engineer hears a
+// processed monitor feed, but the DAW records the dry signal. Recording
+// here always comes from `mediaStream` (see startRec()'s MediaRecorder),
+// never from this WebAudio graph, so nothing added here can ever leak into
+// the actual take no matter what's routed through it.
+let studioMonitorOn=true;
+try{ studioMonitorOn = localStorage.getItem('kstudio.studioMonitor')!=='0'; }catch(e){}
+if($('studioMonitorToggle')) $('studioMonitorToggle').checked=studioMonitorOn;
+
 async function primeMic(){
   if(micSource) return;   // already primed
   try{
@@ -2155,13 +2357,19 @@ async function primeMic(){
   }catch(e){ $('loaderr').textContent='Microphone blocked. Allow mic access and reload.'; return; }
   audioCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000, latencyHint:'interactive'});
 
-  // seed the vocal-timing calibration from the browser's reported latency
-  // (base + output). It's an estimate; the slider lets you fine-tune by ear.
-  try{
-    const est=Math.round(((audioCtx.baseLatency||0)+(audioCtx.outputLatency||0))*1000)+80;
-    if(est>0 && est<400){ vocalDelayMs=est; $('vocalDelay').value=est;
-      $('vocalDelayV').textContent=est+'ms'; }
-  }catch(_){}
+  // Seed the vocal-timing calibration from the browser's reported latency
+  // (base + output) — but ONLY the first time this browser/device has ever
+  // used this app. Once you've ear-tuned the slider, that saved value must
+  // win forever after, on every future reload — re-guessing from the
+  // browser's (often inaccurate) latency numbers on top of your real
+  // calibration is exactly what made sync feel like it randomly regressed.
+  if(!vocalDelaySaved){
+    try{
+      const est=Math.round(((audioCtx.baseLatency||0)+(audioCtx.outputLatency||0))*1000)+80;
+      if(est>0 && est<400){ vocalDelayMs=est; $('vocalDelay').value=est;
+        $('vocalDelayV').textContent=est+'ms'; }
+    }catch(_){}
+  }
 
   micSource=audioCtx.createMediaStreamSource(mediaStream);
   micAnalyser=audioCtx.createAnalyser(); micAnalyser.fftSize=2048;
@@ -2169,10 +2377,33 @@ async function primeMic(){
 
   // voice monitor (starts muted; slider controls it)
   monitorGain=audioCtx.createGain(); monitorGain.gain.value=0;
-  micSource.connect(monitorGain); monitorGain.connect(audioCtx.destination);
+  monitorGain.connect(audioCtx.destination);
+  wireMonitorSource();
 
   startMeterAndPitch();
 }
+
+// (Re)connects micSource to monitorGain, either directly (dry) or through
+// the processed monitorGraph, depending on the studio-monitor toggle.
+// Safe to call any time, including mid-session when the toggle flips.
+function wireMonitorSource(){
+  if(!micSource || !monitorGain) return;
+  try{ micSource.disconnect(monitorGain); }catch(_){}
+  if(monitorGraph){ try{ micSource.disconnect(monitorGraph.hp); }catch(_){}
+    try{ monitorGraph.vocalGain.disconnect(monitorGain); }catch(_){} }
+  if(studioMonitorOn){
+    if(!monitorGraph) buildMonitorGraphNodes();
+    micSource.connect(monitorGraph.hp);
+    monitorGraph.vocalGain.connect(monitorGain);
+  } else {
+    micSource.connect(monitorGain);
+  }
+}
+$('studioMonitorToggle').addEventListener('change', ()=>{
+  studioMonitorOn=$('studioMonitorToggle').checked;
+  try{ localStorage.setItem('kstudio.studioMonitor', studioMonitorOn?'1':'0'); }catch(e){}
+  wireMonitorSource();
+});
 function applyMusicMonitorVol(){ if(backingAudio) backingAudio.volume=Math.max(0,Math.min(1,musicMonitorVol)); }
 
 // ---- metronome: count-in + optional click while recording -----------------
@@ -2458,9 +2689,24 @@ $('monVol').addEventListener('input',()=>{ const v=(+$('monVol').value)/100;
 
 // vocal-timing calibration: how much later your voice appears in the recording
 // (mic input latency). We pull the take earlier by this much to line it up.
+// Persisted across reloads (localStorage) — this used to reset to a fresh
+// browser-reported estimate on every page load/server restart, silently
+// throwing away whatever value you'd actually ear-tuned it to. That's why
+// vocal sync could feel "fine, then suddenly behind again" after nothing
+// about the actual recording changed: a reload alone was enough to quietly
+// swap your calibrated number for a rough guess.
 let vocalDelayMs=140;
+let vocalDelaySaved=false;
+try{
+  const saved=localStorage.getItem('kstudio.vocalDelayMs');
+  if(saved!=null){ vocalDelayMs=+saved; vocalDelaySaved=true; }
+}catch(e){}
+$('vocalDelay').value=vocalDelayMs;
+$('vocalDelayV').textContent=vocalDelayMs+'ms';
 $('vocalDelay').addEventListener('input',()=>{
   vocalDelayMs=+$('vocalDelay').value;
+  vocalDelaySaved=true;
+  try{ localStorage.setItem('kstudio.vocalDelayMs', vocalDelayMs); }catch(e){}
   $('vocalDelayV').textContent=vocalDelayMs+'ms';
   $('delayHint').textContent = vocalDelayMs>0 ? 'pulls vocals '+vocalDelayMs+'ms earlier'
     : (vocalDelayMs<0 ? 'pushes vocals '+(-vocalDelayMs)+'ms later' : 'no shift');
@@ -2527,7 +2773,7 @@ async function saveCurrentTakeToHistory(kind){
   let r; try{
     r=await fetch('/take',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:kind||'lead', fx_snapshot:collectFx(),
-        pitch_score:window._lastPitchScore})});
+        pitch_score:window._lastPitchScore, rec_id:window._currentRecId})});
   }catch(e){ toast('Could not save that take.','error'); return; }
   const d=await r.json();
   if(!r.ok){ toast(d.error||'Could not save that take.','error'); return; }
@@ -2634,6 +2880,33 @@ $('tpbUseTake').addEventListener('click', async()=>{
 });
 
 const TAKE_KIND_LABEL={lead:'take',comp:'comp',harmony:'harmony'};
+// Render/video progress live on the take itself now (server-scoped by take
+// id — see /render, /combine_video), so each card shows its OWN status
+// instead of one global "is something rendering?" indicator that couldn't
+// tell you which take it was even about.
+const RENDER_STAGE_LABEL={
+  starting:'Rendering…', correcting_pitch:'Correcting pitch…',
+  applying_fx:'Applying FX…', mixing:'Mixing…', done:'Rendered',
+};
+function takeStatusLine(t){
+  const v=t.video, r=t.render;
+  if(v && v.status==='aligning') return '<span class="takestatus busy">📹 Syncing video…</span>';
+  if(v && v.status==='error') return '<span class="takestatus err">Video failed: '+(v.error||'unknown')+'</span>';
+  if(v && v.status==='done') return '<a class="takestatus ok" href="/final_video?id='+SID+'&take='+t.id+'" download>▶ Video ready</a>';
+  if(r && r.status==='rendering') return '<span class="takestatus busy">'+(RENDER_STAGE_LABEL[r.stage]||'Rendering…')+'</span>';
+  if(r && r.status==='error') return '<span class="takestatus err">Render failed: '+(r.error||'unknown')+'</span>';
+  if(r && r.status==='done') return '<a class="takestatus ok" href="/final?id='+SID+'&take='+t.id+'" download>⬇ Rendered</a>';
+  return '';
+}
+function takeHasPendingWork(t){
+  return (t.render && t.render.status==='rendering') || (t.video && t.video.status==='aligning');
+}
+let takeStripPoll=null;
+function ensureTakeStripPoll(){
+  const pending=takes.some(takeHasPendingWork);
+  if(pending && !takeStripPoll){ takeStripPoll=setInterval(loadTakes,1200); }
+  else if(!pending && takeStripPoll){ clearInterval(takeStripPoll); takeStripPoll=null; }
+}
 function renderTakeStrip(){
   $('takeHistory').style.display = takes.length? 'block':'none';
   $('noTakesHint').style.display = (takes.length||window._lastVocalBuffer) ? 'none':'';
@@ -2647,15 +2920,17 @@ function renderTakeStrip(){
         '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+scoreBadge+'</span>'+
         '<span class="takex" title="Delete this take">✕</span>'+
       '</div>'+
-      '<div class="takedur">'+fmt(t.duration||0)+'</div>';
+      '<div class="takedur">'+fmt(t.duration||0)+'</div>'+
+      '<div class="takestatusrow">'+takeStatusLine(t)+'</div>';
     card.addEventListener('click',e=>{
-      if(e.target.classList.contains('takex')) return;
+      if(e.target.classList.contains('takex')||e.target.classList.contains('takestatus')) return;
       loadTakeIntoPreviewBar(t.id);
       selectTake(t.id);
     });
     card.querySelector('.takex').addEventListener('click',e=>{ e.stopPropagation(); deleteTakeFromHistory(t.id); });
     box.appendChild(card);
   });
+  ensureTakeStripPoll();
   // comp controls: need at least 2 takes to join
   $('compRow').style.display = takes.length>=2 ? 'flex' : 'none';
   if(takes.length>=2){
@@ -2665,7 +2940,445 @@ function renderTakeStrip(){
     $('compTail').selectedIndex=takes.length-1;
   }
   refreshDuetUI();
+  refreshTrackEditor();
 }
+
+// ==== TRACK EDITOR (vocal + karaoke waveforms on one shared, zoomable
+// timeline) ===================================================================
+// All state here is UI-only — every actual audio decision it drives (mix
+// gains, trim range, karaoke EQ, which takes comp into what) already flows
+// through the exact same fields/routes the rest of the app used before this
+// existed (#vgain/#mgain, #trimStart/#trimEnd, #compPunch, /comp_multi), so
+// nothing here can silently diverge from what /render actually does.
+const TE = {
+  pxPerSec: 60, minPx: 8, maxPx: 400,
+  karaokeBuffer: null, vocalBuffers: {},
+  duration: 0,
+  playhead: 0, playing: false,
+  ctx: null, karaokeSrc: null, karaokeGain: null, vocalSrcs: {}, vocalGains: {},
+  playStartedAtCtx: 0, playStartedAtPlayhead: 0, rafId: null,
+  trimStart: 0, trimEnd: null,
+  compareMode: false,
+  segments: [],   // [{takeId, start, end}] — non-destructive multi-region comp
+  markers: [],    // [{time, label}]
+  karaokeMute: false, karaokeSolo: false, vocalMute: false, vocalSolo: false,
+  karaokeFaderDb: -3, vocalFaderDb: 0,
+  eqLow: 0, eqMid: 0, eqHigh: 0,
+  hovering: false,
+};
+const teHistory=makeHistory();
+
+function teSnapshot(){
+  return {trimStart:TE.trimStart, trimEnd:TE.trimEnd, markers:TE.markers.map(m=>({...m})),
+          segments:TE.segments.map(s=>({...s})), punchSec:$('compPunch')?+$('compPunch').value:0};
+}
+function teApplySnapshot(s){
+  TE.trimStart=s.trimStart; TE.trimEnd=s.trimEnd;
+  TE.markers=s.markers.map(m=>({...m}));
+  TE.segments=s.segments.map(x=>({...x}));
+  if($('compPunch')) $('compPunch').value=s.punchSec;
+  teSyncTrimInputs();
+  teDrawSegmentOverlays(); teUpdateSegmentsSummary();
+  teRedrawOverlays();
+}
+function tePushHistory(){ teHistory.push(teSnapshot()); teRefreshHistoryBtns(); }
+function teRefreshHistoryBtns(){
+  $('teUndoBtn').disabled = teHistory.past.length<2;
+  $('teRedoBtn').disabled = !teHistory.future.length;
+}
+$('teUndoBtn').addEventListener('click',()=>{ const s=teHistory.undo(); if(s) teApplySnapshot(s); teRefreshHistoryBtns(); });
+$('teRedoBtn').addEventListener('click',()=>{ const s=teHistory.redo(); if(s) teApplySnapshot(s); teRefreshHistoryBtns(); });
+
+function teAudioCtx(){
+  if(!TE.ctx || TE.ctx.state==='closed') TE.ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
+  return TE.ctx;
+}
+async function ensureKaraokeBuffer(){
+  if(TE.karaokeBuffer) return TE.karaokeBuffer;
+  try{
+    const ctx=teAudioCtx();
+    const r=await fetch('/backing?id='+SID+'&key='+(musicKey||0));
+    TE.karaokeBuffer=await ctx.decodeAudioData(await r.arrayBuffer());
+    return TE.karaokeBuffer;
+  }catch(e){ return null; }
+}
+async function ensureVocalBuffer(takeId){
+  if(TE.vocalBuffers[takeId]) return TE.vocalBuffers[takeId];
+  try{
+    const ctx=teAudioCtx();
+    const r=await fetch('/take_audio?id='+SID+'&take='+takeId+'&t='+Date.now());
+    TE.vocalBuffers[takeId]=await ctx.decodeAudioData(await r.arrayBuffer());
+    return TE.vocalBuffers[takeId];
+  }catch(e){ return null; }
+}
+
+async function refreshTrackEditor(){
+  if(!takes.length){
+    $('teEmptyState').classList.remove('hidden');
+    $('teContent').classList.add('hidden');
+    return;
+  }
+  $('teEmptyState').classList.add('hidden');
+  $('teContent').classList.remove('hidden');
+  const tid=activeTakeId || takes[takes.length-1].id;
+  await ensureKaraokeBuffer();
+  if(TE.compareMode) await Promise.all(takes.map(t=>ensureVocalBuffer(t.id)));
+  else await ensureVocalBuffer(tid);
+  const vocalDur = TE.compareMode
+    ? Math.max(0, ...takes.map(t=>(TE.vocalBuffers[t.id]&&TE.vocalBuffers[t.id].duration)||0))
+    : ((TE.vocalBuffers[tid]&&TE.vocalBuffers[tid].duration)||0);
+  TE.duration = Math.max(TE.karaokeBuffer?TE.karaokeBuffer.duration:0, vocalDur, 1);
+  if(TE.trimEnd==null || TE.trimEnd>TE.duration) TE.trimEnd=TE.duration;
+  // Default to fitting the WHOLE song in view, like any real waveform
+  // editor's initial state — the previous fixed 60px/sec zoom made a real
+  // 3-5 minute song span 10,000+ pixels, so only the first ~10 seconds
+  // were ever visible without scrolling. If that opening stretch happened
+  // to be quiet (an instrumental intro, a soft vocal entrance — both
+  // common), the OTHER lane looked completely empty even though its audio
+  // was perfectly fine further along the timeline. Only done once per page
+  // load — a zoom you set by hand afterward is never overridden.
+  if(!TE._zoomInitialized){
+    const w=$('teScroll').clientWidth||700;
+    // Not clamped to TE.minPx here on purpose — that floor exists to stop
+    // manual zoom-out (the − button) from going past readable, but fitting
+    // a long song fully on first load matters more than that floor.
+    TE.pxPerSec=Math.min(TE.maxPx, w/TE.duration);
+    TE._zoomInitialized=true;
+  }
+  teBuildLanes(tid);
+  teLayout();
+  teSyncTrimInputs();
+  teUpdatePunchMarkerVisibility();
+  teRefreshHistoryBtns();
+  if(!teHistory.past.length) tePushHistory();
+}
+
+function teBuildLanes(activeTid){
+  const box=$('teVocalLanes'); box.innerHTML='';
+  const ids = TE.compareMode ? takes.map(t=>t.id) : [activeTid];
+  ids.forEach(id=>{
+    const t=takes.find(x=>x.id===id);
+    const lane=document.createElement('div');
+    lane.className='te-lane'+(TE.compareMode?' assignable':'');
+    lane.dataset.takeId=id;
+    lane.innerHTML='<div class="te-lanelabel">'+(TAKE_KIND_LABEL[t&&t.kind]||'vocal')+(TE.compareMode?' — '+id.slice(0,6):'')+'</div><canvas class="te-canvas"></canvas>';
+    box.appendChild(lane);
+  });
+  wireTeLaneEvents();
+}
+
+function teTimeToPx(t){ return t*TE.pxPerSec; }
+function tePxToTime(px){ return Math.max(0, Math.min(TE.duration, px/TE.pxPerSec)); }
+
+function teLayout(){
+  const widthPx=Math.max(200, Math.round(TE.duration*TE.pxPerSec));
+  $('teInner').style.width=widthPx+'px';
+  $('teLaneKaraoke').style.width=widthPx+'px';
+  $('teVocalLanes').querySelectorAll('.te-lane').forEach(l=>l.style.width=widthPx+'px');
+  $('teMarkerRow').style.width=widthPx+'px';
+  teDrawAll();
+  teRedrawOverlays();
+}
+function teDrawAll(){
+  const cols=Math.max(50, Math.round(TE.duration*TE.pxPerSec));
+  const kCanvas=$('teLaneKaraoke').querySelector('.te-canvas');
+  if(kCanvas && TE.karaokeBuffer){
+    drawWaveform(kCanvas, computeWavePeaks(TE.karaokeBuffer, cols), TE.duration? TE.playhead/TE.duration : null);
+  }
+  $('teVocalLanes').querySelectorAll('.te-lane').forEach(lane=>{
+    const buf=TE.vocalBuffers[lane.dataset.takeId], canvas=lane.querySelector('.te-canvas');
+    if(!buf || !canvas) return;
+    drawWaveform(canvas, computeWavePeaks(buf, cols), TE.duration? TE.playhead/TE.duration : null);
+  });
+  teDrawSegmentOverlays();
+  teDrawMarkers();
+}
+function teRedrawOverlays(){
+  const widthPx=Math.max(200, Math.round(TE.duration*TE.pxPerSec));
+  const inH=$('teInner').offsetHeight||0;
+  $('tePlayhead').style.left=teTimeToPx(TE.playhead)+'px'; $('tePlayhead').style.height=inH+'px';
+  $('teTrimIn').style.left=teTimeToPx(TE.trimStart)+'px'; $('teTrimIn').style.height=inH+'px';
+  const outT=TE.trimEnd==null?TE.duration:TE.trimEnd;
+  $('teTrimOut').style.left=teTimeToPx(outT)+'px'; $('teTrimOut').style.height=inH+'px';
+  $('teTrimShadeLeft').style.left='0px';
+  $('teTrimShadeLeft').style.width=teTimeToPx(TE.trimStart)+'px';
+  $('teTrimShadeLeft').style.height=inH+'px';
+  const outPx=teTimeToPx(outT);
+  $('teTrimShadeRight').style.left=outPx+'px';
+  $('teTrimShadeRight').style.width=Math.max(0,widthPx-outPx)+'px';
+  $('teTrimShadeRight').style.height=inH+'px';
+  teUpdatePunchMarkerPos();
+  $('teTime').textContent=fmt(TE.playhead)+' / '+fmt(TE.duration);
+  // cheap: only the playhead position changes on every frame during
+  // playback, so redraw just that instead of recomputing every waveform
+  if(!TE.playing) return;
+  const cols=Math.max(50, Math.round(TE.duration*TE.pxPerSec));
+  const kCanvas=$('teLaneKaraoke').querySelector('.te-canvas');
+  if(kCanvas && TE.karaokeBuffer) drawWaveform(kCanvas, computeWavePeaks(TE.karaokeBuffer, cols), TE.playhead/TE.duration);
+}
+function teDrawSegmentOverlays(){
+  $('teVocalLanes').querySelectorAll('.te-region').forEach(el=>el.remove());
+  if(!TE.compareMode) return;
+  TE.segments.forEach(seg=>{
+    const lane=$('teVocalLanes').querySelector('.te-lane[data-take-id="'+seg.takeId+'"]');
+    if(!lane) return;
+    const r=document.createElement('div');
+    r.className='te-region';
+    r.style.left=teTimeToPx(seg.start)+'px';
+    r.style.width=Math.max(2, teTimeToPx(seg.end)-teTimeToPx(seg.start))+'px';
+    lane.appendChild(r);
+  });
+}
+function teDrawMarkers(){
+  const row=$('teMarkerRow'); row.innerHTML='';
+  TE.markers.forEach(m=>{
+    const el=document.createElement('div');
+    el.className='te-marker';
+    el.style.left=teTimeToPx(m.time)+'px';
+    el.innerHTML='<span class="te-markerlabel">'+(m.label||fmt(m.time))+'</span>';
+    el.title='Jump to '+fmt(m.time)+' (double-click to remove)';
+    el.addEventListener('click',()=>teSeekTo(m.time));
+    el.addEventListener('dblclick',e=>{ e.stopPropagation(); TE.markers=TE.markers.filter(x=>x!==m); tePushHistory(); teDrawMarkers(); });
+    row.appendChild(el);
+  });
+}
+function teUpdatePunchMarkerVisibility(){
+  const show = !TE.compareMode && takes.length>=2 && $('compRow').style.display!=='none';
+  $('tePunchMarker').classList.toggle('hidden', !show);
+}
+function teUpdatePunchMarkerPos(){
+  if($('tePunchMarker').classList.contains('hidden')) return;
+  const p=$('compPunch') ? (parseFloat($('compPunch').value)||0) : 0;
+  $('tePunchMarker').style.left=teTimeToPx(p)+'px';
+  $('tePunchMarker').style.height=($('teInner').offsetHeight||0)+'px';
+}
+function teSyncTrimInputs(){
+  if($('trimStart')) $('trimStart').value = TE.trimStart>0.05 ? fmt(TE.trimStart) : '';
+  if($('trimEnd')) $('trimEnd').value = (TE.trimEnd!=null && TE.trimEnd<TE.duration-0.05) ? fmt(TE.trimEnd) : '';
+}
+function teUpdateSegmentsSummary(){
+  if(!$('teSegmentsSummary')) return;
+  $('teSegmentsSummary').textContent = TE.segments.length
+    ? TE.segments.map(s=>fmt(s.start)+'–'+fmt(s.end)+' → '+s.takeId.slice(0,6)).join('  ·  ')
+    : 'Drag on a lane below to assign that take to a region';
+}
+
+// ---- transport --------------------------------------------------------
+function teComputeGain(db, mute, solo, otherSolo){
+  if(mute) return 0;
+  if(otherSolo && !solo) return 0;
+  return Math.pow(10, db/20);
+}
+function teSeekTo(t){
+  TE.playhead=Math.max(0,Math.min(TE.duration,t));
+  if(TE.playing){ teStopPlayback(); tePlay(); } else { teRedrawOverlays(); }
+}
+function tePlay(){
+  if(TE.playing || TE.duration<=0) return;
+  const ctx=teAudioCtx();
+  if(ctx.state==='suspended') ctx.resume();
+  const startAt=ctx.currentTime+0.05;
+  TE.playStartedAtCtx=startAt; TE.playStartedAtPlayhead=TE.playhead;
+  const kSolo=TE.karaokeSolo, vSolo=TE.vocalSolo;
+  if(TE.karaokeBuffer){
+    const src=ctx.createBufferSource(); src.buffer=TE.karaokeBuffer;
+    const g=ctx.createGain(); g.gain.value=teComputeGain(TE.karaokeFaderDb, TE.karaokeMute, kSolo, vSolo);
+    src.connect(g); g.connect(ctx.destination);
+    src.start(startAt, TE.playhead);
+    TE.karaokeSrc=src; TE.karaokeGain=g;
+  }
+  TE.vocalSrcs={}; TE.vocalGains={};
+  const ids = TE.compareMode ? takes.map(t=>t.id) : [activeTakeId||(takes.length&&takes[takes.length-1].id)];
+  ids.forEach(id=>{
+    const buf=TE.vocalBuffers[id]; if(!buf) return;
+    const src=ctx.createBufferSource(); src.buffer=buf;
+    const g=ctx.createGain(); g.gain.value=teComputeGain(TE.vocalFaderDb, TE.vocalMute, vSolo, kSolo);
+    src.connect(g); g.connect(ctx.destination);
+    src.start(startAt, TE.playhead);
+    TE.vocalSrcs[id]=src; TE.vocalGains[id]=g;
+  });
+  TE.playing=true;
+  $('tePlayBtn').innerHTML='<svg class="icon"><use href="#i-pause"/></svg>';
+  const tick=()=>{
+    if(!TE.playing) return;
+    const elapsed=teAudioCtx().currentTime-TE.playStartedAtCtx;
+    TE.playhead=Math.min(TE.duration, TE.playStartedAtPlayhead+Math.max(0,elapsed));
+    teRedrawOverlays();
+    if(TE.playhead>=TE.duration){ teStopPlayback(); return; }
+    TE.rafId=requestAnimationFrame(tick);
+  };
+  TE.rafId=requestAnimationFrame(tick);
+}
+function teStopPlayback(){
+  TE.playing=false;
+  if(TE.rafId) cancelAnimationFrame(TE.rafId);
+  if(TE.karaokeSrc){ try{ TE.karaokeSrc.stop(); }catch(_){} TE.karaokeSrc=null; }
+  Object.values(TE.vocalSrcs).forEach(s=>{ try{ s.stop(); }catch(_){} });
+  TE.vocalSrcs={};
+  $('tePlayBtn').innerHTML='<svg class="icon"><use href="#i-play"/></svg>';
+  teDrawAll();
+}
+function teTogglePlay(){ TE.playing? teStopPlayback() : tePlay(); }
+$('tePlayBtn').addEventListener('click', teTogglePlay);
+$('teStopBtn').addEventListener('click',()=>{ teStopPlayback(); TE.playhead=0; teRedrawOverlays(); });
+
+// ---- zoom / compare mode / markers ---------------------------------------
+function teSetZoom(px){
+  const scroller=$('teScroll'), centerTime=TE.playhead;
+  TE.pxPerSec=Math.max(TE.minPx, Math.min(TE.maxPx, px));
+  teLayout();
+  scroller.scrollLeft=Math.max(0, teTimeToPx(centerTime)-scroller.clientWidth/2);
+}
+$('teZoomIn').addEventListener('click',()=>teSetZoom(TE.pxPerSec*1.5));
+$('teZoomOut').addEventListener('click',()=>teSetZoom(TE.pxPerSec/1.5));
+$('teCompareMode').addEventListener('change', async()=>{
+  TE.compareMode=$('teCompareMode').checked;
+  $('teCompBuildRow').classList.toggle('hidden', !TE.compareMode);
+  teUpdatePunchMarkerVisibility();
+  await refreshTrackEditor();
+});
+$('teMarkerBtn').addEventListener('click',()=>{
+  TE.markers.push({time:TE.playhead, label:fmt(TE.playhead)});
+  TE.markers.sort((a,b)=>a.time-b.time);
+  tePushHistory();
+  teDrawMarkers();
+});
+$('teKaraokeEqToggle').addEventListener('click',()=>{ $('teKaraokeEq').classList.toggle('hidden'); });
+$('teEqLow').addEventListener('input',()=>{ TE.eqLow=+$('teEqLow').value; $('teEqLowV').textContent=(TE.eqLow>=0?'+':'')+TE.eqLow+'dB'; });
+$('teEqMid').addEventListener('input',()=>{ TE.eqMid=+$('teEqMid').value; $('teEqMidV').textContent=(TE.eqMid>=0?'+':'')+TE.eqMid+'dB'; });
+$('teEqHigh').addEventListener('input',()=>{ TE.eqHigh=+$('teEqHigh').value; $('teEqHighV').textContent=(TE.eqHigh>=0?'+':'')+TE.eqHigh+'dB'; });
+
+// ---- faders / mute / solo (mirrored into the existing #vgain/#mgain
+// sliders so /render, which only ever reads THOSE, stays the single source
+// of truth for what actually gets rendered) --------------------------------
+function teLiveApplyGains(){
+  if(!TE.playing) return;
+  const kSolo=TE.karaokeSolo, vSolo=TE.vocalSolo;
+  if(TE.karaokeGain) TE.karaokeGain.gain.value=teComputeGain(TE.karaokeFaderDb, TE.karaokeMute, kSolo, vSolo);
+  Object.values(TE.vocalGains).forEach(g=>{ g.gain.value=teComputeGain(TE.vocalFaderDb, TE.vocalMute, vSolo, kSolo); });
+}
+$('teKaraokeFader').addEventListener('input',()=>{
+  TE.karaokeFaderDb=+$('teKaraokeFader').value;
+  $('teKaraokeFaderV').textContent=(TE.karaokeFaderDb>=0?'+':'')+TE.karaokeFaderDb+'dB';
+  $('mgain').value=TE.karaokeFaderDb; $('mgain').dispatchEvent(new Event('input'));
+  teLiveApplyGains();
+});
+$('teVocalFader').addEventListener('input',()=>{
+  TE.vocalFaderDb=+$('teVocalFader').value;
+  $('teVocalFaderV').textContent=(TE.vocalFaderDb>=0?'+':'')+TE.vocalFaderDb+'dB';
+  $('vgain').value=TE.vocalFaderDb; $('vgain').dispatchEvent(new Event('input'));
+  teLiveApplyGains();
+});
+function teSetMS(track, kind, val){
+  TE[track+kind]=val;
+  $('te'+track[0].toUpperCase()+track.slice(1)+kind).classList.toggle('on', val);
+  teLiveApplyGains();
+}
+$('teKaraokeMute').addEventListener('click',()=>teSetMS('karaoke','Mute', !TE.karaokeMute));
+$('teKaraokeSolo').addEventListener('click',()=>teSetMS('karaoke','Solo', !TE.karaokeSolo));
+$('teVocalMute').addEventListener('click',()=>teSetMS('vocal','Mute', !TE.vocalMute));
+$('teVocalSolo').addEventListener('click',()=>teSetMS('vocal','Solo', !TE.vocalSolo));
+
+// ---- click-to-seek + drag-to-trim + draggable punch marker ---------------
+$('teInner').addEventListener('pointerdown', e=>{
+  if(e.target.closest('.te-trimhandle,.te-punchmarker,.te-marker,.te-lane.assignable')) return;
+  const rect=$('teInner').getBoundingClientRect();
+  teSeekTo(tePxToTime(e.clientX-rect.left));
+});
+function teDragHandle(el, onMove, onCommit){
+  el.addEventListener('pointerdown', e=>{
+    e.preventDefault(); e.stopPropagation();
+    el.setPointerCapture(e.pointerId);
+    const rect=$('teInner').getBoundingClientRect();
+    const move=ev=>{ onMove(tePxToTime(ev.clientX-rect.left)); teRedrawOverlays(); };
+    const up=ev=>{
+      move(ev);
+      el.releasePointerCapture(e.pointerId);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      if(onCommit) onCommit();
+      tePushHistory();
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+  });
+}
+teDragHandle($('teTrimIn'), t=>{ TE.trimStart=Math.min(t, (TE.trimEnd==null?TE.duration:TE.trimEnd)-0.05); }, teSyncTrimInputs);
+teDragHandle($('teTrimOut'), t=>{ TE.trimEnd=Math.max(t, TE.trimStart+0.05); }, teSyncTrimInputs);
+teDragHandle($('tePunchMarker'), t=>{ if($('compPunch')) $('compPunch').value=t.toFixed(2); });
+if($('compPunch')) $('compPunch').addEventListener('input', teUpdatePunchMarkerPos);
+
+// ---- compare-mode lanes: drag-select a region to assign that take to it -
+function wireTeLaneEvents(){
+  $('teVocalLanes').querySelectorAll('.te-lane.assignable').forEach(lane=>{
+    lane.addEventListener('pointerdown', e=>{
+      if(e.target.closest('.te-trimhandle,.te-punchmarker')) return;
+      e.preventDefault();
+      const takeId=lane.dataset.takeId;
+      const rect=lane.getBoundingClientRect();
+      const startT=tePxToTime(e.clientX-rect.left);
+      let curT=startT;
+      lane.setPointerCapture(e.pointerId);
+      const preview=document.createElement('div'); preview.className='te-region'; lane.appendChild(preview);
+      const move=ev=>{
+        curT=tePxToTime(ev.clientX-rect.left);
+        const a=Math.min(startT,curT), b=Math.max(startT,curT);
+        preview.style.left=teTimeToPx(a)+'px';
+        preview.style.width=Math.max(2,teTimeToPx(b)-teTimeToPx(a))+'px';
+      };
+      const up=()=>{
+        lane.releasePointerCapture(e.pointerId);
+        lane.removeEventListener('pointermove', move);
+        lane.removeEventListener('pointerup', up);
+        preview.remove();
+        const a=Math.min(startT,curT), b=Math.max(startT,curT);
+        if(b-a>0.05) teAssignSegment(takeId, a, b);
+      };
+      lane.addEventListener('pointermove', move);
+      lane.addEventListener('pointerup', up);
+    });
+  });
+}
+function teAssignSegment(takeId, start, end){
+  // Clip any existing segment's overlap with the new region before adding
+  // it, so segments stay non-overlapping in time — last drag wins for any
+  // range it covers.
+  const clipped=[];
+  TE.segments.forEach(seg=>{
+    if(seg.end<=start || seg.start>=end){ clipped.push(seg); return; }
+    if(seg.start<start) clipped.push({takeId:seg.takeId, start:seg.start, end:start});
+    if(seg.end>end) clipped.push({takeId:seg.takeId, start:end, end:seg.end});
+  });
+  clipped.push({takeId, start, end});
+  clipped.sort((a,b)=>a.start-b.start);
+  TE.segments=clipped;
+  tePushHistory();
+  teDrawSegmentOverlays();
+  teUpdateSegmentsSummary();
+}
+$('teClearSegments').addEventListener('click',()=>{
+  TE.segments=[]; tePushHistory(); teDrawSegmentOverlays(); teUpdateSegmentsSummary();
+});
+$('teBuildCompBtn').addEventListener('click', async()=>{
+  if(!TE.segments.length){ toast('Drag at least one region on a lane first.','warn'); return; }
+  $('teBuildCompBtn').disabled=true;
+  try{
+    const r=await fetch('/comp_multi',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID, segments:TE.segments.map(s=>({take_id:s.takeId,start:s.start,end:s.end}))})});
+    const d=await r.json();
+    if(!r.ok){ toast(d.error||'Could not build that comp.','error'); return; }
+    takes.push(d.take); activeTakeId=d.take.id;
+    TE.segments=[]; tePushHistory();
+    renderTakeStrip();
+    toast('Comp built from your regions — see it in the take strip.','ok',3000);
+  }catch(e){ toast('Could not reach server.','error'); }
+  finally{ $('teBuildCompBtn').disabled=false; }
+});
+
+// ---- keyboard shortcuts, scoped to hovering the editor (so they never
+// steal Space/Ctrl+Z etc. from the main record page) -----------------------
+$('trackEditor').addEventListener('mouseenter',()=>{ TE.hovering=true; });
+$('trackEditor').addEventListener('mouseleave',()=>{ TE.hovering=false; });
 
 // ==== DUET / HARMONY =========================================================
 // Sing a second vocal layer against a chosen take (+ the backing track), heard
@@ -2867,13 +3580,14 @@ function pickVideoMime(){
   }
   return '';
 }
-async function uploadPhoneVideoFromDesktop(){
+async function uploadPhoneVideoFromDesktop(recId){
   phoneVideoUploading=true;
   try{
     if(!phoneVideoChunks.length) throw new Error('no video data captured');
     const blob=new Blob(phoneVideoChunks, {type: phoneVideoRecorder.mimeType || 'video/webm'});
     if(!blob.size) throw new Error('captured video was empty');
-    const r=await fetch('/phone/upload?id='+encodeURIComponent(SID)+'&mime='+encodeURIComponent(blob.type),
+    const r=await fetch('/phone/upload?id='+encodeURIComponent(SID)+'&mime='+encodeURIComponent(blob.type)+
+      '&rec='+encodeURIComponent(recId||''),
       {method:'POST', body: blob});
     if(!r.ok) throw new Error('server rejected upload (HTTP '+r.status+')');
   }catch(e){
@@ -3023,6 +3737,24 @@ $('rec').addEventListener('click',startRec);
 $('stop').addEventListener('click',stopRec);
 document.addEventListener('keydown',e=>{
   if(/(INPUT|SELECT|TEXTAREA)/.test(e.target.tagName)) return;
+  // Track editor shortcuts only fire while the mouse is actually over it —
+  // otherwise Space/Ctrl+Z here would steal start/stop-recording and FX
+  // undo/redo from the main record flow any time the Takes tab was merely
+  // visible, not just when you're actually working in the editor.
+  if(TE.hovering){
+    if(e.code==='Space'){ e.preventDefault(); teTogglePlay(); return; }
+    if(e.key==='i'||e.key==='I'){ e.preventDefault();
+      TE.trimStart=Math.min(TE.playhead,(TE.trimEnd==null?TE.duration:TE.trimEnd)-0.05);
+      teSyncTrimInputs(); teRedrawOverlays(); tePushHistory(); return; }
+    if(e.key==='o'||e.key==='O'){ e.preventDefault();
+      TE.trimEnd=Math.max(TE.playhead, TE.trimStart+0.05);
+      teSyncTrimInputs(); teRedrawOverlays(); tePushHistory(); return; }
+    if((e.metaKey||e.ctrlKey) && (e.key==='z'||e.key==='Z')){
+      e.preventDefault();
+      if(e.shiftKey) $('teRedoBtn').click(); else $('teUndoBtn').click();
+      return;
+    }
+  }
   if(e.code==='Space'){ e.preventDefault(); recording?stopRec():(!$('rec').disabled&&startRec()); }
   if(e.key==='p'||e.key==='P'){ e.preventDefault(); if(!$('play').disabled) toggleMusic(); }
   if(e.key==='Enter'){
@@ -3068,6 +3800,13 @@ async function startRec(){
   if(metro.countIn && !punch) await countIn();
 
   if(!punch) resetScoreTracking();  // a punch-in continuation keeps the earlier segment's stats too
+  // One id for this whole recording, minted before anything starts — reused
+  // as the eventual take's own id (see saveCurrentTakeToHistory) and to tag
+  // this take's phone video upload. Sharing one id end-to-end is what lets
+  // a retake's render/video generation run and complete independently of
+  // whatever an earlier take is still doing, instead of both fighting over
+  // one shared "current" slot.
+  window._currentRecId=(window.crypto&&crypto.randomUUID?crypto.randomUUID():(Date.now()+'-'+Math.random())).replace(/[^a-zA-Z0-9]/g,'').slice(0,16);
   recChunks=[];
   recorder=new MediaRecorder(mediaStream,{mimeType:pickMime(),audioBitsPerSecond:512000});
   recorder.ondataavailable=e=>{ if(e.data.size) recChunks.push(e.data); };
@@ -3110,7 +3849,12 @@ async function startRec(){
       phoneVideoRecorder=new MediaRecorder(phoneStream,
         {mimeType:pickVideoMime(), videoBitsPerSecond:8000000});
       phoneVideoRecorder.ondataavailable=e=>{ if(e.data.size) phoneVideoChunks.push(e.data); };
-      phoneVideoRecorder.onstop=uploadPhoneVideoFromDesktop;
+      // Close over THIS take's rec id now, rather than reading
+      // window._currentRecId again inside the handler later — a fast
+      // retake could otherwise have already overwritten it by the time
+      // this upload actually fires.
+      const recIdForUpload=window._currentRecId;
+      phoneVideoRecorder.onstop=()=>uploadPhoneVideoFromDesktop(recIdForUpload);
       window._videoRecordedThisTake=true;
     }catch(e){
       console.error('Phone video recording failed to start:', e);
@@ -3664,6 +4408,31 @@ function buildTakeGraphNodes(){
   return {hp, vocalGain, musicGainNode};
 }
 
+// Same chain as buildTakeGraphNodes() above, minus the music-mix half —
+// this one sits between the LIVE mic and the headphone monitor (see
+// wireMonitorSource()), not between a stored take buffer and the speakers.
+function buildMonitorGraphNodes(){
+  const hp=audioCtx.createBiquadFilter(); hp.type='highpass';
+  const dip=audioCtx.createBiquadFilter(); dip.type='peaking';
+  const nasal=audioCtx.createBiquadFilter(); nasal.type='peaking';
+  const tone1=audioCtx.createBiquadFilter(); tone1.type='peaking';
+  const tone2=audioCtx.createBiquadFilter(); tone2.type='peaking';
+  const air=audioCtx.createBiquadFilter(); air.type='highshelf';
+  const deEss=audioCtx.createBiquadFilter(); deEss.type='highshelf';
+  const comp=audioCtx.createDynamicsCompressor();
+  const comp2=audioCtx.createDynamicsCompressor();
+  const dry=audioCtx.createGain(), wet=audioCtx.createGain();
+  const conv=audioCtx.createConvolver(); conv.buffer=makeImpulse(2.2,2.0);
+  const vocalGain=audioCtx.createGain();
+  hp.connect(dip); dip.connect(nasal); nasal.connect(tone1); tone1.connect(tone2);
+  tone2.connect(air); air.connect(deEss); deEss.connect(comp); comp.connect(comp2);
+  comp2.connect(dry); comp2.connect(conv); conv.connect(wet);
+  dry.connect(vocalGain); wet.connect(vocalGain);
+  monitorGraph={hp,dip,nasal,tone1,tone2,air,deEss,comp,comp2,dry,wet,vocalGain};
+  applyLiveFxToGraph(monitorGraph, false);
+  return monitorGraph;
+}
+
 async function startTakePlayback(fromT, loopIt){
   const vocalBuf=(tp&&tp.buffer)||window._lastVocalBuffer;
   if(!vocalBuf) return;
@@ -3780,63 +4549,79 @@ function applyMusicMonitorVol_graph(){
 // Reflect FX-rack + mix settings into the live take graph.
 function clampParam(param, min, max, v){ param.value = Math.max(min, Math.min(max, v)); }
 
-// Reflect the pro-chain sliders (+ mix gain) into the live take graph. This is
-// an approximation for audition — the exact chain (incl. saturation and the
-// delay send) is only applied by ffmpeg at render time.
+// Reflect the pro-chain sliders (+ mix gain) into whichever live WebAudio
+// graphs currently exist: the take-preview graph (test mode / take
+// playback) and/or the live studio-monitor graph (mic while recording).
+// This is an approximation for audition/monitoring — the exact chain
+// (incl. saturation and the delay send) is only applied by ffmpeg at
+// render time.
 function applyLiveFx(){
-  if(!takeGraph) return;
+  if(takeGraph){ applyLiveFxToGraph(takeGraph, true); applyMusicMonitorVol_graph(); }
+  if(monitorGraph) applyLiveFxToGraph(monitorGraph, false);
+}
+function applyLiveFxToGraph(g, isTakeGraph){
   const pv=PRO_CHAIN_VALUES, on=!!fxOn.pro;
   const nyq=(audioCtx.sampleRate||48000)/2 - 1;
 
-  if(takeGraph.hp) clampParam(takeGraph.hp.frequency, 10, nyq, on?pv.hpf_freq:10);
-  if(takeGraph.dip){ clampParam(takeGraph.dip.frequency,10,nyq,pv.dip_freq); takeGraph.dip.Q.value=pv.dip_q;
-    takeGraph.dip.gain.value = on?pv.dip_gain:0; }
-  if(takeGraph.nasal){ clampParam(takeGraph.nasal.frequency,10,nyq,pv.nasal_freq); takeGraph.nasal.Q.value=pv.nasal_q;
-    takeGraph.nasal.gain.value = on?pv.nasal_gain:0; }
-  if(takeGraph.tone1){ clampParam(takeGraph.tone1.frequency,10,nyq,pv.tone1_freq); takeGraph.tone1.Q.value=pv.tone1_q;
-    takeGraph.tone1.gain.value = on?pv.tone1_gain:0; }
-  if(takeGraph.tone2){ clampParam(takeGraph.tone2.frequency,10,nyq,pv.tone2_freq); takeGraph.tone2.Q.value=pv.tone2_q;
-    takeGraph.tone2.gain.value = on?pv.tone2_gain:0; }
-  if(takeGraph.air){ clampParam(takeGraph.air.frequency,10,nyq,pv.air_freq);
-    takeGraph.air.gain.value = on?pv.air_gain:0; }
-  if(takeGraph.deEss){ clampParam(takeGraph.deEss.frequency,10,nyq,pv.deess_freq);
-    takeGraph.deEss.gain.value = on ? -(pv.deess_intensity/100)*8 : 0; }
-  if(takeGraph.comp){
-    clampParam(takeGraph.comp.threshold,-100,0, on?pv.fast_threshold_db:0);
-    takeGraph.comp.knee.value=6; clampParam(takeGraph.comp.ratio,1,20, on?pv.fast_ratio:1);
-    clampParam(takeGraph.comp.attack,0,1, (on?pv.fast_attack:0)/1000);
-    clampParam(takeGraph.comp.release,0,1, (on?pv.fast_release:10)/1000);
+  if(g.hp) clampParam(g.hp.frequency, 10, nyq, on?pv.hpf_freq:10);
+  if(g.dip){ clampParam(g.dip.frequency,10,nyq,pv.dip_freq); g.dip.Q.value=pv.dip_q;
+    g.dip.gain.value = on?pv.dip_gain:0; }
+  if(g.nasal){ clampParam(g.nasal.frequency,10,nyq,pv.nasal_freq); g.nasal.Q.value=pv.nasal_q;
+    g.nasal.gain.value = on?pv.nasal_gain:0; }
+  if(g.tone1){ clampParam(g.tone1.frequency,10,nyq,pv.tone1_freq); g.tone1.Q.value=pv.tone1_q;
+    g.tone1.gain.value = on?pv.tone1_gain:0; }
+  if(g.tone2){ clampParam(g.tone2.frequency,10,nyq,pv.tone2_freq); g.tone2.Q.value=pv.tone2_q;
+    g.tone2.gain.value = on?pv.tone2_gain:0; }
+  if(g.air){ clampParam(g.air.frequency,10,nyq,pv.air_freq);
+    g.air.gain.value = on?pv.air_gain:0; }
+  if(g.deEss){ clampParam(g.deEss.frequency,10,nyq,pv.deess_freq);
+    g.deEss.gain.value = on ? -(pv.deess_intensity/100)*8 : 0; }
+  if(g.comp){
+    clampParam(g.comp.threshold,-100,0, on?pv.fast_threshold_db:0);
+    g.comp.knee.value=6; clampParam(g.comp.ratio,1,20, on?pv.fast_ratio:1);
+    clampParam(g.comp.attack,0,1, (on?pv.fast_attack:0)/1000);
+    clampParam(g.comp.release,0,1, (on?pv.fast_release:10)/1000);
   }
-  if(takeGraph.comp2){
-    clampParam(takeGraph.comp2.threshold,-100,0, on?pv.smooth_threshold_db:0);
-    takeGraph.comp2.knee.value=8; clampParam(takeGraph.comp2.ratio,1,20, on?pv.smooth_ratio:1);
-    clampParam(takeGraph.comp2.attack,0,1, (on?pv.smooth_attack:0)/1000);
-    clampParam(takeGraph.comp2.release,0,1, (on?pv.smooth_release:10)/1000);
+  if(g.comp2){
+    clampParam(g.comp2.threshold,-100,0, on?pv.smooth_threshold_db:0);
+    g.comp2.knee.value=8; clampParam(g.comp2.ratio,1,20, on?pv.smooth_ratio:1);
+    clampParam(g.comp2.attack,0,1, (on?pv.smooth_attack:0)/1000);
+    clampParam(g.comp2.release,0,1, (on?pv.smooth_release:10)/1000);
   }
   // reverb send: regenerate the impulse if the decay time changed meaningfully
-  if(takeGraph.conv){
+  if(g.conv){
     const targetDecay=on?pv.verb_decay:0.01;
-    if(Math.abs((takeGraph._verbDecay||0)-targetDecay)>0.05){
-      takeGraph.conv.buffer=makeImpulse(Math.max(0.05,targetDecay),2.0);
-      takeGraph._verbDecay=targetDecay;
+    if(Math.abs((g._verbDecay||0)-targetDecay)>0.05){
+      g.conv.buffer=makeImpulse(Math.max(0.05,targetDecay),2.0);
+      g._verbDecay=targetDecay;
     }
   }
   const wetGain = on ? Math.pow(10, pv.verb_send_db/20) : 0;
-  if(takeGraph.wet) takeGraph.wet.gain.value=wetGain;
-  if(takeGraph.dry) takeGraph.dry.gain.value=1;
-  const vdb=+$('vgain').value; if(takeGraph.vocalGain) takeGraph.vocalGain.gain.value=Math.pow(10,vdb/20);
-  applyMusicMonitorVol_graph();
+  if(g.wet) g.wet.gain.value=wetGain;
+  if(g.dry) g.dry.gain.value=1;
+  // the take-preview graph's own output should match the export vocal-gain
+  // balance (it's previewing the eventual mix); the live monitor graph is
+  // just an effects insert ahead of the existing "My voice" volume slider,
+  // so it stays at unity and lets that slider be the only volume control.
+  if(g.vocalGain) g.vocalGain.gain.value = isTakeGraph ? Math.pow(10, (+$('vgain').value)/20) : 1;
 }
 
 function encodeWav(audioBuffer){
+  // 32-bit float PCM, not 16-bit int. The mic capture (decodeAudioData) and
+  // every ffmpeg stage downstream already work in float/24-bit — quantizing
+  // to 16-bit right here, before any processing even starts, put a hard
+  // floor on fidelity that no later stage could recover. That's exactly the
+  // kind of fine detail ("grain"/texture of the voice) that gets buried
+  // once the multi-stage compressor chain applies its makeup gain on top.
   const sr=audioBuffer.sampleRate, ch=audioBuffer.getChannelData(0), n=ch.length;
-  const buf=new ArrayBuffer(44+n*2), dv=new DataView(buf);
+  const bytesPerSample=4;
+  const buf=new ArrayBuffer(44+n*bytesPerSample), dv=new DataView(buf);
   const wr=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));};
-  wr(0,'RIFF'); dv.setUint32(4,36+n*2,true); wr(8,'WAVE'); wr(12,'fmt ');
-  dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
-  dv.setUint32(24,sr,true); dv.setUint32(28,sr*2,true); dv.setUint16(32,2,true);
-  dv.setUint16(34,16,true); wr(36,'data'); dv.setUint32(40,n*2,true);
-  let o=44; for(let i=0;i<n;i++){let s=Math.max(-1,Math.min(1,ch[i])); dv.setInt16(o,s<0?s*0x8000:s*0x7fff,true); o+=2;}
+  wr(0,'RIFF'); dv.setUint32(4,36+n*bytesPerSample,true); wr(8,'WAVE'); wr(12,'fmt ');
+  dv.setUint32(16,16,true); dv.setUint16(20,3,true); dv.setUint16(22,1,true);   // format 3 = IEEE float
+  dv.setUint32(24,sr,true); dv.setUint32(28,sr*bytesPerSample,true); dv.setUint16(32,bytesPerSample,true);
+  dv.setUint16(34,32,true); wr(36,'data'); dv.setUint32(40,n*bytesPerSample,true);
+  let o=44; for(let i=0;i<n;i++){ dv.setFloat32(o,ch[i],true); o+=4; }
   return new Blob([buf],{type:'audio/wav'});
 }
 
@@ -3860,11 +4645,19 @@ async function doRender(){
   const body={id:SID, fx:collectFx(), mix:{
     vocal_gain_db:+$('vgain').value, music_gain_db:+$('mgain').value,
     music_key:musicKey, format:$('ofmt').value, loudnorm:true,
-    trim_start:trimStart, trim_end:trimEnd }};
+    trim_start:trimStart, trim_end:trimEnd,
+    music_eq:{low_gain:TE.eqLow, mid_gain:TE.eqMid, high_gain:TE.eqHigh} }};
   if(activeHarmonyTakeId){
     body.mix.harmony_take_id=activeHarmonyTakeId;
     body.mix.harmony_gain_db=+$('hgain').value;
   }
+  // rec_id ties this render (and, if a phone video was captured, its video
+  // combine) to the specific recording it came from — see startRec() —
+  // so a retake's progress/result never gets confused with an earlier
+  // take's. Sent alongside take_id (harmless/unused server-side when a
+  // take_id is also present) so the ad-hoc "render straight from a fresh
+  // take without saving it first" path still gets its own scoped output.
+  body.rec_id=window._currentRecId;
   // prefer a take you picked from the take-history strip; otherwise fall back
   // to uploading whatever's currently in the take player (old single-take path)
   if(activeTakeId && takes.some(t=>t.id===activeTakeId)){
@@ -3874,10 +4667,18 @@ async function doRender(){
     $('renderstatus').textContent='Uploading take…';
     body.vocal_wav_b64=await blobToB64(window._lastVocalWav);
   }
+  window._renderScopeId=body.take_id||body.rec_id||null;
   let r; try{ r=await fetch('/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
   catch(e){ return failRender('Could not reach server.'); }
   const d=await r.json(); if(!r.ok) return failRender(d.error||'Render failed.');
   $('renderfill').style.width='55%';
+  // Reflect "rendering" on that take's own card right away, rather than
+  // waiting for some unrelated action to refresh the strip — this is what
+  // actually shows progress in the Takes tab, not just the render bar above.
+  if(body.take_id){
+    const t=takes.find(x=>x.id===body.take_id);
+    if(t){ t.render={status:'rendering',stage:'starting',error:null}; renderTakeStrip(); }
+  }
   poll=setInterval(checkRender,800);
 }
 function failRender(m){ $('render').disabled=false; $('rendererr').textContent=m; $('renderbar').style.display='none'; toast(m,'error'); }
@@ -3906,7 +4707,13 @@ async function checkRender(){
     if(window._finalAudio){ try{window._finalAudio.pause();}catch(_){}}
     window._finalAudio=fa;
     buildPlayer($('finalPlayer'), fa, {label:'Your finished song'});
-    if(window._videoRecordedThisTake) tryCombineVideo();
+    if(window._videoRecordedThisTake){
+      $('result').insertAdjacentHTML('beforeend',
+        '<div class="player" id="videoProgressBox" style="margin-top:12px">'+
+          '<div class="plabel">📹 Syncing your phone video…</div>'+
+        '</div>');
+      tryCombineVideo(window._renderScopeId);
+    }
     if(autoAdvanceOn && queue.length){
       toast('Rendered. Auto-advancing to the next song…','ok',2500);
       setTimeout(playNext, 2500);
@@ -3916,27 +4723,52 @@ async function checkRender(){
 }
 
 // ---- phone video combine (align phone's video to the finished mix) --------
-function tryCombineVideo(){
+// scopeId (a take_id or rec_id — see doRender/startRec) ties this specific
+// take's video generation to its own progress/result, so retaking doesn't
+// show you a stale earlier take's video, or silently skip generating a new
+// one because some OTHER take had already reached "done".
+function tryCombineVideo(scopeId){
   if(window._combineTriggered) return;
   fetch('/combine_video',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:SID})}).then(r=>{
-      if(r.ok){ window._combineTriggered=true; videoPoll=setInterval(checkVideoCombine,1000); }
-      // 409 = phone hasn't uploaded yet; retry shortly
-      else setTimeout(tryCombineVideo,2000);
-    }).catch(()=>setTimeout(tryCombineVideo,2000));
+    body:JSON.stringify({id:SID, take_id:scopeId, rec_id:scopeId})}).then(r=>{
+      if(r.ok){
+        window._combineTriggered=true; videoPoll=setInterval(()=>checkVideoCombine(scopeId),1000);
+        // Mirror it onto that take's own card right away (see doRender's
+        // matching optimistic update for render) — otherwise the take
+        // strip's own poller may have already stopped itself right after
+        // the render finished, since at that moment nothing was pending
+        // yet, and nothing would restart it until an unrelated action.
+        const t=takes.find(x=>x.id===scopeId);
+        if(t){ t.video={status:'aligning',error:null}; renderTakeStrip(); }
+      }
+      // 409 = phone hasn't uploaded yet, or this take's render isn't done yet; retry shortly
+      else setTimeout(()=>tryCombineVideo(scopeId),2000);
+    }).catch(()=>setTimeout(()=>tryCombineVideo(scopeId),2000));
 }
 let videoPoll=null;
-async function checkVideoCombine(){
-  let j; try{ j=await(await fetch('/status?id='+SID)).json(); }catch(e){return;}
+async function checkVideoCombine(scopeId){
+  let j; try{ j=await(await fetch('/status?id='+SID+'&take='+encodeURIComponent(scopeId||''))).json(); }catch(e){return;}
+  const box=$('videoProgressBox');
   if(j.video_status==='done'){
     clearInterval(videoPoll); videoPoll=null;
-    $('result').insertAdjacentHTML('beforeend',
-      '<a class="dl" href="/final_video?id='+SID+'" download><svg class="icon"><use href="#i-download"/></svg> Download video (with phone camera)</a>');
+    // in-app preview (not just a blind download link) — same idea as the
+    // finished-song audio player above, so you can actually watch what got
+    // recorded before deciding whether to keep it.
+    const html=
+      '<div class="player" style="margin-top:12px">'+
+        '<div class="plabel">Your finished video</div>'+
+        '<video controls playsinline style="width:100%;border-radius:8px;background:#000" '+
+          'src="/final_video?id='+SID+'&take='+encodeURIComponent(scopeId||'')+'&t='+Date.now()+'"></video>'+
+      '</div>'+
+      '<a class="dl" href="/final_video?id='+SID+'&take='+encodeURIComponent(scopeId||'')+'" download style="margin-top:8px"><svg class="icon"><use href="#i-download"/></svg> Download video (with phone camera)</a>';
+    if(box) box.outerHTML=html; else $('result').insertAdjacentHTML('beforeend', html);
   }else if(j.video_status==='error'){
     clearInterval(videoPoll); videoPoll=null;
-    $('result').insertAdjacentHTML('beforeend',
-      '<div class="err">Couldn\'t sync phone video: '+(j.video_error||'unknown error')+'</div>');
+    const html='<div class="err">Couldn\'t sync phone video: '+(j.video_error||'unknown error')+'</div>';
+    if(box) box.outerHTML=html; else $('result').insertAdjacentHTML('beforeend', html);
   }
+  // still "aligning" (or not yet ready) — leave the "Syncing…" placeholder
+  // showing rather than nothing, so a slow combine never looks stalled/dead.
 }
 function blobToB64(blob){ return new Promise(res=>{const fr=new FileReader();
   fr.onload=()=>res(fr.result.split(',')[1]); fr.readAsDataURL(blob);}); }
