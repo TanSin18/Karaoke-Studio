@@ -442,8 +442,37 @@ def extract_melody(jid):
     voc = os.path.join(sdir, "vocals.wav")
     if not os.path.exists(voc):
         return None
+    return _extract_melody_locked(jid, voc, cache)
+
+
+def extract_take_melody(jid, take_id):
+    """Melody timeline of one of the user's own TAKES (cached per take).
+
+    This is what makes karaoke sessions song-aware: there's no original
+    vocal stem to reference, but the singer's own kept take IS a melody
+    line aligned to this exact backing — the notes highway can then run
+    in ghost mode ("race your best take") from take 2 onward.
+    """
+    take = _get_take(jid, take_id)
+    if not take or take.get("deleted"):
+        return None
+    sdir = os.path.join(SESS_DIR, jid)
+    src = os.path.join(sdir, take.get("file") or "")
+    cache = os.path.join(sdir, f"melody_{take_id}.json")
+    if os.path.exists(cache):
+        try:
+            with open(cache, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            pass
+    if not os.path.exists(src):
+        return None
+    return _extract_melody_locked(jid + ":" + take_id, src, cache)
+
+
+def _extract_melody_locked(lock_key, voc, cache):
     with _MELODY_LOCKS_GUARD:
-        lock = _MELODY_LOCKS.setdefault(jid, threading.Lock())
+        lock = _MELODY_LOCKS.setdefault(lock_key, threading.Lock())
     with lock:
         # a second caller that waited here finds the cache the first wrote
         if os.path.exists(cache):
@@ -452,7 +481,7 @@ def extract_melody(jid):
                     return json.load(fh)
             except (OSError, ValueError):
                 pass
-        return _extract_melody_inner(jid, voc, cache)
+        return _extract_melody_inner(lock_key, voc, cache)
 
 
 def _extract_melody_inner(jid, voc, cache):
@@ -1810,11 +1839,14 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/melody":
-            jid = (parse_qs(p.query).get("id") or [""])[0]
+            q = parse_qs(p.query)
+            jid = (q.get("id") or [""])[0]
+            take_id = (q.get("take") or [""])[0]
             if not job_or_disk(jid):
                 self._json(404, {"error": "unknown session"})
                 return
-            self._json(200, {"melody": extract_melody(jid)})
+            mel = extract_take_melody(jid, take_id) if take_id else extract_melody(jid)
+            self._json(200, {"melody": mel})
             return
 
         if p.path == "/songkey":

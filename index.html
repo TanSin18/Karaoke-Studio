@@ -248,8 +248,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .liveScoreBar.hot{border-color:var(--amber2);box-shadow:0 0 0 1px rgba(30,215,96,.5),0 4px 24px rgba(30,215,96,.35)}
   .lsbDot.good{background:var(--ok);box-shadow:0 0 8px var(--ok)}
   .lsbDot.off{background:var(--amber);box-shadow:0 0 8px var(--amber)}
-  .hwWrap{margin-top:10px;border-radius:12px;background:var(--well);border:1px solid var(--edge);
+  .hwWrap{position:relative;margin-top:10px;border-radius:12px;background:var(--well);border:1px solid var(--edge);
     overflow:hidden;height:130px}
+  .hwChip{position:absolute;top:6px;right:8px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;
+    color:var(--muted);background:rgba(0,0,0,.45);padding:3px 9px;border-radius:10px;pointer-events:none}
   .hwWrap canvas{width:100%;height:100%;display:block}
   .lyricsBar{position:relative;margin-top:10px;padding:10px 90px 10px 14px;border-radius:12px;
     background:var(--well);border:1px solid var(--edge);text-align:center;min-height:64px}
@@ -1000,7 +1002,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <button class="btn small ghost" id="lyrLater" title="Lyrics appear 0.5s later">▶</button>
           </div>
         </div>
-        <div class="hwWrap hidden" id="hwWrap"><canvas id="hwCanvas"></canvas></div>
+        <div class="hwWrap hidden" id="hwWrap"><canvas id="hwCanvas"></canvas><span class="hwChip" id="hwChip"></span></div>
         <div class="seekwrap mt">
           <input type="range" id="seek" min="0" max="1000" value="0" step="1" disabled>
           <div class="time" id="time">00:00 / 00:00</div>
@@ -2947,27 +2949,59 @@ $('lyrSyncNow').addEventListener('click',()=>{
 document.addEventListener('DOMContentLoaded',()=>{});
 $('lyrEarlier').addEventListener('click',()=>nudgeLyrics(0.5));
 $('lyrLater').addEventListener('click',()=>nudgeLyrics(-0.5));
-let songMelody=null, hwSegs=null, hwTrail=[];
+let songMelody=null, hwSegs=null, hwTrail=[], hwGhost=false, hwGhostTakeId=null;
+function bestGhostTake(){
+  const leads=takes.filter(t=>t.kind==='lead' && !t.deleted);
+  if(!leads.length) return null;
+  return [...leads].sort((a,b)=>
+    ((b.pitch_score&&b.pitch_score.accuracy)||0)-((a.pitch_score&&a.pitch_score.accuracy)||0)
+    || (b.duration||0)-(a.duration||0))[0];
+}
+// Karaoke sessions have no original vocal stem — but the singer's own best
+// take IS a melody reference aligned to this exact backing. From take 2
+// onward the highway runs in GHOST mode: race your best take, scored
+// note-for-note against it.
+function maybeLoadGhost(){
+  if(songMelody && !hwGhost) return;              // real melody wins
+  const best=bestGhostTake();
+  if(!best){ if(hwGhost){ songMelody=null; hwSegs=null; hwGhost=false; $('hwWrap').classList.add('hidden'); } return; }
+  if(hwGhost && hwGhostTakeId===best.id) return;  // already current
+  fetch('/melody?id='+SID+'&take='+best.id).then(r=>r.json()).then(d=>{
+    if(!(d.melody&&d.melody.midi&&d.melody.midi.some(v=>v>0))) return;
+    applyMelody(d.melody, true, best.id);
+  }).catch(()=>{});
+}
+function applyMelody(mel, ghost, takeId){
+  songMelody=mel; hwGhost=!!ghost; hwGhostTakeId=takeId||null;
+  const chip=$('hwChip');
+  if(chip){ chip.textContent=ghost?'👻 racing your best take':'🎯 original melody';
+    chip.title=ghost?'No original vocal for this song — the highway follows your best take so far. Beat it!':''; }
+  $('scoreNote').textContent=(ghost?'Pitch vs your best take (ghost)':'Pitch vs the original melody')+
+    ' × combo multipliers — hold your best runs to build ×2, ×3, ×4.';
+  buildHwSegs();
+  $('hwWrap').classList.remove('hidden');
+  fitStage();
+  if(typeof showTuner==='function' && recording) showTuner(tunerOn);
+}
+function buildHwSegs(){
+  hwSegs=[];
+  const M=songMelody.midi, hop=songMelody.hop;
+  let s0=-1, note=0;
+  for(let i=0;i<=M.length;i++){
+    const n=(i<M.length&&M[i]>0)?Math.round(M[i]):-1;
+    if(n!==note||i===M.length){
+      if(note>0&&i-s0>=3) hwSegs.push({t0:s0*hop,t1:i*hop,midi:note});
+      s0=i; note=n;
+    }
+  }
+}
 function loadMelody(){
-  songMelody=null; hwSegs=null; hwTrail=[];
+  songMelody=null; hwSegs=null; hwTrail=[]; hwGhost=false; hwGhostTakeId=null;
   $('hwWrap').classList.add('hidden');
   fetch('/melody?id='+SID).then(r=>r.json()).then(d=>{
-    if(!(d.melody&&d.melody.midi&&d.melody.midi.some(v=>v>0))) return;
-    songMelody=d.melody;
-    // contiguous voiced runs on the same semitone become highway bars
-    hwSegs=[];
-    const M=songMelody.midi, hop=songMelody.hop;
-    let s0=-1, note=0;
-    for(let i=0;i<=M.length;i++){
-      const n=(i<M.length&&M[i]>0)?Math.round(M[i]):-1;
-      if(n!==note||i===M.length){
-        if(note>0&&i-s0>=3) hwSegs.push({t0:s0*hop,t1:i*hop,midi:note});
-        s0=i; note=n;
-      }
-    }
-    $('hwWrap').classList.remove('hidden');
-    fitStage();
-  }).catch(()=>{});
+    if(!(d.melody&&d.melody.midi&&d.melody.midi.some(v=>v>0))){ maybeLoadGhost(); return; }
+    applyMelody(d.melody,false,null);
+  }).catch(()=>{ maybeLoadGhost(); });
 }
 function melodyAt(t){
   if(!songMelody) return -1;
@@ -3632,28 +3666,76 @@ function drawRibbon(){
     if(inKey){ ctx.fillStyle='rgba(255,255,255,.28)';
       ctx.fillText(NOTE[pc]+(Math.floor(n/12)-1), 6, y-6); }
   }
-  // the trail: green glow on in-key notes, amber between, gaps for silence
-  let prev=null;
-  for(const p of RIB.trail){
-    if(now-p.t>SPAN){ continue; }
+  // The trail judges only what it can KNOW without the song's melody:
+  // STEADINESS. Held notes glow green (locked), sustained singing between
+  // note centers reads amber, and transitions are neutral glides — never
+  // red, because a glide between notes is normal singing, not an error.
+  // Octave-glitch spikes from the pitch tracker are drawn as gaps, not
+  // floor-to-ceiling lines.
+  const pts=RIB.trail.filter(p=>now-p.t<=SPAN);
+  // median-of-3 pass kills single-frame octave errors
+  const md=pts.map((p,i)=>{
+    if(p.m==null) return p;
+    const a=pts[i-1]&&pts[i-1].m!=null?pts[i-1].m:p.m;
+    const b=pts[i+1]&&pts[i+1].m!=null?pts[i+1].m:p.m;
+    return {t:p.t, m:[a,p.m,b].sort((x,y)=>x-y)[1]};
+  });
+  // steadiness: deviation from a short trailing window's median
+  const lockAt=[];
+  for(let i=0;i<md.length;i++){
+    if(md[i].m==null){ lockAt.push(false); continue; }
+    const win=[];
+    for(let j=i;j>=0 && md[i].t-md[j].t<0.45;j--){ if(md[j].m!=null) win.push(md[j].m); }
+    if(win.length<8){ lockAt.push(false); continue; }
+    const wmed=win.sort((a,b)=>a-b)[Math.floor(win.length/2)];
+    lockAt.push(Math.max(...win.map(v=>Math.abs(v-wmed)))<0.4);
+  }
+  let prev=null, headLocked=false, headNote=null;
+  for(let i=0;i<md.length;i++){
+    const p=md[i];
     if(p.m==null){ prev=null; continue; }
     const x=t2x(p.t), y=m2y(Math.max(lo,Math.min(hi,p.m)));
-    if(prev && p.t-prev.t<0.12){
-      const pc=((Math.round(p.m)%12)+12)%12;
-      const inKey=iv?iv.includes(((pc-root)%12+12)%12):true;
-      const near=Math.abs(p.m-Math.round(p.m))<=0.25;
+    if(prev && p.t-prev.t<0.12 && Math.abs(p.m-prev.m)<4){
       const a=Math.max(0.12, 1-(now-p.t)/SPAN);
-      ctx.strokeStyle=(inKey&&near)?'rgba(30,215,96,'+a+')':(near?'rgba(240,200,80,'+a+')':'rgba(240,90,120,'+(a*0.9)+')');
-      ctx.lineWidth=2.5; ctx.lineCap='round';
-      ctx.shadowColor=(inKey&&near)?'rgba(30,215,96,.6)':'transparent';
-      ctx.shadowBlur=(inKey&&near)?7:0;
+      const near=Math.abs(p.m-Math.round(p.m))<=0.3;
+      if(lockAt[i]&&near){                         // locked on a note
+        ctx.strokeStyle='rgba(30,215,96,'+a+')'; ctx.lineWidth=3.2;
+        ctx.shadowColor='rgba(30,215,96,.65)'; ctx.shadowBlur=9;
+      } else if(lockAt[i]){                        // steady but between notes
+        ctx.strokeStyle='rgba(240,200,80,'+(a*0.95)+')'; ctx.lineWidth=2.6;
+        ctx.shadowBlur=0;
+      } else {                                     // transition: neutral glide
+        ctx.strokeStyle='rgba(255,255,255,'+(a*0.3)+')'; ctx.lineWidth=1.8;
+        ctx.shadowBlur=0;
+      }
+      ctx.lineCap='round';
       ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
       ctx.shadowBlur=0;
     }
-    prev={t:p.t,x,y};
+    prev={t:p.t,x,y,m:p.m};
+    if(i===md.length-1){ headLocked=lockAt[i]; headNote=Math.round(p.m); }
   }
-  if(prev){
-    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(prev.x,prev.y,3.5,0,7); ctx.fill();
+  // lock celebration: the held note's gridline ignites + ripple on lock-on
+  if(prev && headLocked && headNote>=lo && headNote<=hi){
+    const gy=m2y(headNote);
+    ctx.strokeStyle='rgba(30,215,96,.4)'; ctx.lineWidth=2;
+    ctx.shadowColor='rgba(30,215,96,.5)'; ctx.shadowBlur=6;
+    ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke();
+    ctx.shadowBlur=0;
+    if(RIB.lockNote!==headNote){ RIB.lockNote=headNote; RIB.lockT=now; }
+    const age=now-RIB.lockT;
+    if(age<0.35){                                  // lock-on ripple
+      const r=6+age*70;
+      ctx.strokeStyle='rgba(30,215,96,'+(0.7*(1-age/0.35))+')'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(prev.x,prev.y,r,0,7); ctx.stroke();
+    }
+  } else { RIB.lockNote=null; }
+  if(prev){                                        // comet head
+    const grad=ctx.createRadialGradient(prev.x,prev.y,0,prev.x,prev.y,9);
+    grad.addColorStop(0, headLocked?'rgba(255,255,255,.95)':'rgba(255,255,255,.8)');
+    grad.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(prev.x,prev.y,9,0,7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(prev.x,prev.y,3,0,7); ctx.fill();
   }
   RIB.raf=requestAnimationFrame(drawRibbon);
 }
@@ -4164,6 +4246,7 @@ function renderTakeStrip(){
     box.appendChild(row);
   });
   ensureTakeStripPoll();
+  maybeLoadGhost();
   refreshTrackEditor();
   refreshHarmonyUI();   // after refreshTrackEditor — needs activeTakeId already resolved
 }
