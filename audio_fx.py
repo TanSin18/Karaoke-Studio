@@ -182,6 +182,22 @@ def _rubberband_shift(seg, sr, semitones):
 # looked up from the fx["pro"] dict with these defaults as fallback, so the
 # frontend only needs to send the parameters the user actually changed.
 PRO_CHAIN_DEFAULTS = {
+    # 0.0 breath control: a soft downward expander sitting BEFORE the
+    # compressors — the compressors otherwise do the opposite of what a
+    # listener wants with breaths: they turn the loud parts down, which
+    # RAISES every inhale/exhale relative to the singing. Deliberately an
+    # expander, not a hard gate: a gate that fully mutes between words
+    # audibly "chops" tails of phrases and pumps. gate_range_db caps how
+    # far breaths get pushed down (-14dB reads as natural quiet, not a
+    # hole); threshold sits well under sung level (~-18..-12 dBFS) so soft
+    # phrase endings pass untouched.
+    # Tuned against real takes (see session d56a078b95f6): -28dB/peak
+    # detection cuts breaths ~8-10dB while leaving sung frames at 0.0dB and
+    # phrase tails at ~0.3dB of reduction; RMS detection at -37 only
+    # managed ~5dB on breaths because their short peaks ride over an RMS
+    # average.
+    "gate_threshold_db": -28, "gate_ratio": 3.0, "gate_range_db": -14,
+    "gate_attack": 4, "gate_release": 260,
     # 1.1 clean EQ: rumble HPF + low-mid mud dip + nasal/boxiness cut
     "hpf_freq": 85,
     "dip_freq": 250, "dip_gain": -2.5, "dip_q": 1.4,
@@ -194,10 +210,22 @@ PRO_CHAIN_DEFAULTS = {
     # voice's natural "grain"; catching only real peaks preserves that while
     # still providing a safety net.
     "fast_ratio": 4, "fast_attack": 1, "fast_release": 80, "fast_threshold_db": -15,
-    # 3.3 smooth body compressor (opto/LA-2A style)
-    "smooth_ratio": 3, "smooth_attack": 25, "smooth_release": 500, "smooth_threshold_db": -17,
+    # 3.3 smooth body compressor (opto/LA-2A style). Threshold sits lower
+    # than the fast comp's on purpose: this stage is the LEVELER — it's what
+    # brings soft low phrases up toward the belted ones (the "low notes get
+    # lost, high notes blast" complaint is a dynamic-range problem, and this
+    # plus the bus limiter is the pair that closes that range from both
+    # ends).
+    "smooth_ratio": 3.2, "smooth_attack": 25, "smooth_release": 450, "smooth_threshold_db": -23,
+    "smooth_makeup": 2.6,
     # 4.4 de-esser
     "deess_freq": 6000, "deess_intensity": 40,
+    # 4.5 dynamic harshness tamer: a bell cut around 3.4kHz that only
+    # engages when that band gets HOT (belted/shouted notes) — loud high
+    # notes lose their icepick edge while soft singing keeps full presence.
+    # A static EQ cut here would dull the whole vocal; dynamic is the point.
+    "harsh_freq": 3400, "harsh_threshold": 0.10, "harsh_ratio": 2.5,
+    "harsh_range_db": 8, "harsh_attack": 6, "harsh_release": 140,
     # 5.5 additive tone EQ: chest warmth + presence + air shelf
     "tone1_freq": 180, "tone1_gain": 1.0, "tone1_q": 1.0,
     "tone2_freq": 3800, "tone2_gain": 2.0, "tone2_q": 1.2,
@@ -224,6 +252,14 @@ PRO_CHAIN_DEFAULTS = {
     # smooth compressors above).
     "punch_ratio": 8, "punch_attack": 3, "punch_release": 150, "punch_threshold_db": -30,
     "punch_makeup": 6.0, "punch_mix": 20,
+    # 8.8 vocal-bus limiter, the chain's very last stage: catches belted/
+    # shouted notes that sail past both compressors (a real shout can hit
+    # the file at 0dBFS; 4:1 at -15 still leaves it ~7dB above the rest of
+    # the performance AND audibly hard/brittle). A fast lookahead-style
+    # limiter at -2dBFS turns "blast" into "loud", which is what a produced
+    # vocal does. Applied after the aux mix so reverb/delay swells can't
+    # spike past it either.
+    "limit_ceiling_db": -2.0, "limit_attack": 2, "limit_release": 90,
 }
 
 # Genre/production-style presets: each is a set of overrides applied ON TOP
@@ -318,6 +354,14 @@ def build_pro_chain_filter_complex(pro, sample_rate=48000):
 
     smooth_ratio, smooth_atk, smooth_rel = g("smooth_ratio"), g("smooth_attack"), g("smooth_release")
     smooth_thr = max(0.000976, min(1, _db_to_lin(g("smooth_threshold_db"))))
+    smooth_makeup = max(1.0, min(8.0, g("smooth_makeup")))
+
+    harsh_f = g("harsh_freq")
+    harsh_thr = max(0.0, min(100.0, g("harsh_threshold")))
+    harsh_ratio = max(1.0, min(30.0, g("harsh_ratio")))
+    harsh_range = max(1.0, min(30.0, g("harsh_range_db")))
+    harsh_atk = max(0.01, g("harsh_attack"))
+    harsh_rel = max(0.01, g("harsh_release"))
 
     deess_freq_ratio = max(0.01, min(1, g("deess_freq") / (sample_rate / 2)))
     deess_i = max(0, min(1, g("deess_intensity") / 100))
@@ -349,16 +393,35 @@ def build_pro_chain_filter_complex(pro, sample_rate=48000):
     punch_makeup = max(1, min(64, g("punch_makeup")))
     punch_mix = max(0, min(100, g("punch_mix"))) / 100
 
-    # 1) linear pre-chain: clean EQ -> fast comp -> smooth comp -> de-esser -> tone EQ
+    gate_thr = max(0.0001, min(1, _db_to_lin(g("gate_threshold_db"))))
+    gate_ratio = max(1.0, min(9000, g("gate_ratio")))
+    gate_range = max(0.0001, min(1, _db_to_lin(g("gate_range_db"))))
+    gate_atk = max(0.01, g("gate_attack"))
+    gate_rel = max(1, g("gate_release"))
+
+    lim_ceiling = max(0.0625, min(1, _db_to_lin(g("limit_ceiling_db"))))
+    lim_atk = max(0.1, g("limit_attack"))
+    lim_rel = max(1, g("limit_release"))
+
+    # 1) linear pre-chain: HPF -> breath expander -> clean EQ -> fast comp
+    #    -> smooth comp -> de-esser -> tone EQ. The expander sits right
+    #    after the HPF (so rumble can't hold it open) and BEFORE both
+    #    compressors (which would otherwise bring every breath UP).
     pre = (
         f"highpass=f={hpf:.1f}:poles=2,highpass=f={hpf:.1f}:poles=1,"
+        f"agate=threshold={gate_thr:.5f}:ratio={gate_ratio:.2f}:range={gate_range:.4f}:"
+        f"attack={gate_atk:.1f}:release={gate_rel:.0f}:knee=3:detection=peak,"
         f"equalizer=f={dip_f:.1f}:t=q:w={dip_q:.2f}:g={dip_g:.2f},"
         f"equalizer=f={nas_f:.1f}:t=q:w={nas_q:.2f}:g={nas_g:.2f},"
         f"acompressor=threshold={fast_thr:.5f}:ratio={fast_ratio:.2f}:attack={fast_atk:.2f}:"
         f"release={fast_rel:.2f}:knee=6:makeup=1.6,"
         f"acompressor=threshold={smooth_thr:.5f}:ratio={smooth_ratio:.2f}:attack={smooth_atk:.2f}:"
-        f"release={smooth_rel:.2f}:knee=8:makeup=2.0,"
+        f"release={smooth_rel:.2f}:knee=8:makeup={smooth_makeup:.2f},"
         f"deesser=f={deess_freq_ratio:.3f}:i={deess_i:.2f}:m=0.5,"
+        f"adynamicequalizer=mode=cutabove:threshold={harsh_thr:.4f}:"
+        f"dfrequency={harsh_f:.0f}:dqfactor=1.2:tfrequency={harsh_f:.0f}:tqfactor=1.1:"
+        f"ratio={harsh_ratio:.2f}:range={harsh_range:.1f}:"
+        f"attack={harsh_atk:.1f}:release={harsh_rel:.1f},"
         f"equalizer=f={tone1_f:.1f}:t=q:w={tone1_q:.2f}:g={tone1_g:.2f},"
         f"equalizer=f={tone2_f:.1f}:t=q:w={tone2_q:.2f}:g={tone2_g:.2f},"
         f"treble=f={air_f:.1f}:g={air_g:.2f}"
@@ -423,7 +486,12 @@ def build_pro_chain_filter_complex(pro, sample_rate=48000):
         f"[mverb]{verb_chain},haas[verbwet];"
         f"[mdel]{delay_chain},haas[delwet];"
         f"[mdbl]{double_chain},haas[dblwet];"
-        f"[drystereo][verbwet][delwet][dblwet]amix=inputs=4:weights=1 1 1 1:normalize=0[outfx]"
+        f"[drystereo][verbwet][delwet][dblwet]amix=inputs=4:weights=1 1 1 1:normalize=0[fxsum];"
+        # vocal-bus limiter LAST, over the full sum (dry + all sends) — a
+        # belted note that both compressors let through gets rounded off
+        # at the ceiling instead of blasting/cracking over the music
+        f"[fxsum]alimiter=limit={lim_ceiling:.4f}:attack={lim_atk:.1f}:"
+        f"release={lim_rel:.0f}:level=false[outfx]"
     )
     return fc, "outfx"
 
@@ -565,13 +633,20 @@ def process_vocal(in_wav, out_wav, fx, tmpdir, progress=None):
 
 def mixdown(vocal_path, music_path, out_path,
             vocal_gain_db=0.0, music_gain_db=0.0,
-            harmony_path=None, harmony_gain_db=-3.0,
+            harmonies=None,
             out_format="wav", loudnorm=True,
             trim_start=None, trim_end=None,
-            master_wav_path=None, music_eq=None):
+            master_wav_path=None, music_eq=None,
+            vocal_align_ms=0.0):
     """
-    Mix processed vocal + backing music (+ optional harmony vocal) into a
-    final high-quality file.
+    Mix processed vocal + backing music (+ any number of harmony vocals)
+    into a final high-quality file.
+
+    harmonies: optional list of {"path": <wav>, "gain_db": <float>} — as
+    many simultaneous extra vocal layers as the caller wants (multiple
+    stacked harmonies, not just one), each already FX-processed exactly
+    like the lead vocal (process_vocal) by the caller. Empty/None mixes
+    just lead + music, same as before this could be more than one.
 
     master_wav_path: if given (and out_format isn't already "wav"), also
     write a second, lossless copy of the SAME mix to this path, from the
@@ -587,10 +662,24 @@ def mixdown(vocal_path, music_path, out_path,
     karaoke/backing track used to only have a single gain slider, unlike
     the vocal's own tone-shaping EQ; this gives it the same simple 3-band
     control (rumble-range shelf, midrange bell, presence shelf).
+
+    vocal_align_ms: non-destructive vocal-vs-karaoke timing nudge from the
+    Track Editor (separate from whatever one-shot mic-latency correction
+    already happened at capture time) — positive pushes the vocal later
+    (silence-pad the front via adelay), negative pulls it earlier (cut the
+    front off via atrim). Small nudges only; this is a drift fix, not a
+    general-purpose trim.
     """
     # Vocal bus: gain + a gentle presence lift so the voice sits ON TOP of the
     # music instead of buried in it (a common "lack of quality" cause).
+    v_align = ""
+    if vocal_align_ms and abs(vocal_align_ms) >= 1:
+        if vocal_align_ms > 0:
+            v_align = f"adelay={vocal_align_ms:.0f}|{vocal_align_ms:.0f},"
+        else:
+            v_align = f"atrim=start={abs(vocal_align_ms) / 1000:.3f},asetpts=PTS-STARTPTS,"
     v_filter = (
+        f"{v_align}"
         f"volume={vocal_gain_db:.1f}dB,"
         f"equalizer=f=4000:t=q:w=1.2:g=1.5,"     # air/presence
         f"equalizer=f=250:t=q:w=1.0:g=1.0"        # warmth
@@ -625,30 +714,31 @@ def mixdown(vocal_path, music_path, out_path,
             bound += f":end={max(start, float(trim_end)):.3f}"
         trim = f",atrim={bound},asetpts=PTS-STARTPTS"
 
+    harmonies = harmonies or []
     inputs = ["-i", vocal_path, "-i", music_path]
-    if harmony_path:
+    parts = [f"[0:a]{v_filter},aresample=48000[v]", f"[1:a]{m_filter},aresample=48000[m]"]
+    mix_labels = ["[v]"]
+    for i, h in enumerate(harmonies):
         # Harmony bus: same presence treatment as the lead, sat a little
         # lower by default so it supports rather than competes with the lead.
+        h_gain = float(h.get("gain_db", -3.0))
         h_filter = (
-            f"volume={harmony_gain_db:.1f}dB,"
+            f"volume={h_gain:.1f}dB,"
             f"equalizer=f=4000:t=q:w=1.2:g=1.5,"
             f"equalizer=f=250:t=q:w=1.0:g=1.0"
         )
-        inputs += ["-i", harmony_path]
-        filter_complex = (
-            f"[0:a]{v_filter},aresample=48000[v];"
-            f"[1:a]{m_filter},aresample=48000[m];"
-            f"[2:a]{h_filter},aresample=48000[h];"
-            f"[v][h][m]amix=inputs=3:duration=longest:normalize=0[mix];"
-            f"[mix]{post}{trim}[out]"
-        )
-    else:
-        filter_complex = (
-            f"[0:a]{v_filter},aresample=48000[v];"
-            f"[1:a]{m_filter},aresample=48000[m];"
-            f"[v][m]amix=inputs=2:duration=longest:normalize=0[mix];"
-            f"[mix]{post}{trim}[out]"
-        )
+        inputs += ["-i", h["path"]]
+        input_idx = 2 + i
+        label = f"h{i}"
+        parts.append(f"[{input_idx}:a]{h_filter},aresample=48000[{label}]")
+        mix_labels.append(f"[{label}]")
+    mix_labels.append("[m]")
+    n_inputs = len(mix_labels)
+    filter_complex = (
+        ";".join(parts) + ";" +
+        "".join(mix_labels) + f"amix=inputs={n_inputs}:duration=longest:normalize=0[mix];"
+        f"[mix]{post}{trim}[out]"
+    )
 
     codec = {
         "wav":  ["-c:a", "pcm_s24le"],
