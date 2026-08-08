@@ -363,7 +363,32 @@ def fetch_synced_lyrics(jid):
     if not segs:
         return None
     import urllib.request, urllib.parse
-    synced = None
+    # Rank candidates instead of grabbing the first synced hit: LRCLIB's
+    # first result for a movie-ish query can be a DIFFERENT song from the
+    # same film (measured: "Ae Dil Hai Mushkil …" title returned Bulleya).
+    # A hit must share its track-name words with the video title, and among
+    # valid hits the one whose duration is closest to this session's backing
+    # wins — LRCLIB carries several synced versions of different lengths,
+    # and the closest-duration one is also the best-timed one.
+    sess_dur = float(meta.get("duration") or 0)
+    title_words = set(re.sub(r"[^a-z0-9 ]", " ", " ".join(segs).lower()).split())
+
+    def hit_score(h):
+        # parentheticals carry the MOVIE name — "Bulleya (From "Ae Dil Hai
+        # Mushkil")" would inherit the title's words and pass as the title
+        # track. The real track name is what's OUTSIDE the brackets.
+        tn = re.sub(r"[\(\[].*?[\)\]]", " ", h.get("trackName") or "")
+        tn = re.sub(r"[^a-z0-9 ]", " ", tn.lower())
+        words = [w for w in tn.split() if len(w) > 1]
+        if not words:
+            return None
+        overlap = sum(1 for w in words if w in title_words) / len(words)
+        if overlap < 0.5:
+            return None                  # different song
+        dur_pen = abs(float(h.get("duration") or 0) - sess_dur) if sess_dur else 0.0
+        return (dur_pen - 30 * overlap)  # lower is better
+
+    synced, best = None, None
     for k in range(len(segs), 0, -1):
         q = " ".join(segs[:k])[:120]
         try:
@@ -373,8 +398,14 @@ def fetch_synced_lyrics(jid):
                 hits = json.load(r)
         except Exception:
             return None                  # network trouble: retry next time
-        synced = next((h.get("syncedLyrics") for h in hits if h.get("syncedLyrics")), None)
-        if synced:
+        for h in hits:
+            if not h.get("syncedLyrics"):
+                continue
+            sc = hit_score(h)
+            if sc is not None and (best is None or sc < best[0]):
+                best = (sc, h["syncedLyrics"])
+        if best:
+            synced = best[1]
             break
     lines = []
     if synced:
@@ -387,6 +418,9 @@ def fetch_synced_lyrics(jid):
     _write_meta(jid, lyrics=lines)       # empty list = "looked, none found"
     return lines
 
+
+_MELODY_LOCKS = {}
+_MELODY_LOCKS_GUARD = threading.Lock()
 
 def extract_melody(jid):
     """Pitch-track the separated vocal stem into a melody timeline, cached
@@ -408,6 +442,20 @@ def extract_melody(jid):
     voc = os.path.join(sdir, "vocals.wav")
     if not os.path.exists(voc):
         return None
+    with _MELODY_LOCKS_GUARD:
+        lock = _MELODY_LOCKS.setdefault(jid, threading.Lock())
+    with lock:
+        # a second caller that waited here finds the cache the first wrote
+        if os.path.exists(cache):
+            try:
+                with open(cache, encoding="utf-8") as fh:
+                    return json.load(fh)
+            except (OSError, ValueError):
+                pass
+        return _extract_melody_inner(jid, voc, cache)
+
+
+def _extract_melody_inner(jid, voc, cache):
     try:
         import numpy as np
         import soundfile as sf
@@ -1260,12 +1308,18 @@ def room_state():
     with ROOM_LOCK:
         lan = _lan_ip()
         secure = f"https://{lan}:{PHONE_PORT}" if (lan and PHONE_HTTPS_READY) else None
+        pos = None
+        if ROOM.get("pos") and ROOM.get("now_playing"):
+            # serve the TV-reported song position pre-aged, so a phone can
+            # extrapolate 'song time now' without knowing the server clock
+            pos = round(ROOM["pos"]["t"] + (time.time() - ROOM["pos"]["ts"]), 2)
         return {"code": ROOM["code"], "queue": list(ROOM["queue"]),
                 "now_playing": ROOM["now_playing"], "challenges": list(ROOM["challenges"]),
                 "guests": list(ROOM["guests"]),
                 "scores": dict(ROOM["scores"]), "live_score": ROOM["live_score"],
                 "secure_join": secure,
-                "scoring_enabled": ROOM.get("scoring_enabled", True)}
+                "scoring_enabled": ROOM.get("scoring_enabled", True),
+                "pos": pos}
 
 
 def room_join(name, device_id):
@@ -1312,13 +1366,18 @@ def start_room():
         ROOM["scores"] = {}
         ROOM["live_score"] = None
         ROOM["scoring_enabled"] = True
+        ROOM["pos"] = None
     broadcast_room()
     return code
 
 
 def _make_queue_entry(jid, singers, semitones, from_singer=None):
-    j = get_job(jid)
-    if not j or j.get("status") != "ready":
+    # job_or_disk, NOT get_job: the in-memory table is empty after every
+    # server restart, which made the entire library unqueueable at party
+    # time; and "done" (a session whose whole-job render finished) is just
+    # as playable as "ready" — the only real requirement is a backing track.
+    j = job_or_disk(jid)
+    if not j or j.get("status") not in ("ready", "done"):
         return None
     return {
         "entry_id": uuid.uuid4().hex[:10],
@@ -1373,6 +1432,7 @@ def queue_advance():
         for e in q:
             if e["status"] == "now_playing":
                 e["status"] = "done"
+        ROOM["pos"] = None          # old song's clock must not leak into the next
         nxt = next((e for e in q if e["status"] == "queued"), None)
         if nxt:
             nxt["status"] = "now_playing"
@@ -1663,10 +1723,19 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/lyrics":
-            jid = (parse_qs(p.query).get("id") or [""])[0]
+            q = parse_qs(p.query)
+            jid = (q.get("id") or [""])[0]
             if not job_or_disk(jid):
                 self._json(404, {"error": "unknown session"})
                 return
+            if (q.get("refresh") or [""])[0]:
+                m0 = _read_meta(jid)
+                if m0.get("lyrics_source") != "whisper":   # whisper results are per-session truth
+                    m0.pop("lyrics", None)
+                    m0.pop("lyrics_source", None)
+                    sdir0 = os.path.join(SESS_DIR, jid)
+                    with open(os.path.join(sdir0, "meta.json"), "w", encoding="utf-8") as fh:
+                        json.dump(m0, fh)
             lines = fetch_synced_lyrics(jid)
             voc = os.path.join(SESS_DIR, jid, "vocals.wav")
             if (not lines and os.path.exists(voc) and WHISPER_STATE.get(jid) != "error"
@@ -2635,6 +2704,22 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"entry": entry})
             return
 
+        if p.path == "/party/pos":
+            # the TV is the only clock that knows where the song actually is;
+            # it reports here every couple of seconds so guest phones can
+            # score note-for-note against the melody timeline
+            body = self._read_body()
+            try:
+                t = max(0.0, float(body.get("t")))
+            except (TypeError, ValueError):
+                self._json(400, {"error": "bad position"})
+                return
+            with ROOM_LOCK:
+                ROOM["pos"] = {"t": t, "ts": time.time()}
+            broadcast_room()      # phones extrapolate from every push; 0.5Hz is cheap
+            self._json(200, {"ok": True})
+            return
+
         if p.path == "/party/scoring":
             # host toggle: score mode on/off for this party. When turned off
             # mid-song, any in-flight live score is finalized first so a
@@ -2673,6 +2758,17 @@ class Handler(BaseHTTPRequestHandler):
                     "accuracy": max(0, min(100, int(body.get("accuracy") or 0))),
                     "rank": (body.get("rank") or "D")[:1],
                 }
+                # pitch trail for the TV's notes highway: [t, midi, good]
+                trail = body.get("trail")
+                if isinstance(trail, list):
+                    clean = []
+                    for p3 in trail[-60:]:
+                        try:
+                            clean.append([round(float(p3[0]), 2), round(float(p3[1]), 2),
+                                          1 if p3[2] else 0])
+                        except (TypeError, ValueError, IndexError):
+                            pass
+                    ROOM["live_score"]["trail"] = clean
                 done = bool(body.get("done"))
                 if done:
                     _finalize_live_score_locked()
@@ -3179,6 +3275,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .guestChip{background:var(--panel);border:1px solid var(--edge);border-radius:999px;
     padding:5px 12px;font-size:13px;color:var(--ink)}
 
+/* notes highway on the TV */
+.tvHwWrap{margin-top:10px;border-radius:12px;background:var(--well);border:1px solid var(--edge);
+  overflow:hidden;height:110px}
+.tvHwWrap canvas{width:100%;height:100%;display:block}
 /* synced lyrics under the stage */
 .tvLyrics{margin-top:10px;text-align:center;padding:10px 14px;border-radius:12px;
   background:var(--well);border:1px solid var(--edge)}
@@ -3261,6 +3361,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       </div>
       <div class="partyOverlay hidden" id="partyOverlay"><div class="poInner" id="poInner"></div></div>
       <div id="stage"><div class="idleStage"><span class="eq-bars"><i></i><i></i><i></i><i></i></span>Nobody queued yet — waiting for guests to join and add songs.</div></div>
+      <div class="tvHwWrap hidden" id="tvHwWrap"><canvas id="tvHw"></canvas></div>
       <div class="tvLyrics hidden" id="tvLyrics">
         <div class="tvLyrNow" id="tvLyrNow">&nbsp;</div>
         <div class="tvLyrNext" id="tvLyrNext">&nbsp;</div>
@@ -3412,6 +3513,101 @@ function render(){
   mcReact();
 }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ---- notes highway on the TV ---------------------------------------------
+// The melody bars scroll on the big screen; the singer's pitch trail rides
+// them, relayed from their phone through /party/score posts. The TV is the
+// song clock — it reports position so phones can score note-for-note.
+const tvMelCache={};   // jid -> {segs,hop}|null|'loading'
+let tvHwJid=null, tvTrail=[], tvHwRaf=0, tvPosPost=0;
+function tvBuildSegs(mel){
+  const segs=[]; const M=mel.midi, hop=mel.hop;
+  let s0=-1, note=0;
+  for(let i=0;i<=M.length;i++){
+    const n=(i<M.length&&M[i]>0)?Math.round(M[i]):-1;
+    if(n!==note||i===M.length){
+      if(note>0&&i-s0>=3) segs.push({t0:s0*hop,t1:i*hop,midi:note});
+      s0=i; note=n;
+    }
+  }
+  return {segs, mel};
+}
+function tvMelodyAt(mel,t){
+  const i=Math.round(t/mel.hop), M=mel.midi;
+  for(const j of [i,i-1,i+1,i-2,i+2]){ if(j>=0&&j<M.length&&M[j]>0) return M[j]; }
+  return -1;
+}
+setInterval(()=>{
+  const now=state.queue.find(e=>e.entry_id===state.now_playing);
+  const jid=now&&now.jid;
+  if(!jid){ $('tvHwWrap').classList.add('hidden'); tvHwJid=null; tvTrail=[]; return; }
+  if(jid!==tvHwJid){ tvHwJid=jid; tvTrail=[]; }
+  if(!(jid in tvMelCache)){
+    tvMelCache[jid]='loading';
+    fetch('/melody?id='+jid).then(r=>r.json())
+      .then(d=>{ tvMelCache[jid]=(d.melody&&d.melody.midi&&d.melody.midi.some(v=>v>0))?tvBuildSegs(d.melody):null; })
+      .catch(()=>{ tvMelCache[jid]=null; });
+  }
+  const H=tvMelCache[jid];
+  const ok=H&&H!=='loading'&&backingAudio;
+  $('tvHwWrap').classList.toggle('hidden', !ok);
+  if(ok&&!tvHwRaf) tvHwRaf=requestAnimationFrame(tvHwDraw);
+  // absorb new trail points from the singer's phone
+  const ls=state.live_score;
+  if(ls&&ls.trail&&ls.entry_id===state.now_playing){
+    const last=tvTrail.length?tvTrail[tvTrail.length-1].t:-1;
+    for(const p of ls.trail){ if(p[0]>last) tvTrail.push({t:p[0],midi:p[1],good:!!p[2]}); }
+    if(tvTrail.length>600) tvTrail=tvTrail.slice(-600);
+  }
+}, 400);
+setInterval(()=>{   // report the song clock for the phones
+  if(backingAudio && state.now_playing){
+    fetch('/party/pos',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({t:backingAudio.currentTime||0})}).catch(()=>{});
+  }
+}, 2000);
+function tvHwDraw(){
+  tvHwRaf=0;
+  const wrap=$('tvHwWrap'); if(wrap.classList.contains('hidden')) return;
+  const H0=tvMelCache[tvHwJid]; if(!H0||H0==='loading'||!backingAudio) return;
+  const cv=$('tvHw'), ctx=cv.getContext('2d');
+  const W=wrap.clientWidth, HH=wrap.clientHeight, dpr=window.devicePixelRatio||1;
+  if(cv.width!==W*dpr){ cv.width=W*dpr; cv.height=HH*dpr; }
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,HH);
+  const NOW_X=0.22, LOOK=4, BACK=1.2;
+  const now=backingAudio.currentTime||0;
+  const t2x=t=>W*NOW_X+(t-now)*(W*(1-NOW_X)/LOOK);
+  let lo=127,hi=0;
+  for(const g of H0.segs){ if(g.midi<lo)lo=g.midi; if(g.midi>hi)hi=g.midi; }
+  if(hi<=lo){lo=48;hi=72;} lo-=2; hi+=2;
+  const m2y=mm=>HH-(mm-lo)/(hi-lo)*HH;
+  ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(W*NOW_X,0); ctx.lineTo(W*NOW_X,HH); ctx.stroke();
+  const barH=Math.max(4,HH/(hi-lo));
+  for(const g of H0.segs){
+    if(g.t1<now-BACK||g.t0>now+LOOK) continue;
+    const x0=Math.max(0,t2x(g.t0)), x1=Math.min(W,t2x(g.t1));
+    const active=g.t0<=now&&now<=g.t1;
+    ctx.fillStyle=active?'rgba(30,215,96,.85)':(g.t1<now?'rgba(255,255,255,.14)':'rgba(30,215,96,.38)');
+    ctx.beginPath(); ctx.roundRect(x0,m2y(g.midi)-barH/2,Math.max(3,x1-x0),barH,3); ctx.fill();
+  }
+  ctx.lineWidth=3;
+  let prev=null;
+  for(const p of tvTrail){
+    if(p.t<now-BACK||p.t>now+0.1){ prev=null; continue; }
+    const tgt=tvMelodyAt(H0.mel,p.t);
+    let mm=p.midi;
+    if(tgt>0){ while(mm-tgt>6)mm-=12; while(tgt-mm>6)mm+=12; }
+    const x=t2x(p.t), y=m2y(mm);
+    if(prev&&p.t-prev.t<0.4){
+      ctx.strokeStyle=p.good?'rgba(30,215,96,.95)':'rgba(240,90,120,.9)';
+      ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
+    }
+    prev={t:p.t,x,y};
+  }
+  if(prev){ ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(prev.x,prev.y,4.5,0,7); ctx.fill(); }
+  tvHwRaf=requestAnimationFrame(tvHwDraw);
+}
 
 // ---- synced lyrics on the TV --------------------------------------------
 const tvLyrCache={};   // jid -> lines|null
@@ -3576,6 +3772,21 @@ async function mountEntry(entry){
   $('singers').textContent=entry.singers.join(' & ');
   $('songTitle').textContent=entry.title;
   const j=await (await fetch('/status?id='+entry.jid)).json();
+  // Sessions without a video (uploaded files, vocal-removed local songs) —
+  // and TVs where the YouTube iframe API can't load — used to mount NOTHING:
+  // the whole party went silent because backing audio only ever started
+  // inside the YT player's onReady. Audio-only is a first-class mount now,
+  // and a watchdog falls back to it if YT doesn't come up in time.
+  const audioOnly=()=>{
+    if(backingAudio && currentEntryId===entry.entry_id && !backingAudio.paused) return;
+    ytReady=false; ytPlayer=null;
+    $('stage').innerHTML='<div class="idleStage"><span class="eq-bars"><i></i><i></i><i></i><i></i></span>'+
+      'Audio only — no video for this one. Lyrics + highway below!</div>';
+    startAudio(entry);
+  };
+  if(!j.video_id){ audioOnly(); return; }
+  let ytCame=false;
+  setTimeout(()=>{ if(!ytCame && currentEntryId===entry.entry_id && !backingAudio) audioOnly(); }, 6000);
   loadYTApi(()=>{
     $('stage').innerHTML='<div id="ytplayer"></div>';
     ytReady=false;
@@ -3583,7 +3794,7 @@ async function mountEntry(entry){
       videoId:j.video_id, host:'https://www.youtube.com',
       playerVars:{mute:1,rel:0,modestbranding:1,playsinline:1,iv_load_policy:3,controls:0,origin:window.location.origin},
       events:{
-        onReady:()=>{ try{ytPlayer.mute();}catch(_){} ytReady=true; ytPlayer.playVideo(); startAudio(entry); },
+        onReady:()=>{ ytCame=true; try{ytPlayer.mute();}catch(_){} ytReady=true; ytPlayer.playVideo(); startAudio(entry); },
         onStateChange:onPartyVideoState,
       }
     });
@@ -3632,6 +3843,7 @@ function startAudio(entry){
   if(backingAudio){ try{backingAudio.pause();}catch(_){} }
   if(syncTimer) clearInterval(syncTimer);
   backingAudio=new Audio('/backing?id='+entry.jid+'&key='+entry.semitones);
+  backingAudio.play().catch(()=>{});
   backingAudio.play().catch(()=>{});
   syncTimer=setInterval(()=>{
     if(!ytReady||!backingAudio) return;
@@ -3937,7 +4149,10 @@ function switchTab(name){
 function subscribeRoom(){
   if(roomEvents) roomEvents.close();
   roomEvents=new EventSource('/room/events');
-  roomEvents.onmessage=(ev)=>{ lastState=JSON.parse(ev.data); renderQueueView(); renderGuests(); checkTurn(); };
+  roomEvents.onmessage=(ev)=>{ lastState=JSON.parse(ev.data);
+    if(typeof lastState.pos==='number'){ posBase=lastState.pos; posAt=Date.now(); }
+    else { posBase=null; }   // no live clock -> no melody scoring (key fallback)
+    renderQueueView(); renderGuests(); checkTurn(); };
 }
 
 function renderQueueView(){
@@ -4074,8 +4289,19 @@ $('addBtn').addEventListener('click', async()=>{
 // transition grace, points = quality x multiplier. Results stream to the TV.
 const A4J=440, NOTEJ=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 let scoreCtx=null, scoreStream=null, scoreAnalyser=null, scoreRaf=0, scorePost=0;
-let sc=null, activeEntry=null, turnKey=null;
-function scReset(){ sc={hist:[],recent:[],frames:0,inTune:0,streak:0,off:0,mult:1,bestMult:1,points:0}; }
+let sc=null, activeEntry=null, turnKey=null, turnMelody=null;
+// song clock: the TV posts its playback position; every state poll carries it
+// pre-aged, and we extrapolate between polls. Accurate to a couple hundred
+// ms — well inside the melody scorer's ±2-frame tolerance.
+let posBase=null, posAt=0;
+function jSongT(){ return posBase==null? -1 : posBase+(Date.now()-posAt)/1000; }
+function jMelodyAt(t){
+  if(!turnMelody||t<0) return -1;
+  const i=Math.round(t/turnMelody.hop), M=turnMelody.midi;
+  for(const j of [i,i-1,i+1,i-2,i+2]){ if(j>=0&&j<M.length&&M[j]>0) return M[j]; }
+  return -1;
+}
+function scReset(){ sc={hist:[],recent:[],frames:0,inTune:0,streak:0,off:0,mult:1,bestMult:1,points:0,trail:[],trailSent:0}; }
 function jFreqToMidiCents(f){
   const midi=Math.round(12*Math.log2(f/A4J)+69);
   const cents=Math.round(1200*Math.log2(f/(A4J*Math.pow(2,(midi-69)/12))));
@@ -4104,7 +4330,12 @@ function scFrame(){
     if(sc.hist.length>=9){
       const m=[...sc.hist].sort((a,b)=>a-b)[Math.floor(sc.hist.length/2)];
       let err,lo,hi;
-      if(turnKey){
+      const mel=jMelodyAt(jSongT());
+      if(mel>0){
+        // note-for-note against the original melody, octave-folded
+        let d0=((m-mel*100)%1200+1200)%1200;
+        err=Math.min(d0,1200-d0); lo=50; hi=100;
+      } else if(turnKey){
         const iv=turnKey.scale==='minor'?[0,2,3,5,7,8,10]:[0,2,4,5,7,9,11];
         const root=((turnKey.root+(activeEntry.semitones||0))%12+12)%12;
         const pos=((m%1200)+1200)%1200;
@@ -4121,6 +4352,8 @@ function scFrame(){
       if(sc.mult>sc.bestMult) sc.bestMult=sc.mult;
       sc.points+=fs*sc.mult;
       sc.recent.push(fs); if(sc.recent.length>240) sc.recent.shift();
+      const st=jSongT();
+      if(st>=0 && turnMelody){ sc.trail.push([st, m/100, fs>=0.75?1:0]); if(sc.trail.length>200) sc.trail.shift(); }
       const form=Math.round(100*sc.recent.reduce((a,b)=>a+b,0)/sc.recent.length);
       $('hudForm').textContent=form+'%';
       const hm=$('hudMult'); hm.textContent='×'+sc.mult; hm.className='hudMult m'+sc.mult;
@@ -4137,7 +4370,8 @@ async function postScore(done){
   try{ await fetch('/party/score',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({device_id:DEVICE_ID, entry_id:activeEntry.entry_id,
       points:Math.round(sc.points), form:sc.recent.length?Math.round(100*sc.recent.reduce((a,b)=>a+b,0)/sc.recent.length):0,
-      mult:sc.mult, accuracy:scAccuracy(), rank:scRank(scAccuracy()), done:!!done})});
+      mult:sc.mult, accuracy:scAccuracy(), rank:scRank(scAccuracy()), done:!!done,
+      trail:sc.trail.slice(-40)})});
   }catch(e){}
 }
 async function startTurnScoring(){
@@ -4162,9 +4396,15 @@ async function startTurnScoring(){
   scoreAnalyser=scoreCtx.createAnalyser(); scoreAnalyser.fftSize=2048;
   src.connect(scoreAnalyser);
   scReset();
-  turnKey=null;
+  turnKey=null; turnMelody=null;
   fetch('/songkey?id='+activeEntry.jid).then(r=>r.json()).then(d=>{ turnKey=d.key||null;
-    $('turnNote').textContent=turnKey? 'Scoring in '+NOTEJ[turnKey.root]+' '+turnKey.scale+' — sing!':''; }).catch(()=>{});
+    if(!turnMelody) $('turnNote').textContent=turnKey? 'Scoring in '+NOTEJ[turnKey.root]+' '+turnKey.scale+' — sing!':''; }).catch(()=>{});
+  fetch('/melody?id='+activeEntry.jid).then(r=>r.json()).then(d=>{
+    if(d.melody&&d.melody.midi&&d.melody.midi.some(v=>v>0)){
+      turnMelody=d.melody;
+      $('turnNote').textContent='🎯 Note-for-note scoring against the original melody — sing!';
+    }
+  }).catch(()=>{});
   $('turnStartBtn').classList.add('hidden');
   $('turnHud').classList.remove('hidden');
   scFrame();
