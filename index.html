@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Karaoke Studio</title>
+<title>MicDrop</title>
 <link rel="stylesheet" href="/theme.css">
 <script>
 // applied before first paint to avoid a flash of the wrong theme
@@ -697,7 +697,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
 <div class="wrap">
   <header>
-    <div class="logo">KARAOKE <b class="marquee-sign" id="logoStudio"></b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <div class="logo">MIC <b class="marquee-sign" id="logoStudio"></b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
     <nav class="appNav" id="appNav">
       <button class="appTab active" id="navHome" type="button" data-page="home"><svg class="icon"><use href="#i-home"/></svg><span class="navLabel">Home</span></button>
       <button class="appTab" id="navLibrary" type="button" data-page="library"><svg class="icon"><use href="#i-bookmark"/></svg><span class="navLabel">Library</span></button>
@@ -1400,7 +1400,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
      rather than nested inside its max-width. -->
 <div id="landingScreen" class="hidden">
   <div class="landingBox">
-    <div class="logo" style="justify-content:center">KARAOKE <b class="marquee-sign" id="landingLogoStudio"></b></div>
+    <div class="logo" style="justify-content:center">MIC <b class="marquee-sign" id="landingLogoStudio"></b></div>
     <p class="landingSub">Who's singing tonight?</p>
     <div class="landingProfiles" id="landingProfiles"></div>
     <div class="landingDivider">or</div>
@@ -1915,7 +1915,7 @@ function currentTheme(){
 }
 function applyThemeIcon(){ $('themeToggle').innerHTML = '<svg class="icon"><use href="#i-'+(currentTheme()==='light'?'sun':'moon')+'"/></svg>'; }
 applyThemeIcon();
-$('logoStudio').innerHTML=[...'STUDIO'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
+$('logoStudio').innerHTML=[...'DROP'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
 $('themeToggle').addEventListener('click',()=>{
   const next = currentTheme()==='light' ? 'dark' : 'light';
   document.documentElement.dataset.theme=next;
@@ -1970,7 +1970,7 @@ async function showLandingScreen(){
   }));
 }
 if(!$('landingLogoStudio').dataset.lit){
-  $('landingLogoStudio').innerHTML=[...'STUDIO'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
+  $('landingLogoStudio').innerHTML=[...'DROP'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
   $('landingLogoStudio').dataset.lit='1';
 }
 $('landingCreateBtn').addEventListener('click',()=>{

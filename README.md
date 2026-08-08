@@ -1,4 +1,4 @@
-# 🎤 Karaoke Studio
+# 🎤 MicDrop
 
 A local karaoke recording studio that runs in your browser. Search or paste a
 YouTube song, sing along to the video's lyrics, record your vocals, apply studio
@@ -92,7 +92,7 @@ apps. The **right-click → Open** step above is the standard, safe way past it.
 If you already double-clicked and got stuck, either:
 - **right-click → Open → Open**, or
 - open **System Settings → Privacy & Security**, scroll down, and click
-  **"Open Anyway"** next to the Karaoke Studio message.
+  **"Open Anyway"** next to the MicDrop message.
 
 It runs entirely on your own computer — nothing is uploaded anywhere.
 
@@ -109,7 +109,7 @@ python3 studio.py
 
 Then open **http://localhost:8770** in your browser.
 
-> **On macOS** you can also double-click **`Karaoke Studio.command`** in Finder —
+> **On macOS** you can also double-click **`MicDrop.command`** in Finder —
 > it starts the server and opens your browser in one step.
 
 ### Important: use `localhost`, not `127.0.0.1`
