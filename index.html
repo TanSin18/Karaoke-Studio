@@ -3697,16 +3697,35 @@ function drawRibbon(){
     const x=t2x(p.t), y=m2y(Math.max(lo,Math.min(hi,p.m)));
     if(prev && p.t-prev.t<0.12 && Math.abs(p.m-prev.m)<4){
       const a=Math.max(0.12, 1-(now-p.t)/SPAN);
-      const near=Math.abs(p.m-Math.round(p.m))<=0.3;
-      if(lockAt[i]&&near){                         // locked on a note
+      // Judgment applies only when COMMITTED to a note (locked) — moving
+      // between notes stays neutral. But a locked note is judged against
+      // the song's KEY: distance to the nearest in-key note center.
+      // ≤0.3 semi = on it (green), ≤0.6 = pitchy (amber), beyond = a
+      // genuinely wrong note for this song (red). Mistakes get called
+      // out; transitions never do.
+      let dK=Math.abs(p.m-Math.round(p.m));
+      if(iv){
+        dK=12;
+        for(let n=Math.round(p.m)-2;n<=Math.round(p.m)+2;n++){
+          if(iv.includes((((n%12)+12)%12-root+12)%12)) dK=Math.min(dK,Math.abs(p.m-n));
+        }
+      }
+      if(lockAt[i]&&dK<=0.3){                      // locked on an in-key note
         ctx.strokeStyle='rgba(30,215,96,'+a+')'; ctx.lineWidth=3.2;
         ctx.shadowColor='rgba(30,215,96,.65)'; ctx.shadowBlur=9;
-      } else if(lockAt[i]){                        // steady but between notes
+        if(i===md.length-1) RIB.headState='good';
+      } else if(lockAt[i]&&dK<=0.6){               // locked but pitchy
         ctx.strokeStyle='rgba(240,200,80,'+(a*0.95)+')'; ctx.lineWidth=2.6;
         ctx.shadowBlur=0;
+        if(i===md.length-1) RIB.headState='pitchy';
+      } else if(lockAt[i]){                        // locked on a WRONG note
+        ctx.strokeStyle='rgba(240,90,120,'+(a*0.95)+')'; ctx.lineWidth=2.8;
+        ctx.shadowColor='rgba(240,90,120,.5)'; ctx.shadowBlur=6;
+        if(i===md.length-1) RIB.headState='offkey';
       } else {                                     // transition: neutral glide
         ctx.strokeStyle='rgba(255,255,255,'+(a*0.3)+')'; ctx.lineWidth=1.8;
         ctx.shadowBlur=0;
+        if(i===md.length-1) RIB.headState='glide';
       }
       ctx.lineCap='round';
       ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
@@ -3716,7 +3735,7 @@ function drawRibbon(){
     if(i===md.length-1){ headLocked=lockAt[i]; headNote=Math.round(p.m); }
   }
   // lock celebration: the held note's gridline ignites + ripple on lock-on
-  if(prev && headLocked && headNote>=lo && headNote<=hi){
+  if(prev && headLocked && RIB.headState==='good' && headNote>=lo && headNote<=hi){
     const gy=m2y(headNote);
     ctx.strokeStyle='rgba(30,215,96,.4)'; ctx.lineWidth=2;
     ctx.shadowColor='rgba(30,215,96,.5)'; ctx.shadowBlur=6;
@@ -3753,8 +3772,10 @@ function updateTuner(note, freq){
   const inTune=Math.abs(cents)<=12;
   $('tunerNote').className='tuner-note '+(inTune?'good':'off');
   ribbonPush(note.midi+note.cents/100);
-  $('tunerMsg').textContent = inTune? 'on pitch ✓'
+  $('tunerMsg').textContent = RIB.headState==='offkey' ? 'off key — aim for the bright lines'
+    : inTune? 'on pitch ✓'
     : (cents>0? 'a little sharp — ease down' : 'a little flat — lift up');
+  if(RIB.headState==='offkey') $('tunerNote').className='tuner-note off';
 
   // Score the MEDIAN pitch of the last ~250ms, not the instantaneous frame.
   // Two failed designs preceded this: judging raw frames at ±12 cents
