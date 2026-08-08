@@ -688,6 +688,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .scoreStars .dimstar{color:var(--fader)}
   .scoreLabel{font-weight:700;font-size:14px;margin-top:2px;color:var(--ink)}
   .scoreDetail{color:var(--muted);font-size:11.5px;margin-top:3px;font-family:var(--mono)}
+  .scoreCoach{margin-top:7px;display:flex;flex-wrap:wrap;gap:6px}
+  .scoreCoach:empty{display:none}
+  .coachChip{font-family:var(--mono);font-size:10px;padding:3px 10px;border-radius:10px;
+    background:var(--well);border:1px solid var(--edge);color:var(--muted)}
+  .coachChip.warn{color:var(--amber);border-color:rgba(240,200,80,.35)}
+  .coachChip.nice{color:var(--amber2);border-color:rgba(30,215,96,.35)}
   .scoreNote{color:var(--dim);font-size:10.5px;margin-top:6px;line-height:1.45;max-width:460px}
   .takeScoreBadge{font-family:var(--mono);font-size:9px;color:var(--pink);margin-left:4px}
   /* take mini-mixer + test mode */
@@ -1181,6 +1187,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             </div>
             <div class="scoreLabel" id="scoreLabel"></div>
             <div class="scoreDetail" id="scoreDetail"></div>
+            <div class="scoreCoach" id="scoreCoach"></div>
             <div class="scoreNote" id="scoreNote">Pitch in the song's key × combo multipliers — hold your best runs to build ×2, ×3, ×4.</div>
           </div>
         </div>
@@ -3690,6 +3697,7 @@ window._droneK=1;
 // already judges the center; this makes the VISUALS understand that the
 // oscillation is artistry, not instability — vibrato locks green (judged
 // at its center) with a gold shimmer instead of rendering as a glide.
+let perfLog=[];    // {t: song-time, m: midi-float} per voiced frame while recording
 let vibBuf=[];
 window._vib={on:false, center:0, rate:0, amp:0};
 let vibratoFrames=0;
@@ -3727,7 +3735,8 @@ function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scor
   scorePitchHist=[]; scorePoints=0; scoreMult=1; scoreBestMult=1; scoreRecent=[]; scoreOffRun=0;
   droneNote=null; droneFrames=0; dronePendNote=null; dronePendRun=0; window._droneK=1;
   vClock=0; vNoteHist=[];
-  melPrevNote=null; melChangeT=-9; melWasValid=false; vibBuf=[]; vibratoFrames=0; window._vib.on=false; }
+  melPrevNote=null; melChangeT=-9; melWasValid=false; vibBuf=[]; vibratoFrames=0; window._vib.on=false;
+  perfLog=[]; }
 // Anti-drone: without a melody reference, parking on one in-key note would
 // farm points forever. Held notes are legal (songs have real 5s holds) but
 // after ~5s on the SAME note the credit fades to zero over the next 3s.
@@ -3762,6 +3771,68 @@ function droneFactor(curNote){
 // keeping the run alive.
 function comboMult(streak){ return streak>=600?4 : streak>=300?3 : streak>=120?2 : 1; }
 function scoreRank(acc){ return acc>=90?'S' : acc>=78?'A' : acc>=64?'B' : acc>=50?'C' : 'D'; }
+// Post-take vocal-coach analysis: segments the pitch log into note events
+// (runs of stable pitch), then measures the three most coachable habits a
+// pitch meter can honestly detect:
+//  - ENTRANCE TIMING vs the melody's note starts (melody/ghost modes)
+//  - SCOOPING: sliding into notes from >half a semitone below
+//  - DROOP: going flat in the final quarter-second of long notes
+function analyzePerformance(){
+  const runs=[];
+  let cur=null;
+  const med=a=>[...a].sort((x,y)=>x-y)[Math.floor(a.length/2)];
+  for(const p of perfLog){
+    if(cur && (p.t-cur.last>0.15 || Math.abs(p.m-med(cur.ms))>0.6)){
+      if(cur.ms.length>=18) runs.push(cur);
+      cur=null;
+    }
+    if(!cur) cur={t0:p.t, ms:[], ts:[], last:p.t};
+    cur.ms.push(p.m); cur.ts.push(p.t); cur.last=p.t;
+  }
+  if(cur && cur.ms.length>=18) runs.push(cur);
+  const out={};
+  // scoops: first ~50ms sits >0.5 semi under the run's center
+  let scoops=0, entries=0;
+  for(const r of runs){
+    const center=med(r.ms);
+    const first=(r.ms[0]+r.ms[1]+r.ms[2])/3;
+    entries++;
+    if(first<center-0.5) scoops++;
+  }
+  if(entries>=6){ out.scoopPct=Math.round(100*scoops/entries); out.entries=entries; }
+  // droop: long notes (>=0.6s) whose last 250ms sags >0.35 semi
+  let droops=0, longs=0;
+  for(const r of runs){
+    if(r.ts[r.ts.length-1]-r.t0<0.6 || r.ms.length<36) continue;
+    longs++;
+    const center=med(r.ms);
+    const tail=r.ms.slice(-15).reduce((a,b)=>a+b,0)/15;
+    if(tail<center-0.35) droops++;
+  }
+  if(longs>=4){ out.droopPct=Math.round(100*droops/longs); out.longs=longs; }
+  // entrance timing vs melody note starts (needs a reference)
+  if(songMelody && hwSegs && hwSegs.length){
+    const deltas=[];
+    for(const r of runs){
+      const center=med(r.ms);
+      let best=null;
+      for(const g of hwSegs){
+        const d=r.t0-g.t0;
+        if(Math.abs(d)>0.7) continue;
+        let pd=Math.abs(((center-g.midi)%12+18)%12-6);   // folded pitch distance
+        if(pd>1.2) continue;
+        if(best==null||Math.abs(d)<Math.abs(best)) best=d;
+      }
+      if(best!=null) deltas.push(best);
+    }
+    if(deltas.length>=5){
+      out.entranceMs=Math.round(med(deltas)*1000);
+      out.entranceN=deltas.length;
+    }
+  }
+  return out;
+}
+
 function computeScore(){
   if(scoreFrames<60) return null;  // under ~1s of confidently-voiced audio: nothing to judge
   const accuracy=Math.round(100*scoreInTune/scoreFrames);
@@ -3774,7 +3845,8 @@ function computeScore(){
   return { accuracy, bestStreak: scoreBestStreak, frames: scoreFrames,
            points: Math.round(scorePoints), bestMult: scoreBestMult, rank,
            rankCapped: shortTake&&scoreRank(accuracy)!==rank,
-           vibratoSec: Math.round(vibratoFrames/60) };
+           vibratoSec: Math.round(vibratoFrames/60),
+           coach: analyzePerformance() };
 }
 function scoreTier(accuracy){
   if(accuracy>=90) return {stars:5, label:'Star Power! 🌟'};
@@ -4017,6 +4089,11 @@ function updateTuner(note, freq){
   const midiFloat=note.midi+note.cents/100;
   vibDetect(midiFloat);
   if(recording && window._vib.on) vibratoFrames++;
+  // RAW pitch into the coach log — the scoring median has ~7 frames of
+  // group delay, which shifted every measured entrance ~115ms late and
+  // smeared scoops flat when this used the median stream
+  if(recording && backingAudio && perfLog.length<25000)
+    perfLog.push({t:backingAudio.currentTime||0, m:midiFloat});
   ribbonPush(midiFloat);
   const vibNow=window._vib.on && RIB.headState!=='offkey';
   $('tunerMsg').textContent = vibNow ? 'vibrato ✨ — gorgeous'
@@ -4363,6 +4440,24 @@ function renderScoreCard(score){
     ' · longest run ~'+streakSec+'s'+
     ((score.vibratoSec||0)>=2 ? ' · vibrato ~'+score.vibratoSec+'s ✨' : '')+
     (score.rankCapped ? ' · sing 30s+ for S/A ranks' : '');
+  // vocal-coach chips: only habits with enough evidence get a voice, and
+  // clean habits earn praise instead of silence
+  const cb=$('scoreCoach'); cb.innerHTML='';
+  const c=score.coach||{};
+  const chip=(cls,txt)=>{ const el=document.createElement('span');
+    el.className='coachChip '+cls; el.textContent=txt; cb.appendChild(el); };
+  if(c.entranceMs!=null){
+    if(Math.abs(c.entranceMs)>=80) chip('warn','⏱ entrances ~'+Math.abs(c.entranceMs)+'ms '+(c.entranceMs>0?'late':'early')+' — breathe a beat sooner');
+    else chip('nice','⏱ entrances on time');
+  }
+  if(c.scoopPct!=null){
+    if(c.scoopPct>=30) chip('warn','🎿 scooped into '+c.scoopPct+'% of notes — aim dead-on');
+    else chip('nice','🎯 clean note entries');
+  }
+  if(c.droopPct!=null){
+    if(c.droopPct>=30) chip('warn','📉 '+c.droopPct+'% of long notes sag at the end — support to the finish');
+    else chip('nice','💪 held notes stay up');
+  }
   $('scoreCard').classList.remove('hidden');
   // points count up over ~1.2s — the reveal IS the reward
   const el=$('scorePoints'), target=score.points||0, t0=performance.now();
