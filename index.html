@@ -110,7 +110,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .sessionLayout{display:block}
   .sessionRail{display:flex;flex-direction:column;gap:12px;margin-top:16px}
   @media (min-width:980px){
-    .sessionLayout{display:grid;grid-template-columns:1fr 240px;gap:14px;align-items:start}
+    .sessionLayout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}
     .sessionRail{margin-top:0;position:sticky;top:100px;min-height:calc(100vh - 120px)}
   }
   /* No-scroll session view (desktop): once a song is loaded, the session
@@ -143,6 +143,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     padding:18px 0 6px;color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:.16em;
     text-transform:uppercase}
   .railAmbient .eq-bars{font-size:18px}
+  .drawer-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;
+    margin-top:14px;align-items:start}
+  .drawer-cols .selfView{grid-column:1/-1;max-width:300px}
   .railCard{background:var(--glass-fill);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
     border:1px solid var(--glass-border);border-radius:14px;padding:12px}
   .railCard h3{margin:0 0 8px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
@@ -1012,7 +1015,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <!-- practice/timing settings: less urgent, one-time setup — tucked away
              so they don't compete with the always-visible controls above. -->
         <details class="drawer">
-          <summary>Practice &amp; timing settings</summary>
+          <summary>Additional settings</summary>
           <div class="drawer-body">
             <!-- vocal timing calibration: pulls your recorded voice earlier to
                  cancel mic input latency (the "vocals lag the track" problem) -->
@@ -1037,6 +1040,79 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
               <label class="tunertog"><input type="checkbox" id="countInToggle" checked> 4-click count-in</label>
               <label class="tunertog" title="Click track heard only in your headphones — never recorded (M)">
                 <input type="checkbox" id="clickRecToggle"> click while recording</label>
+            </div>
+
+            <!-- formerly the right rail: quick reference, phone camera sync,
+                 stage lighting — same elements (same ids, so all pairing/
+                 lighting JS is untouched), now tucked in here 3-up. -->
+            <div class="drawer-cols">
+
+    <div class="selfView hidden" id="selfViewBox" title="Live view from your phone">
+      <video id="phoneSelfView" autoplay muted playsinline></video>
+      <span class="selfViewLabel"><svg class="icon"><use href="#i-phone"/></svg> live</span>
+    </div>
+    <div class="railCard">
+      <h3>Quick reference
+        <button type="button" class="infoBtn" id="quickRefInfoBtn" aria-label="Why headphones?" style="margin-left:auto">ⓘ</button>
+      </h3>
+      <div class="hint">
+        <kbd>Space</kbd> record · <kbd>P</kbd> play/pause · <kbd>Enter</kbd> keep take.
+      </div>
+      <div class="railHint hidden" id="quickRefInfoText" style="margin-top:6px">Wear headphones so your mic captures only your voice, not the backing track.</div>
+    </div>
+
+    <!-- phone camera sync: right below Quick reference so the rail's spare
+         vertical space is doing something, instead of pairing info being
+         buried in a drawer down inside the Record tab. Visible across every
+         session tab, not just Record, since pairing status stays relevant
+         throughout. The "not secure" self-signed-cert explanation used to
+         run TWICE, verbatim in spirit, once above the QR code and once
+         below it — collapsed into one ⓘ toggle (same pattern as the FX
+         rack's per-parameter info buttons) so the default view is just the
+         status line + QR + link, not three paragraphs of caveat. -->
+    <div class="railCard">
+      <h3><svg class="icon"><use href="#i-phone"/></svg> Phone camera sync
+        <button type="button" class="infoBtn" id="phoneInfoBtn" aria-label="About phone pairing" style="margin-left:auto">ⓘ</button>
+      </h3>
+      <div class="railHint hidden" id="phoneInfoText">Scan the code, or open the link on your phone (same WiFi, iPhone or Android). Your phone's browser will warn "not secure" the first time — that's the local self-signed cert, not a real problem; tap Advanced/Details → Proceed to continue.</div>
+      <div class="hint" id="phonePairPanel">
+        <span id="phoneStatusText">Loading phone-pairing link…</span>
+        <button class="btn small" id="phoneDisconnectBtn" type="button"
+          style="display:none;margin-left:8px" title="End the phone connection without touching the phone">Disconnect</button>
+        <div id="phoneUrlBox" style="display:none;margin-top:8px">
+          <img id="phoneQrImg" class="hidden" alt="Scan with your phone to pair" style="width:100%;max-width:160px;border-radius:8px">
+          <div class="mt" style="min-width:0">
+            <code id="phoneUrlText" style="user-select:all;word-break:break-all;font-size:11px"></code>
+            <div class="mt"><button class="btn small" id="phoneCopyBtn" type="button">Copy link</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage lighting: Govee lights on the local network react live to
+         pitch (color) and volume (brightness) while recording. Requires
+         "LAN Control" turned on per-light in the Govee Home app first —
+         that's a Govee-side setting this page can't flip for you. -->
+    <div class="railCard">
+      <h3><svg class="icon"><use href="#i-bulb"/></svg> Stage lighting</h3>
+      <div class="hint">
+        <label class="tunertog"><input type="checkbox" id="lightsEnabled"> react to my singing</label>
+        <div class="mt" style="display:flex;gap:12px;flex-wrap:wrap">
+          <label class="tunertog"><input type="radio" name="lightsMode" value="multi" id="lightsModeMulti" checked> Multi-color (by note)</label>
+          <label class="tunertog"><input type="radio" name="lightsMode" value="mono" id="lightsModeMono"> Single color</label>
+        </div>
+        <div class="mt" id="lightsColorPickWrap" style="display:none;align-items:center;gap:8px">
+          <input type="color" id="lightsColorPick" value="#00ff78" style="width:36px;height:28px;padding:0;border-radius:6px;border:1px solid var(--edge)">
+          <span style="font-size:11px;opacity:.75">brightness still follows your singing</span>
+        </div>
+        <div class="mt">
+          <button class="btn small" id="lightsDiscoverBtn" type="button">Find my lights</button>
+        </div>
+        <div id="lightsList" class="mt"></div>
+        <div id="lightsStatus" class="mt" style="font-size:11px;opacity:.8"></div>
+      </div>
+    </div>
+    
             </div>
           </div>
         </details>
@@ -1365,78 +1441,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   <!-- persistent right rail: stays visible across all four session tabs
        instead of being buried inside the Record tab only (see .sessionRail
        CSS). Hidden by default, shown/hidden in lockstep with sessionNav. -->
-  <aside class="sessionRail hidden" id="sessionRail">
-    <div class="selfView hidden" id="selfViewBox" title="Live view from your phone">
-      <video id="phoneSelfView" autoplay muted playsinline></video>
-      <span class="selfViewLabel"><svg class="icon"><use href="#i-phone"/></svg> live</span>
-    </div>
-    <div class="railCard">
-      <h3>Quick reference
-        <button type="button" class="infoBtn" id="quickRefInfoBtn" aria-label="Why headphones?" style="margin-left:auto">ⓘ</button>
-      </h3>
-      <div class="hint">
-        <kbd>Space</kbd> record · <kbd>P</kbd> play/pause · <kbd>Enter</kbd> keep take.
-      </div>
-      <div class="railHint hidden" id="quickRefInfoText" style="margin-top:6px">Wear headphones so your mic captures only your voice, not the backing track.</div>
-    </div>
-
-    <!-- phone camera sync: right below Quick reference so the rail's spare
-         vertical space is doing something, instead of pairing info being
-         buried in a drawer down inside the Record tab. Visible across every
-         session tab, not just Record, since pairing status stays relevant
-         throughout. The "not secure" self-signed-cert explanation used to
-         run TWICE, verbatim in spirit, once above the QR code and once
-         below it — collapsed into one ⓘ toggle (same pattern as the FX
-         rack's per-parameter info buttons) so the default view is just the
-         status line + QR + link, not three paragraphs of caveat. -->
-    <div class="railCard">
-      <h3><svg class="icon"><use href="#i-phone"/></svg> Phone camera sync
-        <button type="button" class="infoBtn" id="phoneInfoBtn" aria-label="About phone pairing" style="margin-left:auto">ⓘ</button>
-      </h3>
-      <div class="railHint hidden" id="phoneInfoText">Scan the code, or open the link on your phone (same WiFi, iPhone or Android). Your phone's browser will warn "not secure" the first time — that's the local self-signed cert, not a real problem; tap Advanced/Details → Proceed to continue.</div>
-      <div class="hint" id="phonePairPanel">
-        <span id="phoneStatusText">Loading phone-pairing link…</span>
-        <button class="btn small" id="phoneDisconnectBtn" type="button"
-          style="display:none;margin-left:8px" title="End the phone connection without touching the phone">Disconnect</button>
-        <div id="phoneUrlBox" style="display:none;margin-top:8px">
-          <img id="phoneQrImg" class="hidden" alt="Scan with your phone to pair" style="width:100%;max-width:160px;border-radius:8px">
-          <div class="mt" style="min-width:0">
-            <code id="phoneUrlText" style="user-select:all;word-break:break-all;font-size:11px"></code>
-            <div class="mt"><button class="btn small" id="phoneCopyBtn" type="button">Copy link</button></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Stage lighting: Govee lights on the local network react live to
-         pitch (color) and volume (brightness) while recording. Requires
-         "LAN Control" turned on per-light in the Govee Home app first —
-         that's a Govee-side setting this page can't flip for you. -->
-    <div class="railCard">
-      <h3><svg class="icon"><use href="#i-bulb"/></svg> Stage lighting</h3>
-      <div class="hint">
-        <label class="tunertog"><input type="checkbox" id="lightsEnabled"> react to my singing</label>
-        <div class="mt" style="display:flex;gap:12px;flex-wrap:wrap">
-          <label class="tunertog"><input type="radio" name="lightsMode" value="multi" id="lightsModeMulti" checked> Multi-color (by note)</label>
-          <label class="tunertog"><input type="radio" name="lightsMode" value="mono" id="lightsModeMono"> Single color</label>
-        </div>
-        <div class="mt" id="lightsColorPickWrap" style="display:none;align-items:center;gap:8px">
-          <input type="color" id="lightsColorPick" value="#00ff78" style="width:36px;height:28px;padding:0;border-radius:6px;border:1px solid var(--edge)">
-          <span style="font-size:11px;opacity:.75">brightness still follows your singing</span>
-        </div>
-        <div class="mt">
-          <button class="btn small" id="lightsDiscoverBtn" type="button">Find my lights</button>
-        </div>
-        <div id="lightsList" class="mt"></div>
-        <div id="lightsStatus" class="mt" style="font-size:11px;opacity:.8"></div>
-      </div>
-    </div>
-    <div class="railAmbient" aria-hidden="true">
-      <span class="eq-bars"><i></i><i></i><i></i><i></i></span>
-      mic drop
-      <span class="eq-bars"><i></i><i></i><i></i><i></i></span>
-    </div>
-  </aside>
+  <aside class="sessionRail hidden" id="sessionRail" style="display:none"></aside>
   </div>
 
   </div><!-- /homeSection -->
