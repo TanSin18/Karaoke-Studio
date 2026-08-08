@@ -95,6 +95,9 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
     width:22px;height:22px;font-size:11px;cursor:pointer;flex:none;padding:0}
   .acctIcon:hover{color:var(--amber);border-color:var(--amber2)}
   .acctIcon.danger:hover{color:var(--rec);border-color:var(--rec)}
+  .profileMenuLink{width:100%;margin-top:10px;background:none;border:none;border-top:1px solid var(--edge);
+    padding:10px 0 2px;color:var(--dim);font-size:11px;cursor:pointer;text-align:left}
+  .profileMenuLink:hover{color:var(--amber2)}
   .profileList{max-height:160px;overflow-y:auto;margin-top:8px;display:flex;flex-direction:column;gap:4px}
   .profileList button{width:100%;text-align:left;background:none;border:none;color:var(--muted);
     padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12.5px}
@@ -967,7 +970,6 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
       <button class="appTab" id="navLibrary" type="button" data-page="library"><svg class="icon"><use href="#i-bookmark"/></svg><span class="navLabel">Library</span></button>
       <button class="appTab" id="navHistory" type="button" data-page="history"><svg class="icon"><use href="#i-clock"/></svg><span class="navLabel">History</span></button>
     </nav>
-    <button class="btn ghost small" id="ownerLockBtn" type="button" style="margin-left:auto;display:none" title="This is my device — unlock my library & history">🔒 It\'s me</button>
     <div class="profileChip" id="profileChip" style="margin-left:auto">
       <button class="btn ghost small" id="profileBtn" type="button"><svg class="icon"><use href="#i-user"/></svg> <span id="profileNameLabel">Guest</span></button>
       <div class="profileMenu hidden" id="profileMenu">
@@ -978,6 +980,7 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
         <div class="profileMenuLabel">Your accounts</div>
         <div id="profileList"></div>
         <button class="btn ghost small" id="profileSwitchScreenBtn" type="button" style="margin-top:8px"><svg class="icon"><use href="#i-home"/></svg> Switch profile</button>
+        <button class="profileMenuLink" id="ownerLockBtn" type="button" style="display:none">🔒 This is my own device — unlock my studio</button>
       </div>
     </div>
     <button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme"><svg class="icon"><use href="#i-moon"/></svg></button>
