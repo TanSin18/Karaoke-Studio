@@ -319,6 +319,75 @@ def fetch_synced_lyrics(jid):
     return lines
 
 
+def extract_melody(jid):
+    """Pitch-track the separated vocal stem into a melody timeline, cached
+    as melody.json: {"hop": seconds-per-frame, "midi": [float-or--1, ...]}.
+
+    Only possible when the session was loaded with vocal removal (Demucs) —
+    vocals.wav IS the original singer, so autocorrelation per 23ms hop with
+    level/periodicity gates gives a clean note-for-note reference that the
+    scoring and the notes highway can follow.
+    """
+    sdir = os.path.join(SESS_DIR, jid)
+    cache = os.path.join(sdir, "melody.json")
+    if os.path.exists(cache):
+        try:
+            with open(cache, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            pass
+    voc = os.path.join(sdir, "vocals.wav")
+    if not os.path.exists(voc):
+        return None
+    try:
+        import numpy as np
+        import soundfile as sf
+        y, sr = sf.read(voc, dtype="float32")
+        if y.ndim > 1:
+            y = y.mean(axis=1)
+        N, hop = 2048, 1024
+        n_frames = max(0, (len(y) - N) // hop)
+        midi = np.full(n_frames, -1.0)
+        # FFT-based autocorrelation per frame — same gates as the live tuner:
+        # real level, strong periodicity, human vocal range
+        win = np.hanning(N)
+        for i in range(n_frames):
+            fr = y[i * hop:i * hop + N]
+            rms = float(np.sqrt(np.mean(fr ** 2)))
+            if rms < 0.015:
+                continue
+            fw = fr * win
+            sp = np.fft.rfft(fw, 2 * N)
+            ac = np.fft.irfft(sp * np.conj(sp))[:N]
+            if ac[0] <= 0:
+                continue
+            lo, hi = int(sr / 1200), int(sr / 70)
+            seg = ac[lo:hi]
+            p = int(np.argmax(seg)) + lo
+            if ac[p] < 0.4 * ac[0]:
+                continue
+            if 0 < p < N - 1:
+                a, b, c = ac[p - 1], ac[p], ac[p + 1]
+                den = (a + c - 2 * b)
+                if den:
+                    p = p - (c - a) / (2 * den)
+            f = sr / p
+            midi[i] = 69 + 12 * np.log2(f / 440.0)
+        # 5-point median smooth over voiced runs kills octave-glitch frames
+        sm = midi.copy()
+        for i in range(2, n_frames - 2):
+            w = midi[i - 2:i + 3]
+            v = w[w > 0]
+            if midi[i] > 0 and len(v) >= 3:
+                sm[i] = float(np.median(v))
+        data = {"hop": hop / sr, "midi": [round(float(x), 2) if x > 0 else -1 for x in sm]}
+        with open(cache, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        return data
+    except Exception:
+        return None
+
+
 def detect_song_key(jid):
     """Detect the song's musical key from the backing track (cached in meta).
 
@@ -1530,6 +1599,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(404, {"error": "unknown session"})
                 return
             self._json(200, {"lyrics": fetch_synced_lyrics(jid)})
+            return
+
+        if p.path == "/melody":
+            jid = (parse_qs(p.query).get("id") or [""])[0]
+            if not job_or_disk(jid):
+                self._json(404, {"error": "unknown session"})
+                return
+            self._json(200, {"melody": extract_melody(jid)})
             return
 
         if p.path == "/songkey":
