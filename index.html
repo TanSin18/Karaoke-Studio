@@ -967,12 +967,14 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       <button class="appTab" id="navLibrary" type="button" data-page="library"><svg class="icon"><use href="#i-bookmark"/></svg><span class="navLabel">Library</span></button>
       <button class="appTab" id="navHistory" type="button" data-page="history"><svg class="icon"><use href="#i-clock"/></svg><span class="navLabel">History</span></button>
     </nav>
+    <button class="btn ghost small" id="ownerLockBtn" type="button" style="margin-left:auto;display:none" title="This is my device — unlock my library & history">🔒 It\'s me</button>
     <div class="profileChip" id="profileChip" style="margin-left:auto">
       <button class="btn ghost small" id="profileBtn" type="button"><svg class="icon"><use href="#i-user"/></svg> <span id="profileNameLabel">Guest</span></button>
       <div class="profileMenu hidden" id="profileMenu">
         <div class="profileMenuLabel">New / switch account</div>
         <input type="text" id="profileInput" placeholder="Account name…" maxlength="40">
         <button class="btn amber small" id="profileSetBtn" type="button">Create / switch</button>
+        <div class="profileMenuLabel" id="ownerKeyRow" style="display:none">Your private key (enter on your phone to unlock it there): <b id="ownerKeyVal" style="color:var(--amber2);user-select:all"></b></div>
         <div class="profileMenuLabel">Your accounts</div>
         <div id="profileList"></div>
         <button class="btn ghost small" id="profileSwitchScreenBtn" type="button" style="margin-top:8px"><svg class="icon"><use href="#i-home"/></svg> Switch profile</button>
@@ -1695,6 +1697,26 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
 <script>
 const $=id=>document.getElementById(id);
+// ---- owner key: personal data (profiles/history/library) is private to
+// the host and any device that entered this key. Attached to every request
+// so the server can authorize; stored per-device. ------------------------
+const OWNER_KEY='kstudio.ownerKey';
+function ownerKey(){ try{ return localStorage.getItem(OWNER_KEY)||''; }catch(e){ return ''; } }
+let isOwner=false;
+(function(){
+  const _f=window.fetch;
+  window.fetch=function(input, init){
+    init=init||{};
+    // only same-origin requests (all of ours are) get the key
+    const url=(typeof input==='string')?input:(input&&input.url)||'';
+    if(!/^https?:\/\//i.test(url) || url.startsWith(location.origin)){
+      const k=ownerKey();
+      if(k){ init.headers=new Headers(init.headers||(typeof input!=='string'&&input.headers)||{});
+        init.headers.set('X-Owner-Key', k); }
+    }
+    return _f(input, init);
+  };
+})();
 
 // ---- keep #nowPlayingBar / #sessionNav's sticky offsets glued to the
 // header's ACTUAL rendered height, instead of a guessed pixel constant that
@@ -2224,6 +2246,38 @@ const PROFILE_KEY='kstudio.profile';
 let activeProfile=(function(){ try{ return localStorage.getItem(PROFILE_KEY)||'Guest'; }catch(e){ return 'Guest'; } })();
 $('profileNameLabel').textContent=activeProfile;
 
+// Decide owner vs guest before showing anything personal. Guests on a
+// shared link see a clean karaoke app — no profile, no Library, no History,
+// nothing of the host's — with a small 🔒 to unlock if it's actually the
+// host's own phone.
+function applyOwnerUI(){
+  document.body.classList.toggle('guestMode', !isOwner);
+  $('profileChip').style.display = isOwner ? '' : 'none';
+  $('navLibrary').style.display = isOwner ? '' : 'none';
+  $('navHistory').style.display = isOwner ? '' : 'none';
+  const lk=$('ownerLockBtn');
+  if(lk) lk.style.display = isOwner ? 'none' : '';
+  if(!isOwner && !$('homeSection').classList.contains('hidden')===false){}
+  if(!isOwner && (document.body.dataset.page==='library'||document.body.dataset.page==='history'))
+    switchAppPage('home');
+}
+async function refreshOwner(){
+  try{ const d=await (await fetch('/owner/status')).json();
+    isOwner=!!d.owner; window._ownerHostKey=d.key||null; }
+  catch(e){ isOwner=false; }
+  applyOwnerUI();
+}
+async function unlockOwner(){
+  const k=(prompt('Enter your private key (shown on your computer under your name) to unlock your library, history and profile on this device:')||'').trim();
+  if(!k) return;
+  try{
+    const r=await fetch('/owner/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k})});
+    if(r.ok){ try{ localStorage.setItem(OWNER_KEY,k); }catch(e){}
+      isOwner=true; applyOwnerUI(); try{refreshLibrary();}catch(e){} try{renderHistory();}catch(e){} toast('Unlocked — welcome back.','ok',2500); }
+    else toast('That key didn\'t match.','error',3000);
+  }catch(e){ toast('Could not reach the server.','error'); }
+}
+
 function setActiveProfile(name, email){
   activeProfile=(name||'Guest').trim()||'Guest';
   try{ localStorage.setItem(PROFILE_KEY, activeProfile); }catch(e){}
@@ -2285,6 +2339,7 @@ $('profileBtn').addEventListener('click',(e)=>{
   e.stopPropagation();
   $('profileMenu').classList.toggle('hidden');
   $('profileInput').value=activeProfile==='Guest'?'':activeProfile;
+  if(window._ownerHostKey){ $('ownerKeyRow').style.display=''; $('ownerKeyVal').textContent=window._ownerHostKey; }
   loadProfileList();
 });
 $('profileSwitchScreenBtn').addEventListener('click',()=>{
@@ -2958,6 +3013,8 @@ function switchAppPage(page){
   document.querySelectorAll('.appTab').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
 }
 document.querySelectorAll('.appTab').forEach(b=>b.addEventListener('click',()=>switchAppPage(b.dataset.page)));
+$('ownerLockBtn').addEventListener('click', unlockOwner);
+refreshOwner();
 // On phones the nav is a fixed bottom tab bar — but position:fixed anchors
 // to the header, whose backdrop-filter makes it a containing block. Moving
 // the element to <body> (handlers ride along) frees it to pin to the
