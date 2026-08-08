@@ -26,3 +26,4 @@ scratch/
 # Build artifacts (the packaged app + zip go to GitHub Releases, not git)
 dist/
 owner_key.txt
+sessions/_guess/

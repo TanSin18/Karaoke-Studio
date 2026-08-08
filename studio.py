@@ -1434,8 +1434,176 @@ def _run_render_locked(jid, vocal_path, fx, mix_opts, lock, scope_id=None):
 # points at a jid once that job's status is "ready".
 
 ROOM = {"code": None, "queue": [], "now_playing": None, "challenges": [], "guests": [],
-        "scores": {}, "live_score": None, "scoring_enabled": True}
+        "scores": {}, "live_score": None, "scoring_enabled": True, "guess": None}
 ROOM_LOCK = threading.Lock()
+
+# ==== Guess-the-Song party game ==========================================
+GUESS_DIR = os.path.join(SESS_DIR, "_guess")
+GUESS_SNIPPETS = [2, 4, 6, 8, 10]          # seconds revealed per escalation
+GUESS_POINTS   = [100, 80, 60, 40, 20]     # points if solved at that snippet
+_GUESS_FILLER = set((
+    "official video audio lyrics lyric lyrical full song hd 4k karaoke version "
+    "cover remix live records feat ft with from movie soundtrack ost the a an of "
+    "new latest hindi bollywood mix reprise unplugged").split())
+
+def _gnorm(s):
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", (s or "").lower())).strip()
+
+def guess_canonical(raw):
+    """The likely song name from a messy YouTube title — the first SEGMENT
+    (split on |,-,:,(,[,/) that still has real words after filler is
+    removed. 'Full Song: Khairiyat | Chhichhore' -> 'Khairiyat', not the
+    filler-only 'Full Song'. Used for the reveal label."""
+    for seg in re.split(r"[|\-\[\(\)/:~\u2013\u2014]", raw or ""):
+        toks = [t for t in _gnorm(seg).split() if t not in _GUESS_FILLER]
+        if toks:
+            return " ".join(toks).title()
+    return (raw or "").strip()
+
+def guess_accept(guess, raw):
+    """Lenient free-text match: accept if (almost) every word the player
+    typed appears in the song title, including at least one real title word.
+    Deliberately forgiving — messy titles shouldn't reject a right answer."""
+    g = [t for t in _gnorm(guess).split() if t not in _GUESS_FILLER]
+    if not g:
+        return False
+    gset = set(g)
+    full = set(_gnorm(raw).split())
+    core = set(t for t in _gnorm(re.split(r"[|\-\[\(/:~]", raw or "", 1)[0]).split()
+               if t not in _GUESS_FILLER) or (full - _GUESS_FILLER)
+    if _gnorm(guess) and _gnorm(guess) in _gnorm(raw):
+        return True
+    # space/typo tolerance: 'tumhi ho' vs 'Tum Hi Ho'
+    gsq = _gnorm(guess).replace(" ", "")
+    if len(gsq) >= 5 and gsq in _gnorm(raw).replace(" ", ""):
+        return True
+    covered = len(gset & full) / len(gset)
+    return covered >= 0.8 and bool(gset & core)
+
+def _guess_make_clip(vid, dur, out_path):
+    """Download ONLY a ~12s window (yt-dlp --download-sections, so it's fast,
+    not a full-song fetch) from a non-intro part of the track, re-encoded to
+    mp3. One 12s file backs every snippet length — the client just plays the
+    first N seconds."""
+    try:
+        d = float(dur or 0)
+    except (TypeError, ValueError):
+        d = 0
+    # AVOID THE OBVIOUS CHORUS. Choruses are the most recognizable part and
+    # usually sit dead-center / at energy peaks (~30-65%) and recur late.
+    # The first verse — after the intro, before the first chorus — is the
+    # fairest "guess" material: it has vocals but isn't the hook everyone
+    # shouts. Pick from ~10-26% of the track (and never the very intro,
+    # which is often instrumental). Falls back to a safe early offset for
+    # unknown/short durations.
+    if d > 45:
+        start = (0.10 + random.random() * 0.16) * d
+    elif d > 20:
+        start = d * 0.15
+    else:
+        start = 8
+    end = start + 12
+    src = out_path + ".src"
+    dl = subprocess.run(
+        ["yt-dlp", "-f", "bestaudio/best", "--no-playlist", "--no-warnings",
+         "--download-sections", f"*{start:.1f}-{end:.1f}", "--force-keyframes-at-cuts",
+         "-o", src + ".%(ext)s", f"https://www.youtube.com/watch?v={vid}"],
+        capture_output=True, text=True, timeout=90)
+    got = next((src + "." + e for e in ("webm", "m4a", "mp3", "opus", "ogg")
+                if os.path.exists(src + "." + e)), None)
+    if not got:
+        return False
+    r = subprocess.run(["ffmpeg", "-y", "-i", got, "-t", "12", "-ac", "2", "-ar", "44100",
+                        "-c:a", "libmp3lame", "-q:a", "5", out_path],
+                       capture_output=True, text=True)
+    try:
+        os.remove(got)
+    except OSError:
+        pass
+    return r.returncode == 0 and os.path.exists(out_path)
+
+def build_guess_pool(query, label, rounds):
+    """Search the theme, then fetch blind clips in the background. The game
+    can start as soon as the first few are ready; the rest stream in."""
+    os.makedirs(GUESS_DIR, exist_ok=True)
+    try:
+        for f in os.listdir(GUESS_DIR):
+            try: os.remove(os.path.join(GUESS_DIR, f))
+            except OSError: pass
+    except OSError:
+        pass
+    results = search_youtube(query, n=max(rounds * 2, 12))
+    random.shuffle(results)
+    pool = []
+    seen = set()
+    BAD = ("jukebox", "mashup", "nonstop", "non stop", "all songs", "top 10",
+           "top 20", "playlist", "best of", "compilation", "medley", "audio jukebox",
+           "back to back", "hits", "collection", "full album")
+    for r in results:
+        if len(pool) >= rounds:
+            break
+        vid = r.get("id"); title = r.get("title") or ""
+        canon = guess_canonical(title)
+        dur = r.get("duration") or 0
+        low = title.lower()
+        # skip compilations / mixes — a single guessable song is 1-9 min
+        if not vid or canon.lower() in seen:
+            continue
+        if any(b in low for b in BAD) or (dur and (dur > 600 or dur < 45)):
+            continue
+        seen.add(canon.lower())
+        out = os.path.join(GUESS_DIR, vid + ".mp3")
+        if _guess_make_clip(vid, r.get("duration"), out):
+            pool.append({"vid": vid, "title": title, "canonical": canon, "clip": out})
+            with ROOM_LOCK:
+                g = ROOM.get("guess")
+                if g and g.get("query") == query:
+                    g["pool"] = pool
+                    g["ready"] = len(pool)
+                    if g["phase"] == "building" and len(pool) >= min(3, rounds):
+                        g["phase"] = "playing"
+                        g["round"] = 0
+                        g["snippet_idx"] = 0
+                        g["answered"] = {}
+                        g["winner"] = None
+                        g["round_ts"] = time.time()
+            broadcast_room()
+    with ROOM_LOCK:
+        g = ROOM.get("guess")
+        if g and g.get("query") == query:
+            g["pool"] = pool
+            g["ready"] = len(pool)
+            g["building_done"] = True
+            if not pool:
+                g["phase"] = "error"; g["error"] = "Couldn't fetch songs for that theme."
+            elif g["phase"] == "building":
+                g["phase"] = "playing"; g["round"] = 0; g["snippet_idx"] = 0
+                g["answered"] = {}; g["winner"] = None; g["round_ts"] = time.time()
+    broadcast_room()
+
+def guess_public_state():
+    """What clients may see — NEVER the song identity until reveal."""
+    g = ROOM.get("guess")
+    if not g or not g.get("active"):
+        return None
+    phase = g["phase"]
+    pub = {"active": True, "phase": phase, "label": g.get("label"),
+           "ready": g.get("ready", 0), "total": len(g.get("pool") or []) or g.get("rounds"),
+           "round": g.get("round", 0), "rounds": g.get("rounds"),
+           "scores": g.get("scores") or {}, "error": g.get("error")}
+    if phase in ("playing", "reveal"):
+        idx = g.get("snippet_idx", 0)
+        pub["snippet_sec"] = GUESS_SNIPPETS[min(idx, len(GUESS_SNIPPETS) - 1)]
+        pub["points"] = GUESS_POINTS[min(idx, len(GUESS_POINTS) - 1)]
+        pub["max_snippet"] = idx >= len(GUESS_SNIPPETS) - 1
+    if phase == "reveal":
+        cur = (g.get("pool") or [])[g.get("round", 0)] if g.get("pool") else None
+        pub["answer"] = cur["canonical"] if cur else "?"
+        pub["answer_vid"] = cur["vid"] if cur else None
+        pub["winner"] = g.get("winner")
+    return pub
+
+
 SUBSCRIBERS = []
 SUB_LOCK = threading.Lock()
 
@@ -1455,7 +1623,7 @@ def room_state():
                 "scores": dict(ROOM["scores"]), "live_score": ROOM["live_score"],
                 "secure_join": secure,
                 "scoring_enabled": ROOM.get("scoring_enabled", True),
-                "pos": pos}
+                "pos": pos, "guess": guess_public_state()}
 
 
 def room_join(name, device_id):
@@ -1503,6 +1671,7 @@ def start_room():
         ROOM["live_score"] = None
         ROOM["scoring_enabled"] = True
         ROOM["pos"] = None
+        ROOM["guess"] = None
     broadcast_room()
     return code
 
@@ -1954,6 +2123,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")   # same reason as index.html
             self.end_headers()
             self.wfile.write(b)
+            return
+
+        if p.path == "/guess/clip":
+            # blind audio for the current round — NO metadata, ever
+            with ROOM_LOCK:
+                g = ROOM.get("guess")
+                pool = (g or {}).get("pool") or []
+                rnd = (g or {}).get("round", 0)
+                clip = pool[rnd]["clip"] if (g and g.get("phase") in ("playing","reveal") and rnd < len(pool)) else None
+            if not clip or not os.path.exists(clip):
+                self._json(404, {"error": "no clip"}); return
+            self._send_file(clip, "audio/mpeg")
             return
 
         if p.path == "/search":
@@ -3097,6 +3278,78 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True})
             return
 
+        if p.path == "/guess/start":
+            body = self._read_body()
+            label = (body.get("label") or "Guess the Song").strip()[:60]
+            query = (body.get("query") or "").strip()[:120]
+            try: rounds = max(3, min(15, int(body.get("rounds") or 8)))
+            except (TypeError, ValueError): rounds = 8
+            if not query:
+                self._json(400, {"error": "Pick a theme first."}); return
+            with ROOM_LOCK:
+                ROOM["guess"] = {"active": True, "phase": "building", "query": query,
+                    "label": label, "rounds": rounds, "pool": [], "ready": 0,
+                    "round": 0, "snippet_idx": 0, "scores": {}, "answered": {},
+                    "winner": None, "round_ts": 0, "building_done": False}
+            threading.Thread(target=build_guess_pool, args=(query, label, rounds), daemon=True).start()
+            broadcast_room(); self._json(200, {"ok": True}); return
+
+        if p.path == "/guess/extend":
+            # host/TV escalates the snippet (2->4->6->8->10s)
+            with ROOM_LOCK:
+                g = ROOM.get("guess")
+                if g and g["phase"] == "playing":
+                    if g["snippet_idx"] < len(GUESS_SNIPPETS) - 1:
+                        g["snippet_idx"] += 1; g["round_ts"] = time.time()
+                    else:
+                        g["phase"] = "reveal"; g["winner"] = None
+            broadcast_room(); self._json(200, {"ok": True}); return
+
+        if p.path == "/guess/reveal":
+            with ROOM_LOCK:
+                g = ROOM.get("guess")
+                if g and g["phase"] == "playing":
+                    g["phase"] = "reveal"
+            broadcast_room(); self._json(200, {"ok": True}); return
+
+        if p.path == "/guess/next":
+            with ROOM_LOCK:
+                g = ROOM.get("guess")
+                if g:
+                    nxt = g.get("round", 0) + 1
+                    if nxt >= len(g.get("pool") or []):
+                        g["phase"] = "done"
+                    else:
+                        g["round"] = nxt; g["snippet_idx"] = 0; g["answered"] = {}
+                        g["winner"] = None; g["phase"] = "playing"; g["round_ts"] = time.time()
+            broadcast_room(); self._json(200, {"ok": True}); return
+
+        if p.path == "/guess/stop":
+            with ROOM_LOCK:
+                ROOM["guess"] = None
+            broadcast_room(); self._json(200, {"ok": True}); return
+
+        if p.path == "/guess/answer":
+            body = self._read_body()
+            name = (body.get("name") or "").strip()[:40] or "Someone"
+            dev = (body.get("device_id") or "").strip()[:64]
+            text = (body.get("text") or "").strip()[:80]
+            with ROOM_LOCK:
+                g = ROOM.get("guess")
+                if not g or g["phase"] != "playing":
+                    self._json(409, {"ok": False, "state": "closed"}); return
+                pool = g.get("pool") or []; rnd = g.get("round", 0)
+                if rnd >= len(pool):
+                    self._json(409, {"ok": False}); return
+                correct = guess_accept(text, pool[rnd]["title"])
+                if correct:
+                    pts = GUESS_POINTS[min(g["snippet_idx"], len(GUESS_POINTS) - 1)]
+                    g["scores"][name] = (g["scores"].get(name, 0)) + pts
+                    g["winner"] = name; g["phase"] = "reveal"; g["won_pts"] = pts
+                    broadcast_room()
+                    self._json(200, {"ok": True, "correct": True, "points": pts}); return
+                self._json(200, {"ok": True, "correct": False}); return
+
         if p.path == "/party/scoring":
             # host toggle: score mode on/off for this party. When turned off
             # mid-song, any in-flight live score is finalized first so a
@@ -3662,6 +3915,28 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   background:var(--well);border:1px solid var(--edge)}
 .tvLyrNow{font-family:var(--display);font-weight:700;font-size:26px;line-height:1.3;color:var(--amber2)}
 .tvLyrNext{font-size:14px;color:var(--dim);margin-top:4px}
+.gsBackdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);padding:20px}
+.gsCard{background:var(--panel2);border:1px solid var(--edge);border-radius:20px;padding:26px;max-width:520px;width:100%}
+.gsCard h2{margin:0 0 4px} .gsSub{color:var(--muted);font-size:14px;margin:0 0 18px}
+.gsLbl{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:14px 0 6px}
+.gsChips{display:flex;flex-wrap:wrap;gap:8px}
+.gsChip{padding:8px 16px;border-radius:999px;border:1px solid var(--edge);background:var(--well);color:var(--muted);cursor:pointer;font-size:14px}
+.gsChip.on{background:var(--amber2);color:#000;border-color:var(--amber2);font-weight:700}
+.gsInput{width:100%;padding:11px 14px;border-radius:12px;border:1px solid var(--edge);background:var(--well);color:var(--ink);font-size:15px}
+.gsBtns{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+.gsGame{position:fixed;inset:0;z-index:110;background:var(--bg);display:flex;flex-direction:column;padding:24px;gap:16px}
+.gsTop{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);color:var(--muted)}
+.gsStage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;text-align:center}
+.ggPulse{width:150px;height:150px;border-radius:50%;background:radial-gradient(circle,rgba(30,215,96,.35),transparent 70%);display:flex;align-items:center;justify-content:center;font-size:64px;animation:ggpulse 1s ease-in-out infinite}
+@keyframes ggpulse{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.12);opacity:1}}
+.ggBig{font-family:var(--display);font-weight:800;font-size:clamp(28px,5vw,64px)}
+.ggSec{font-family:var(--mono);font-size:22px;color:var(--amber2)}
+.ggBarWrap{width:min(70%,600px);height:8px;border-radius:4px;background:var(--well);overflow:hidden}
+.ggBar{height:100%;background:var(--amber2);width:100%;transition:width .1s linear}
+.gsBoard{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.ggScore{background:var(--panel2);border:1px solid var(--edge);border-radius:12px;padding:8px 16px;font-family:var(--mono);font-size:15px}
+.ggScore b{color:var(--amber2)}
+@media (max-width:760px){ .gsGame{padding:14px} .ggPulse{width:110px;height:110px;font-size:48px} }
 /* full-stage announcement / celebration overlay */
 .partyOverlay{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
   background:rgba(6,8,7,.86);backdrop-filter:blur(6px);border-radius:inherit}
@@ -3755,6 +4030,25 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <span class="lhMult m1" id="lhMult">×1</span>
         <span class="lhPts" id="lhPts">0</span>
       </div>
+      <div id="guessSetup" class="gsBackdrop hidden">
+        <div class="gsCard">
+          <h2>🎧 Guess the Song</h2>
+          <p class="gsSub">Blind clips from a theme — shorter snippet, more points. Type the song name on your phone to buzz in.</p>
+          <label class="gsLbl">Theme</label>
+          <div class="gsChips" id="gsModes"></div>
+          <label class="gsLbl">Refine — artist, era, actor, mood (optional)</label>
+          <input id="gsRefine" class="gsInput" placeholder="e.g. Arijit Singh 2010s / 90s / Shah Rukh Khan">
+          <label class="gsLbl">Rounds</label>
+          <input id="gsRounds" class="gsInput" type="number" min="3" max="15" value="8" style="max-width:100px">
+          <div class="gsBtns"><button class="btn ghost" id="gsCancel">Cancel</button><button class="btn pink" id="gsGo">Start game →</button></div>
+        </div>
+      </div>
+      <div id="guessGame" class="gsGame hidden">
+        <div class="gsTop"><span id="ggRound"></span><button class="btn ghost small" id="ggQuit">✕ End game</button></div>
+        <div class="gsStage" id="ggStage"></div>
+        <div class="gsBoard" id="ggBoard"></div>
+      </div>
+      <audio id="guessAudio" preload="auto"></audio>
       <div class="partyOverlay hidden" id="partyOverlay"><div class="poInner" id="poInner"></div></div>
       <div id="stage"><div class="idleStage"><span class="eq-bars"><i></i><i></i><i></i><i></i></span>Nobody queued yet — waiting for guests to join and add songs.</div></div>
       <div class="tvHwWrap hidden" id="tvHwWrap"><canvas id="tvHw"></canvas></div>
@@ -3766,6 +4060,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       <div class="nowTitle" id="songTitle"></div>
       <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
         <button class="btn pink" id="nextBtn">Next ▶</button>
+        <button class="btn ghost" id="guessBtn" title="Play a blind guess-the-song round">🎧 Guess the Song</button>
         <button class="btn ghost" id="scoringToggle" title="Turn singing scores on/off for this party">🎯 Scoring: ON</button>
       </div>
     </div>
@@ -3819,6 +4114,87 @@ $('startBtn').addEventListener('click',async()=>{
   subscribe();
 });
 
+// ==== Guess the Song (TV drives timing; server holds state) ============
+const GS_MODES=['Bollywood','Hollywood','Punjabi','Tamil','Telugu','90s Retro','Pop','Custom'];
+let gsMode='Bollywood';
+(function(){ const box=document.getElementById('gsModes'); if(!box) return;
+  GS_MODES.forEach((m,i)=>{ const b=document.createElement('button'); b.className='gsChip'+(i===0?' on':'');
+    b.textContent=m; b.onclick=()=>{ gsMode=m; [...box.children].forEach(c=>c.classList.remove('on')); b.classList.add('on'); };
+    box.appendChild(b); }); })();
+document.getElementById('guessBtn').addEventListener('click',()=>document.getElementById('guessSetup').classList.remove('hidden'));
+document.getElementById('gsCancel').addEventListener('click',()=>document.getElementById('guessSetup').classList.add('hidden'));
+document.getElementById('ggQuit').addEventListener('click',()=>{ if(confirm('End the guessing game?')) fetch('/guess/stop',{method:'POST'}); });
+document.getElementById('gsGo').addEventListener('click',()=>{
+  const refine=document.getElementById('gsRefine').value.trim();
+  const rounds=+document.getElementById('gsRounds').value||8;
+  const q=((gsMode==='Custom'?'':gsMode+' ')+refine).trim()+' song';
+  fetch('/guess/start',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({label:(gsMode+(refine?' · '+refine:'')), query:q, rounds})});
+  document.getElementById('guessSetup').classList.add('hidden');
+});
+let ggAudio=document.getElementById('guessAudio'), ggPlayedRound=-1, ggPlayedIdx=-1, ggTimer=null;
+function ggStopAudio(){ try{ ggAudio.pause(); }catch(e){} clearInterval(ggTimer); ggTimer=null; }
+function ggPlaySnippet(sec){
+  // one 12s clip backs every length — load once per round, then just play
+  // the first `sec` seconds and hard-stop.
+  ggStopAudio();
+  ggAudio.src='/guess/clip?t='+Date.now();
+  ggAudio.currentTime=0;
+  ggAudio.play().catch(()=>{});
+  const t0=performance.now();
+  ggTimer=setInterval(()=>{
+    const el=(performance.now()-t0)/1000;
+    const bar=document.getElementById('ggBar'); if(bar) bar.style.width=Math.max(0,100-el/sec*100)+'%';
+    if(el>=sec){ ggStopAudio();
+      // no winner yet after the snippet + a short buzz window? escalate.
+      setTimeout(()=>{ const g=state.guess;
+        if(g&&g.active&&g.phase==='playing'&&g.round===ggPlayedRound&&g.snippet_idx===ggPlayedIdx)
+          fetch('/guess/'+(g.max_snippet?'reveal':'extend'),{method:'POST'});
+      }, 3500);
+    }
+  },80);
+}
+function renderGuess(){
+  const g=state.guess, setup=document.getElementById('guessSetup'), game=document.getElementById('guessGame');
+  if(!g||!g.active){ game.classList.add('hidden'); ggStopAudio(); ggPlayedRound=-1; return; }
+  setup.classList.add('hidden'); game.classList.remove('hidden');
+  const stage=document.getElementById('ggStage'), board=document.getElementById('ggBoard');
+  document.getElementById('ggRound').textContent = g.label+' — '+
+    (g.phase==='building'?'loading songs '+(g.ready||0)+'/'+g.rounds
+     :g.phase==='done'?'Game over':'Round '+((g.round||0)+1)+' / '+(g.total||g.rounds));
+  const scores=Object.entries(g.scores||{}).sort((a,b)=>b[1]-a[1]);
+  board.innerHTML=scores.length?scores.map(([n,p],i)=>`<div class="ggScore">${i===0?'👑 ':''}${esc(n)} <b>${p}</b></div>`).join(''):'';
+  if(g.phase==='building'){
+    stage.innerHTML='<div class="ggPulse">🎧</div><div class="ggBig">Loading blind clips…</div><div class="ggSec">'+(g.ready||0)+' / '+g.rounds+' ready</div>';
+    ggStopAudio(); return;
+  }
+  if(g.phase==='error'){ stage.innerHTML='<div class="ggBig">😕 '+esc(g.error||'No songs found')+'</div>'; return; }
+  if(g.phase==='done'){
+    ggStopAudio();
+    const win=scores[0];
+    stage.innerHTML='<div class="ggPulse">🏆</div><div class="ggBig">'+(win?esc(win[0])+' wins!':'Game over')+'</div>'+
+      '<button class="btn pink" onclick="fetch(\'/guess/stop\',{method:\'POST\'})">Done</button>';
+    return;
+  }
+  if(g.phase==='reveal'){
+    ggStopAudio();
+    stage.innerHTML='<div class="ggBig">'+(g.winner?'✅ '+esc(g.winner)+' got it!':'⏱ Time!')+'</div>'+
+      '<div class="ggSec">It was</div><div class="ggBig" style="color:var(--amber2)">'+esc(g.answer||'?')+'</div>'+
+      '<button class="btn pink" id="ggNext">Next song →</button>';
+    const nb=document.getElementById('ggNext'); if(nb) nb.onclick=()=>fetch('/guess/next',{method:'POST'});
+    // auto-advance after a beat so the party keeps moving
+    if(ggPlayedRound===g.round){ ggPlayedRound=-1; setTimeout(()=>{ if(state.guess&&state.guess.phase==='reveal') fetch('/guess/next',{method:'POST'}); }, 6000); }
+    return;
+  }
+  // phase playing
+  stage.innerHTML='<div class="ggPulse">🔊</div><div class="ggBig">Name that song!</div>'+
+    '<div class="ggSec">'+g.snippet_sec+'s snippet · '+g.points+' pts</div>'+
+    '<div class="ggBarWrap"><div class="ggBar" id="ggBar"></div></div>'+
+    '<div class="ggSec" style="color:var(--muted);font-size:14px">type your guess on your phone</div>';
+  if(ggPlayedRound!==g.round || ggPlayedIdx!==g.snippet_idx){
+    ggPlayedRound=g.round; ggPlayedIdx=g.snippet_idx; ggPlaySnippet(g.snippet_sec);
+  }
+}
 $('scoringToggle').addEventListener('click',()=>{
   const currentlyOn=state.scoring_enabled!==false;
   fetch('/party/scoring',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -3837,6 +4213,7 @@ function subscribe(){
 }
 
 function render(){
+  renderGuess();
   if(dragging) return;  // a live drag rebuilds its own DOM order — don't fight it with an SSE-triggered re-render
   const upcoming=state.queue.filter(e=>e.status==='queued');
   $('upnext').innerHTML = upcoming.length
@@ -4475,6 +4852,16 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 .tpSub{margin-top:10px;font-size:15px;color:var(--muted)}
 .tpDismiss{margin-top:20px}
 #themeToggle{display:none}
+.ggCard{border:1px solid var(--amber2)!important}
+.gggHead{font-family:var(--display);font-weight:800;font-size:22px;color:var(--amber2)}
+.gggRound{font-family:var(--mono);font-size:13px;color:var(--muted);margin:2px 0 14px}
+.ggInput{width:100%;padding:14px;border-radius:12px;border:1px solid var(--edge);background:var(--well);color:var(--ink);font-size:17px}
+.gggMsg{margin-top:10px;font-size:14px;min-height:20px;text-align:center}
+.gggMsg.ok{color:var(--amber2);font-weight:700} .gggMsg.no{color:var(--pink)}
+.gggReveal{text-align:center;font-size:16px;line-height:1.5}
+.gggReveal b{color:var(--amber2);font-size:20px;display:block;margin-top:4px}
+.gggBoard{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:14px}
+.gggBoard span{font-family:var(--mono);font-size:12px;background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:4px 10px}
 </style>
 
 <svg style="display:none" aria-hidden="true">
@@ -4512,6 +4899,17 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
        what makes per-singer party scoring possible at all. -->
   <div class="turnPopup hidden" id="turnPopup">
     <div class="tpInner" id="tpInner"></div>
+  </div>
+  <div class="card ggCard hidden" id="ggGuestCard">
+    <div class="gggHead">🎧 Guess the Song</div>
+    <div class="gggRound" id="gggRound"></div>
+    <div id="gggPlay">
+      <input id="gggInput" class="ggInput" placeholder="Type the song name…" autocomplete="off" autocapitalize="off">
+      <button class="btn pink" id="gggSend" style="width:100%;margin-top:8px">Guess!</button>
+      <div class="gggMsg" id="gggMsg"></div>
+    </div>
+    <div class="gggReveal hidden" id="gggReveal"></div>
+    <div class="gggBoard" id="gggBoard"></div>
   </div>
   <div class="card turnCard hidden" id="turnCard">
     <div class="turnFlag">🎤 YOU'RE UP!</div>
@@ -4958,7 +5356,48 @@ function showTurnPopup(big, sub, ms){
   setTimeout(()=>$('turnPopup').classList.add('hidden'), ms);
 }
 function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function renderGuestGuess(){
+  const g=lastState.guess, card=document.getElementById('ggGuestCard');
+  if(!card) return;
+  if(!g||!g.active||g.phase==='building'){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const board=document.getElementById('gggBoard');
+  const scores=Object.entries(g.scores||{}).sort((a,b)=>b[1]-a[1]);
+  board.innerHTML=scores.map(([n,p],i)=>`<span>${i===0?'👑':''}${esc(n)} ${p}</span>`).join('');
+  const play=document.getElementById('gggPlay'), rev=document.getElementById('gggReveal');
+  const rnd=document.getElementById('gggRound');
+  if(g.phase==='playing'){
+    play.classList.remove('hidden'); rev.classList.add('hidden');
+    rnd.textContent='Round '+((g.round||0)+1)+' · '+g.snippet_sec+'s · '+g.points+' pts if you nail it now';
+    if(gggRoundSeen!==g.round){ gggRoundSeen=g.round; document.getElementById('gggInput').value='';
+      document.getElementById('gggMsg').textContent=''; document.getElementById('gggMsg').className='gggMsg'; }
+  } else if(g.phase==='reveal'){
+    play.classList.add('hidden'); rev.classList.remove('hidden');
+    rev.innerHTML=(g.winner?('✅ '+esc(g.winner)+' got it'):'⏱ Nobody got it')+'<b>'+esc(g.answer||'?')+'</b>';
+  } else if(g.phase==='done'){
+    play.classList.add('hidden'); rev.classList.remove('hidden');
+    rev.innerHTML='🏆 Game over'+(scores[0]?'<b>'+esc(scores[0][0])+' wins!</b>':'');
+    rnd.textContent='';
+  }
+}
+let gggRoundSeen=-1;
+async function sendGuess(){
+  const inp=document.getElementById('gggInput'), msg=document.getElementById('gggMsg');
+  const text=inp.value.trim(); if(!text) return;
+  try{
+    const r=await fetch('/guess/answer',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:myName||'Someone', device_id:DEVICE_ID, text})});
+    const d=await r.json();
+    if(d.correct){ msg.textContent='✅ +'+d.points+'!'; msg.className='gggMsg ok'; if(navigator.vibrate)navigator.vibrate(80); }
+    else if(d.state==='closed'){ msg.textContent='Round over'; msg.className='gggMsg'; }
+    else { msg.textContent='❌ not it — keep trying'; msg.className='gggMsg no'; inp.select(); }
+  }catch(e){ msg.textContent='Connection issue'; }
+}
+document.getElementById('gggSend').addEventListener('click', sendGuess);
+document.getElementById('gggInput').addEventListener('keydown',e=>{ if(e.key==='Enter') sendGuess(); });
+
 function checkTurn(){
+  renderGuestGuess();
   const now=lastState.queue.find(e=>e.entry_id===lastState.now_playing);
   const mine=now && myName && now.singers.includes(myName);
   // heads-up: my song is FIRST in the waiting queue -> "you're next"
