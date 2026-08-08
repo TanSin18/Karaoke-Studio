@@ -580,8 +580,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .histGroupBody{padding:6px}
   .histGroupBody .hrow{border-radius:6px}
   /* live pitch tuner */
-  .tuner{background:var(--well);border:1px solid var(--edge);border-radius:12px;padding:14px;margin-top:12px;text-align:center}
-  .tuner-note{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--dim);line-height:1;letter-spacing:.02em;transition:color .1s,text-shadow .1s}
+  .tuner{background:var(--well);border:1px solid var(--edge);border-radius:12px;margin-top:12px;
+    display:flex;align-items:stretch;height:112px;overflow:hidden}
+  .tuner canvas{flex:1;min-width:0;display:block;height:100%}
+  .tunerSide{flex:none;width:104px;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:4px;border-left:1px solid var(--edge);padding:0 10px}
+  .tuner-note{font-family:var(--mono);font-size:30px;font-weight:700;color:var(--dim);line-height:1;letter-spacing:.02em;transition:color .1s,text-shadow .1s}
   .tuner-note.good{color:var(--ok);text-shadow:var(--glow-ok)} .tuner-note.off{color:var(--amber);text-shadow:var(--glow-amber)}
   .tuner-scale{position:relative;height:26px;margin:10px auto 4px;max-width:340px;
     background:linear-gradient(90deg,rgba(248,113,113,.18),rgba(74,217,138,.22) 50%,rgba(248,113,113,.18));
@@ -589,7 +593,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .tuner-center{position:absolute;left:50%;top:0;bottom:0;width:2px;background:var(--ok);transform:translateX(-1px);opacity:.7}
   .tuner-needle{position:absolute;top:2px;bottom:2px;width:4px;left:50%;border-radius:2px;background:#fff;
     transform:translateX(-2px);transition:left .06s linear,background .1s}
-  .tuner-msg{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.04em}
+  .tuner-msg{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.03em;
+    text-align:center;line-height:1.4}
   /* live monitor volumes */
   .mons{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;
     background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
@@ -1021,12 +1026,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
         <!-- live pitch tuner: shows the note you're singing so you stay on track -->
         <div class="tuner" id="tuner" style="display:none">
-          <div class="tuner-note" id="tunerNote">—</div>
-          <div class="tuner-scale">
-            <div class="tuner-needle" id="tunerNeedle"></div>
-            <div class="tuner-center"></div>
+          <canvas id="tunerRibbon"></canvas>
+          <div class="tunerSide">
+            <div class="tuner-note" id="tunerNote">—</div>
+            <div class="tuner-msg" id="tunerMsg">sing a note…</div>
           </div>
-          <div class="tuner-msg" id="tunerMsg">sing a note…</div>
+          <div class="hiddenLegacy"><div id="tunerNeedle"></div></div>
         </div>
 
         <div class="hiddenLegacy"><div class="meter"><div class="lvl" id="mic"></div></div></div>
@@ -3519,8 +3524,14 @@ $('tunerToggle').addEventListener('change',()=>{ tunerOn=$('tunerToggle').checke
   // the live score bar runs off the same per-frame signal as the tuner
   // (updateTuner), so it has nothing to show whenever the tuner is off.
   $('liveScoreBar').classList.toggle('hidden', !(recording && tunerOn)); });
-function showTuner(on){ $('tuner').style.display=on?'':'none'; if(!on){ $('tunerNote').textContent='—';
-  $('tunerNote').className='tuner-note'; $('tunerNeedle').style.left='50%'; $('tunerMsg').textContent='sing a note…'; } }
+function showTuner(on){
+  // when the song has a full melody, the notes highway IS the pitch
+  // feedback — showing the ribbon underneath it would say the same thing
+  // twice in two visual languages
+  if(on && songMelody && !$('hwWrap').classList.contains('hidden')) on=false;
+  $('tuner').style.display=on?'':'none';
+  if(!on){ $('tunerNote').textContent='—'; $('tunerNote').className='tuner-note';
+    $('tunerMsg').textContent='sing a note…'; RIB.trail=[]; RIB.center=null; } }
 let tunerSmooth=null;
 
 // ---- pitch-accuracy scoring: gamifies the existing live tuner signal by
@@ -3550,20 +3561,85 @@ function scoreTier(accuracy){
   return {stars:1, label:'Everyone starts somewhere 🎤'};
 }
 
+// ---- live pitch ribbon: the last ~6s of your voice as a glowing trail
+// across a note grid (in-key notes bright, others faint). Replaces the old
+// needle — a trail shows STABILITY and DRIFT, which a needle can't.
+const RIB={trail:[], center:null, raf:0};
+function ribbonPush(midiFloat){
+  RIB.trail.push({t:performance.now()/1000, m:midiFloat});
+  if(RIB.trail.length>500) RIB.trail.shift();
+}
+function drawRibbon(){
+  RIB.raf=0;
+  const tu=$('tuner'); if(!tu||tu.style.display==='none') return;
+  const cv=$('tunerRibbon'), ctx=cv.getContext('2d');
+  const W=cv.clientWidth, H=cv.clientHeight, dpr=window.devicePixelRatio||1;
+  if(W===0){ RIB.raf=requestAnimationFrame(drawRibbon); return; }
+  if(cv.width!==W*dpr){ cv.width=W*dpr; cv.height=H*dpr; }
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+  const now=performance.now()/1000, SPAN=6;
+  const t2x=t=>W*(1-(now-t)/SPAN);
+  // adaptive vertical window: follow the singer's recent median, ±7 semis
+  const recent=RIB.trail.filter(p=>p.m!=null&&now-p.t<3).map(p=>p.m);
+  if(recent.length){
+    const med=[...recent].sort((a,b)=>a-b)[Math.floor(recent.length/2)];
+    RIB.center=RIB.center==null?med:RIB.center*0.95+med*0.05;
+  }
+  const c=RIB.center==null?60:RIB.center, lo=c-7, hi=c+7;
+  const m2y=m=>H-(m-lo)/(hi-lo)*H;
+  // note grid: in-key pitch classes bright, others whisper-faint
+  const iv=songKey?(songKey.scale==='minor'?[0,2,3,5,7,8,10]:[0,2,4,5,7,9,11]):null;
+  const root=songKey?((songKey.root+(musicKey||0))%12+12)%12:0;
+  ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.font='9px '+getComputedStyle(document.body).getPropertyValue('--mono');
+  for(let n=Math.ceil(lo);n<=Math.floor(hi);n++){
+    const pc=((n%12)+12)%12;
+    const inKey=iv?iv.includes(((pc-root)%12+12)%12):true;
+    const y=m2y(n);
+    ctx.strokeStyle=inKey?'rgba(255,255,255,.13)':'rgba(255,255,255,.04)';
+    ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    if(inKey){ ctx.fillStyle='rgba(255,255,255,.28)';
+      ctx.fillText(NOTE[pc]+(Math.floor(n/12)-1), 6, y-6); }
+  }
+  // the trail: green glow on in-key notes, amber between, gaps for silence
+  let prev=null;
+  for(const p of RIB.trail){
+    if(now-p.t>SPAN){ continue; }
+    if(p.m==null){ prev=null; continue; }
+    const x=t2x(p.t), y=m2y(Math.max(lo,Math.min(hi,p.m)));
+    if(prev && p.t-prev.t<0.12){
+      const pc=((Math.round(p.m)%12)+12)%12;
+      const inKey=iv?iv.includes(((pc-root)%12+12)%12):true;
+      const near=Math.abs(p.m-Math.round(p.m))<=0.25;
+      const a=Math.max(0.12, 1-(now-p.t)/SPAN);
+      ctx.strokeStyle=(inKey&&near)?'rgba(30,215,96,'+a+')':(near?'rgba(240,200,80,'+a+')':'rgba(240,90,120,'+(a*0.9)+')');
+      ctx.lineWidth=2.5; ctx.lineCap='round';
+      ctx.shadowColor=(inKey&&near)?'rgba(30,215,96,.6)':'transparent';
+      ctx.shadowBlur=(inKey&&near)?7:0;
+      ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
+      ctx.shadowBlur=0;
+    }
+    prev={t:p.t,x,y};
+  }
+  if(prev){
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(prev.x,prev.y,3.5,0,7); ctx.fill();
+  }
+  RIB.raf=requestAnimationFrame(drawRibbon);
+}
+setInterval(()=>{ const tu=$('tuner');
+  if(tu&&tu.style.display!=='none'&&!RIB.raf) RIB.raf=requestAnimationFrame(drawRibbon); },400);
+
 function updateTuner(note, freq){
   if(!note){ $('tunerNote').textContent='—'; $('tunerNote').className='tuner-note';
-    $('tunerMsg').textContent='listening…'; $('tunerNeedle').style.background='#fff';
+    $('tunerMsg').textContent='listening…';
+    ribbonPush(null);
     updateLiveScoreBar(null); return; }
-  // smooth the cents a bit so the needle doesn't jitter
   tunerSmooth = tunerSmooth==null? note.cents : Math.round(tunerSmooth*0.5+note.cents*0.5);
   const cents=tunerSmooth;
   $('tunerNote').textContent=note.name+note.octave;
   const inTune=Math.abs(cents)<=12;
   $('tunerNote').className='tuner-note '+(inTune?'good':'off');
-  // needle: map -50..+50 cents to 5%..95%
-  const pos=Math.max(5,Math.min(95, 50 + cents));
-  $('tunerNeedle').style.left=pos+'%';
-  $('tunerNeedle').style.background=inTune?'var(--ok)':'var(--amber)';
+  ribbonPush(note.midi+note.cents/100);
   $('tunerMsg').textContent = inTune? 'on pitch ✓'
     : (cents>0? 'a little sharp — ease down' : 'a little flat — lift up');
 
