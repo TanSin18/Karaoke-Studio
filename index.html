@@ -816,6 +816,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <button id="searchBtn" class="btn amber"><svg class="icon"><use href="#i-search"/></svg> Search</button>
       </div>
       <label class="punch mt"><input type="checkbox" id="karaokeSuffix" checked> <svg class="icon"><use href="#i-mic"/></svg> Add "karaoke" to search (helps surface lyrics videos)</label>
+      <label class="punch mt" title="AI-separates the song into instrumental + vocals: the instrumental becomes your karaoke track, so ANY song works — not just karaoke versions. Adds ~1-2 minutes to loading.">
+        <input type="checkbox" id="stripVocals"> ✂️ Remove vocals — turn any song into karaoke (AI, ~1&#8209;2&nbsp;min extra)</label>
       <div class="status mt" id="searchStatus"></div>
       <div class="results stagger-in" id="results"></div>
     </div>
@@ -2669,7 +2671,8 @@ async function loadTrack(explicitUrl){
   $('loadbar').style.display='block'; $('loadstatus').textContent='Downloading backing track…';
   let r;
   try{ r=await fetch('/prepare',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({url, profile:activeProfile})}); }
+    body:JSON.stringify({url, profile:activeProfile,
+      strip_vocals:$('stripVocals')&&$('stripVocals').checked})}); }
   catch(e){ return failLoad('Could not reach the local server.'); }
   const d=await r.json();
   if(!r.ok) return failLoad(d.error||'Load failed.');
@@ -2710,7 +2713,7 @@ async function checkLoad(){
   let j; try{ j=await(await fetch('/status?id='+SID)).json(); }catch(e){return;}
   if(typeof j.pct==='number') $('loadfill').style.width=j.pct+'%';
   $('loadstatus').textContent={queued:'Queued…',downloading:'Downloading backing track… '+(j.pct||0).toFixed(0)+'%',
-    preparing:'Preparing audio…',ready:'Ready'}[j.stage]||'Working…';
+    preparing:'Preparing audio…',ready:'Ready'}[j.stage]||('✂️ '+(j.stage||'Working…'));
   if(j.status==='ready'){ clearInterval(poll); poll=null; onReady(j); }
   else if(j.status==='error'){ clearInterval(poll); poll=null; failLoad(j.error||'Load failed.'); }
 }
