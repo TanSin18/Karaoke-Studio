@@ -227,6 +227,15 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     font-family:var(--mono);font-size:13px;font-weight:700;color:#fff;letter-spacing:.02em;
     box-shadow:0 4px 18px rgba(0,0,0,.4);transition:opacity .2s}
   .lsbDot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none;transition:background .1s,box-shadow .1s}
+  .lsbCombo{font-family:var(--mono);font-weight:700;font-size:12px;color:var(--dim);
+    padding:1px 7px;border-radius:9px;border:1px solid transparent;transition:color .15s,border-color .15s}
+  .lsbCombo.m2{color:var(--ink);border-color:var(--edge)}
+  .lsbCombo.m3{color:var(--amber2);border-color:var(--amber)}
+  .lsbCombo.m4{color:#000;background:var(--amber2);border-color:var(--amber2)}
+  .lsbCombo.pop{animation:lsbPop .45s cubic-bezier(.2,2.2,.4,1)}
+  @keyframes lsbPop{0%{transform:scale(1)}40%{transform:scale(1.55)}100%{transform:scale(1)}}
+  .lsbPts{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:44px;text-align:right}
+  .liveScoreBar.hot{border-color:var(--amber2);box-shadow:0 0 0 1px rgba(30,215,96,.5),0 4px 24px rgba(30,215,96,.35)}
   .lsbDot.good{background:var(--ok);box-shadow:0 0 8px var(--ok)}
   .lsbDot.off{background:var(--amber);box-shadow:0 0 8px var(--amber)}
   .stageFsBtn{position:absolute;top:10px;right:10px;z-index:6;background:rgba(10,11,14,.72);
@@ -577,6 +586,19 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .choice-msg{font-family:var(--mono);font-size:12px;color:var(--amber)}
   .scoreCard{margin-top:12px;padding:14px;border-radius:12px;text-align:center;
     background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--pink2);box-shadow:var(--glow-pink)}
+  .scoreRank{font-family:var(--display);font-weight:800;font-size:64px;line-height:1;
+    letter-spacing:.02em;margin-bottom:2px}
+  .scoreRank[data-rank="S"]{color:var(--amber2);text-shadow:0 0 24px rgba(30,215,96,.55)}
+  .scoreRank[data-rank="A"]{color:var(--ink)}
+  .scoreRank[data-rank="B"]{color:var(--muted)}
+  .scoreRank[data-rank="C"]{color:var(--muted)}
+  .scoreRank[data-rank="D"]{color:var(--dim)}
+  .scoreRank.reveal{animation:rankPop .6s cubic-bezier(.2,2.0,.35,1)}
+  @keyframes rankPop{0%{transform:scale(2.6);opacity:0}55%{opacity:1}100%{transform:scale(1);opacity:1}}
+  @media (prefers-reduced-motion: reduce){
+    .scoreRank.reveal,.lsbCombo.pop{animation:none}
+  }
+  .scorePoints{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--ink);margin-bottom:6px}
   .scoreStars{font-size:24px;letter-spacing:5px}
   .scoreLabel{font-weight:700;font-size:14.5px;margin-top:4px;color:var(--ink)}
   .scoreDetail{color:var(--muted);font-size:11.5px;margin-top:4px;font-family:var(--mono)}
@@ -874,6 +896,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
                control and this button fullscreens stageWrap instead. -->
           <div class="liveScoreBar hidden" id="liveScoreBar">
             <span class="lsbDot" id="lsbDot"></span><span id="lsbPct">--%</span>
+            <span class="lsbCombo m1" id="lsbCombo">×1</span>
+            <span class="lsbPts" id="lsbPts">0</span>
           </div>
           <button class="stageFsBtn" id="stageFsBtn" type="button" title="Fullscreen (keeps the live score visible)"><svg class="icon"><use href="#i-expand"/></svg></button>
         </div>
@@ -984,10 +1008,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
              (scoreNote below) rather than let "accuracy" imply more than it
              measures. -->
         <div class="scoreCard hidden" id="scoreCard">
+          <div class="scoreRank" id="scoreRank">S</div>
+          <div class="scorePoints" id="scorePoints">0</div>
           <div class="scoreStars" id="scoreStars"></div>
           <div class="scoreLabel" id="scoreLabel"></div>
           <div class="scoreDetail" id="scoreDetail"></div>
-          <div class="scoreNote" id="scoreNote">Measures pitch steadiness — how cleanly you land on notes — not whether they match the song's melody.</div>
+          <div class="scoreNote" id="scoreNote">Pitch in the song's key × combo multipliers — hold your best runs to build ×2, ×3, ×4.</div>
         </div>
 
         <!-- after-stop choice: continue from here, or keep what I sang. A plain
@@ -3239,10 +3265,19 @@ let tunerSmooth=null;
 // pass. Reset in startRec(), accumulated here on every in-tune-or-not
 // judgment the tuner already makes, finalized in stopRec(). ---------------
 let scoreFrames=0, scoreInTune=0, scoreStreak=0, scoreBestStreak=0, scorePitchHist=[];
-function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scoreBestStreak=0; scorePitchHist=[]; }
+let scorePoints=0, scoreMult=1, scoreBestMult=1, scoreRecent=[], scoreOffRun=0;
+function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scoreBestStreak=0;
+  scorePitchHist=[]; scorePoints=0; scoreMult=1; scoreBestMult=1; scoreRecent=[]; scoreOffRun=0; }
+// combo multiplier from the CURRENT on-pitch run: hold pitch 2s -> x2,
+// 5s -> x3, 10s -> x4. Dropping off pitch resets to x1 — the thrill is
+// keeping the run alive.
+function comboMult(streak){ return streak>=600?4 : streak>=300?3 : streak>=120?2 : 1; }
+function scoreRank(acc){ return acc>=90?'S' : acc>=78?'A' : acc>=64?'B' : acc>=50?'C' : 'D'; }
 function computeScore(){
   if(scoreFrames<60) return null;  // under ~1s of confidently-voiced audio: nothing to judge
-  return { accuracy: Math.round(100*scoreInTune/scoreFrames), bestStreak: scoreBestStreak, frames: scoreFrames };
+  const accuracy=Math.round(100*scoreInTune/scoreFrames);
+  return { accuracy, bestStreak: scoreBestStreak, frames: scoreFrames,
+           points: Math.round(scorePoints), bestMult: scoreBestMult, rank: scoreRank(accuracy) };
 }
 function scoreTier(accuracy){
   if(accuracy>=90) return {stars:5, label:'Star Power! 🌟'};
@@ -3308,9 +3343,19 @@ function updateTuner(note, freq){
     const fs = err<=lo ? 1 : (err>=wideMax ? 0 : (wideMax-err)/(wideMax-lo));
     scoreFrames++; scoreInTune+=fs;
     const onPitch=fs>=0.75;
-    if(onPitch){ scoreStreak++; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
-    else{ scoreStreak=0; }
-    updateLiveScoreBar(onPitch);
+    // 300ms grace before a combo breaks: the median window straddles two
+    // notes at every legitimate note change (~200ms of "off" while the
+    // buffer refills), and without grace no human could ever hold a run
+    // through a melody — x3/x4 were unreachable. Only genuinely falling
+    // off pitch (>18 consecutive bad frames) resets the run.
+    if(onPitch){ scoreStreak++; scoreOffRun=0; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
+    else if(++scoreOffRun>18){ scoreStreak=0; }
+    const prevMult=scoreMult;
+    scoreMult=comboMult(scoreStreak);
+    if(scoreMult>scoreBestMult) scoreBestMult=scoreMult;
+    scorePoints+=fs*scoreMult;                    // points flow only while singing well
+    scoreRecent.push(fs); if(scoreRecent.length>240) scoreRecent.shift();
+    updateLiveScoreBar(onPitch, scoreMult>prevMult);
   }
 }
 
@@ -3318,11 +3363,22 @@ function updateTuner(note, freq){
 // number the end-of-take score card shows) + a dot for THIS instant's
 // in-tune/off/no-signal state. Deliberately just those two things — see the
 // scoreCard comment elsewhere on why this measures steadiness, not melody.
-function updateLiveScoreBar(inTuneNow){
-  const dot=$('lsbDot'), pct=$('lsbPct');
+function updateLiveScoreBar(inTuneNow, multUp){
+  const dot=$('lsbDot'), pct=$('lsbPct'), combo=$('lsbCombo'), pts=$('lsbPts'), bar=$('liveScoreBar');
   if(!dot||!pct) return;
   dot.className='lsbDot'+(inTuneNow==null?'':(inTuneNow?' good':' off'));
-  pct.textContent = scoreFrames>0 ? Math.round(100*scoreInTune/scoreFrames)+'%' : '--%';
+  // FORM: rolling last ~4s, not the whole-take average — a cumulative mean
+  // barely moves after a minute, which reads as "the score ignores me".
+  // This number visibly rises and falls with how you're singing RIGHT NOW.
+  const form=scoreRecent.length? Math.round(100*scoreRecent.reduce((a,b)=>a+b,0)/scoreRecent.length) : null;
+  pct.textContent = form==null ? '--%' : form+'%';
+  if(combo){
+    combo.textContent='×'+scoreMult;
+    combo.className='lsbCombo m'+scoreMult;
+    if(multUp){ combo.classList.remove('pop'); void combo.offsetWidth; combo.classList.add('pop'); }
+  }
+  if(pts) pts.textContent=Math.round(scorePoints).toLocaleString();
+  if(bar) bar.classList.toggle('hot', scoreMult>=3);
 }
 
 // ---- live monitor volume sliders ------------------------------------------
@@ -3523,11 +3579,24 @@ function offerContinueOrKeep(){
 function renderScoreCard(score){
   if(!score){ $('scoreCard').classList.add('hidden'); return; }
   const tier=scoreTier(score.accuracy);
+  const rank=score.rank||scoreRank(score.accuracy);
+  const rk=$('scoreRank');
+  rk.textContent=rank; rk.dataset.rank=rank;
+  rk.classList.remove('reveal'); void rk.offsetWidth; rk.classList.add('reveal');
   $('scoreStars').textContent='⭐'.repeat(tier.stars)+'☆'.repeat(5-tier.stars);
   $('scoreLabel').textContent=tier.label;
   const streakSec=(score.bestStreak/60).toFixed(1);
-  $('scoreDetail').textContent=score.accuracy+'% on pitch · best streak ~'+streakSec+'s';
+  $('scoreDetail').textContent=score.accuracy+'% in key · best combo ×'+(score.bestMult||1)+
+    ' · longest run ~'+streakSec+'s';
   $('scoreCard').classList.remove('hidden');
+  // points count up over ~1.2s — the reveal IS the reward
+  const el=$('scorePoints'), target=score.points||0, t0=performance.now();
+  cancelAnimationFrame(window._scoreCountRaf||0);
+  (function tick(t){
+    const k=Math.min(1,(t-t0)/1200), eased=1-Math.pow(1-k,3);
+    el.textContent=Math.round(target*eased).toLocaleString()+' pts';
+    if(k<1) window._scoreCountRaf=requestAnimationFrame(tick);
+  })(t0);
 }
 $('continueBtn').addEventListener('click',()=>{
   pendingContinueAt=window._recEndMusicPos||0;   // next take begins where this ended
