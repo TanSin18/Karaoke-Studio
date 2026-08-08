@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Karaoke Studio — local web app.
+MicDrop — local karaoke studio web app.
 
 Flow:
   1. Paste a YouTube URL. Backend downloads the pristine backing audio
@@ -2386,7 +2386,7 @@ class Handler(BaseHTTPRequestHandler):
 
 PHONE_HTML = r"""<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Karaoke Studio — Phone Camera</title>
+<title>MicDrop — Phone Camera</title>
 <style>
   html,body{height:100%;margin:0;background:#0b0b10;color:#eee;
     font:15px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;}
@@ -3609,7 +3609,7 @@ def main():
             "It must sit next to studio.py — check your install/bundle."
         )
     srv = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
-    print(f"\n  🎤 Karaoke Studio  →  http://{HOST}:{PORT}\n")
+    print(f"\n  🎤 MicDrop  →  http://{HOST}:{PORT}\n")
 
     global PHONE_HTTPS_READY
     lan = _lan_ip()
