@@ -1677,7 +1677,32 @@ def make_qr_png(data):
     return r.stdout
 
 
+import hmac as _hmac, secrets as _secrets
 _VALID_ID = re.compile(r"[A-Za-z0-9_-]{4,64}")
+
+def _owner_key_path():
+    return os.path.join(os.path.dirname(SESS_DIR), "owner_key.txt")
+
+def _owner_secret():
+    """A persistent private key for THIS host. Personal data (profiles,
+    history, library) is visible only to the owner — the host's own browser,
+    or a device that has entered this key. Created once, kept next to the
+    sessions dir."""
+    p = _owner_key_path()
+    try:
+        with open(p) as fh:
+            k = fh.read().strip()
+            if k:
+                return k
+    except OSError:
+        pass
+    k = _secrets.token_urlsafe(9)          # ~12 friendly chars
+    try:
+        with open(p, "w") as fh:
+            fh.write(k)
+    except OSError:
+        pass
+    return k
 _ENV_HOSTS = {h.strip().lower() for h in os.environ.get("MICDROP_ALLOWED_HOSTS","").split(",") if h.strip()}
 
 def _valid_id(v):
@@ -1712,6 +1737,20 @@ def _host_allowed(host):
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
+
+    def _direct_local(self):
+        # the host's OWN browser: a loopback connection with NO proxy header.
+        # A tailscale/tunnel guest is ALSO forwarded from loopback, but the
+        # tunnel stamps X-Forwarded-For — that's how we tell them apart, so
+        # a remote friend can never be mistaken for the host.
+        ra = (self.client_address[0] if self.client_address else "")
+        return ra in ("127.0.0.1", "::1") and not self.headers.get("X-Forwarded-For")
+
+    def _is_owner(self):
+        if self._direct_local():
+            return True
+        key = self.headers.get("X-Owner-Key", "")
+        return bool(key) and _hmac.compare_digest(key, _owner_secret())
 
     def _guard(self, p):
         """One gate for every request: block foreign hosts (DNS-rebind) and
@@ -1892,6 +1931,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/sessions":
+            if not self._is_owner():
+                self._json(200, {"sessions": []}); return
             q = parse_qs(p.query)
             profile = (q.get("profile") or [""])[0]
             try:
@@ -1902,10 +1943,21 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/profiles":
+            if not self._is_owner():
+                self._json(200, {"profiles": []}); return
             self._json(200, {"profiles": list_profiles()})
             return
 
+        if p.path == "/owner/status":
+            # the host's own browser learns the key (to pair a phone); guests
+            # only learn whether they're currently unlocked
+            self._json(200, {"owner": self._is_owner(),
+                             "key": _owner_secret() if self._direct_local() else None})
+            return
+
         if p.path == "/profile/library":
+            if not self._is_owner():
+                self._json(200, {"library": []}); return
             name = _safe_profile_name((parse_qs(p.query).get("name") or [""])[0])
             if not name:
                 self._json(400, {"error": "Missing profile name."})
@@ -2375,6 +2427,18 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=do_prepare, args=(jid, url, profile, strip_vocals), daemon=True).start()
             self._json(200, {"id": jid})
             return
+
+        if p.path == "/owner/unlock":
+            body = self._read_body()
+            key = (body.get("key") or "").strip()
+            ok = bool(key) and _hmac.compare_digest(key, _owner_secret())
+            self._json(200 if ok else 403, {"ok": ok})
+            return
+
+        if p.path.startswith("/profile/") or p.path == "/sessions_delete":
+            if not self._is_owner():
+                self._json(403, {"error": "not the owner of this device"})
+                return
 
         if p.path == "/profile/library/add":
             body = self._read_body()
