@@ -139,7 +139,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     display:inline-flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.02em;
     transition:filter .12s,box-shadow .12s,transform .08s,color .12s}
   .sessionTab:hover{filter:brightness(1.15);transform:translateY(-1px)}
-  .sessionTab.active{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#fff;
+  .sessionTab.active{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#000;
     border-color:var(--pink2);box-shadow:var(--glow-pink)}
 
   .card h2{margin:0 0 12px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;
@@ -559,7 +559,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .looprow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .tp-btn{padding:9px 16px;border:1px solid var(--edge);border-radius:8px;cursor:pointer;font-weight:650;font-size:13px;
     background:var(--metal);color:var(--ink)}
-  .tp-btn.on{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#fff;border-color:var(--pink2)}
+  .tp-btn.on{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#000;border-color:var(--pink2)}
   .tp-btn:hover{filter:brightness(1.15)}
   .tp-note{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.03em}
   .hint{color:var(--dim);font-size:11.5px;line-height:1.6;margin-top:10px;font-family:var(--mono);letter-spacing:.02em}
@@ -3020,7 +3020,11 @@ function freqToNote(f){
 function autoCorrelate(buf, sr){
   let rms=0; for(let i=0;i<buf.length;i++) rms+=buf[i]*buf[i];
   rms=Math.sqrt(rms/buf.length);
-  if(rms<0.008) return -1;   // too quiet to be a note
+  // 0.008 (-42dBFS) let steady background tones — fans, AC hum, room tone —
+  // through as "notes"; a machine hum sits dead-center on a pitch far more
+  // consistently than any human voice, which is how SILENCE could out-score
+  // actual singing. -34dBFS demands a real voice at the mic.
+  if(rms<0.02) return -1;
   let r1=0, r2=buf.length-1, thres=0.2;
   for(let i=0;i<buf.length/2;i++){ if(Math.abs(buf[i])<thres){r1=i;break;} }
   for(let i=1;i<buf.length/2;i++){ if(Math.abs(buf[buf.length-i])<thres){r2=buf.length-i;break;} }
@@ -3031,13 +3035,19 @@ function autoCorrelate(buf, sr){
   let maxv=-1, maxp=-1;
   for(let i=d;i<n;i++){ if(c[i]>maxv){maxv=c[i]; maxp=i;} }
   let T0=maxp;
+  // periodicity confidence: voiced singing correlates strongly with itself
+  // (peak well above half the zero-lag energy); breath, consonants and
+  // broadband noise don't. Without this gate every noisy frame that
+  // happened to peak SOMEWHERE got scored as a note.
+  if(maxv < 0.45*c[0]) return -1;
   // parabolic interpolation for sub-sample accuracy
   if(T0>0 && T0<n-1){
     const x1=c[T0-1], x2=c[T0], x3=c[T0+1];
     const a=(x1+x3-2*x2)/2, b=(x3-x1)/2;
     if(a) T0=T0-b/(2*a);
   }
-  return sr/T0;
+  const f=sr/T0;
+  return (f>=70 && f<=1200) ? f : -1;   // human singing range only
 }
 
 let pitchBuf=null;
@@ -3184,7 +3194,7 @@ let tunerSmooth=null;
 let scoreFrames=0, scoreInTune=0, scoreStreak=0, scoreBestStreak=0;
 function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scoreBestStreak=0; }
 function computeScore(){
-  if(scoreFrames<10) return null;  // too little signal (mic issue, or barely sang) to judge fairly
+  if(scoreFrames<60) return null;  // under ~1s of confidently-voiced audio: nothing to judge
   return { accuracy: Math.round(100*scoreInTune/scoreFrames), bestStreak: scoreBestStreak, frames: scoreFrames };
 }
 function scoreTier(accuracy){
@@ -3213,9 +3223,16 @@ function updateTuner(note, freq){
     : (cents>0? 'a little sharp — ease down' : 'a little flat — lift up');
 
   scoreFrames++;
-  if(inTune){ scoreInTune++; scoreStreak++; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
+  // Scoring is deliberately looser than the needle display: ±12 cents is
+  // tuner precision, not singing precision — healthy vibrato swings ±30-60
+  // cents around a perfectly-centered note, so judging frames at ±12 caps
+  // even excellent singing near 50%. Full credit inside 35 cents, half
+  // credit out to 55 (vibrato edges), nothing beyond.
+  const scoredIn = Math.abs(cents)<=35;
+  if(scoredIn){ scoreInTune++; scoreStreak++; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
+  else if(Math.abs(cents)<=55){ scoreInTune+=0.5; scoreStreak=0; }
   else{ scoreStreak=0; }
-  updateLiveScoreBar(inTune);
+  updateLiveScoreBar(scoredIn);
 }
 
 // live "island" bar: cumulative %-so-far (scoreInTune/scoreFrames, same
