@@ -868,8 +868,45 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     .tuner{height:104px}
     .tunerSide{width:84px}
     .hwWrap{height:104px}
-    .appNav{gap:4px}
-    .appNav .appTab{padding:7px 10px;font-size:12.5px}
+    /* --- app-like arrangement --- */
+    .wrap{padding:8px 10px calc(76px + env(safe-area-inset-bottom))}
+    .logo{font-size:19px}
+    /* Home/Library/History become a fixed bottom tab bar — thumb turf */
+    .appNav{position:fixed;left:0;right:0;bottom:0;z-index:80;margin:0;
+      display:grid;grid-template-columns:repeat(3,1fr);gap:0;
+      background:rgba(16,16,16,.92);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+      border-top:1px solid var(--edge);border-radius:0;
+      padding:6px 10px calc(6px + env(safe-area-inset-bottom))}
+    .appNav .appTab{flex-direction:column;gap:3px;justify-content:center;align-items:center;
+      padding:6px 4px;font-size:10.5px;border:none;background:transparent;border-radius:10px}
+    .appNav .appTab .icon{width:19px;height:19px}
+    .appNav .appTab.active{background:transparent;color:var(--amber2)}
+    .appNav .appTab.active .icon{filter:drop-shadow(0 0 6px rgba(30,215,96,.6))}
+    /* compact one-row banner */
+    #nowPlayingBar{margin-bottom:10px;padding:8px 10px}
+    #npThumb{width:42px;height:28px;border-radius:6px}
+    .npTitle{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .npSub{font-size:9.5px}
+    #npChangeBtn .icon{margin:0}
+    #npChangeBtn{padding:7px 9px;font-size:0;gap:0}       /* icon-only */
+    #npChangeBtn .icon{width:15px;height:15px}
+    /* session tabs: one swipeable row of pills */
+    .sessionNav{display:flex;flex-wrap:nowrap;gap:6px;padding:2px}
+    .sessionTab{flex:0 0 auto;padding:9px 14px;font-size:12.5px;border-radius:999px}
+    /* header cluster tightens; party goes icon-only */
+    #partyLink{font-size:0;gap:0;padding:8px 10px}
+    #partyLink .icon{width:16px;height:16px}
+    #profileBtn{padding:7px 10px}
+    .card{padding:12px;border-radius:14px}
+    .card.step{padding:12px 10px}
+    h2{font-size:15px}
+    /* single-row header: bulbs and the profile name yield the space */
+    .logo .marquee{display:none}
+    #profileNameLabel{display:none}
+    #profileBtn .icon{margin:0}
+    /* the account popover pins inside the viewport */
+    .profileMenu{position:fixed!important;left:10px!important;right:10px!important;
+      top:60px!important;width:auto!important;max-width:none!important}
   }
 </style>
 
@@ -2921,6 +2958,19 @@ function switchAppPage(page){
   document.querySelectorAll('.appTab').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
 }
 document.querySelectorAll('.appTab').forEach(b=>b.addEventListener('click',()=>switchAppPage(b.dataset.page)));
+// On phones the nav is a fixed bottom tab bar — but position:fixed anchors
+// to the header, whose backdrop-filter makes it a containing block. Moving
+// the element to <body> (handlers ride along) frees it to pin to the
+// viewport; back into the header on desktop.
+(function(){
+  const nav=$('appNav'), home=nav.parentElement, marker=nav.nextElementSibling;
+  function place(){
+    if(matchMedia('(max-width:700px)').matches){ document.body.appendChild(nav); }
+    else if(nav.parentElement!==home){ home.insertBefore(nav, marker); }
+  }
+  place();
+  matchMedia('(max-width:700px)').addEventListener('change', place);
+})();
 
 let VIDEO_ID=null;
 // ---- session mode: once a song is loaded, stop competing for space with
