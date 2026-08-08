@@ -972,6 +972,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <div class="lyrNow" id="lyrNow">&nbsp;</div>
           <div class="lyrNext" id="lyrNext">&nbsp;</div>
           <div class="lyrNudge">
+            <button class="btn small ghost" id="lyrSyncNow"
+              title="Tap this the moment the NEXT line should start being sung — snaps the whole lyric timeline to that instant">⏱ line starts now</button>
             <button class="btn small ghost" id="lyrEarlier" title="Lyrics appear 0.5s earlier">◀</button>
             <span id="lyrOffV">0.0s</span>
             <button class="btn small ghost" id="lyrLater" title="Lyrics appear 0.5s later">▶</button>
@@ -2842,13 +2844,18 @@ $('npChangeBtn').addEventListener('click',()=>{
 });
 
 let songKey=null;   // {root:0-11, scale:'major'|'minor'} — detected server-side from the backing
-let songLyrics=null, lyricsOffset=0, lyricsIdx=-1;
+let songLyrics=null, lyricsOffset=0, lyricsIdx=-1, lyrAuto=0, lyrManual=0;
 let lyricsPollTimer=null;
+function lyrApplyOffset(){
+  lyricsOffset=lyrAuto+lyrManual;
+  $('lyrOffV').textContent=(lyricsOffset>=0?'+':'')+lyricsOffset.toFixed(1)+'s';
+  lyricsIdx=-2;
+}
 function loadLyrics(){
-  songLyrics=null; lyricsIdx=-1;
+  songLyrics=null; lyricsIdx=-1; lyrAuto=0;
   clearTimeout(lyricsPollTimer);
-  try{ lyricsOffset=+(localStorage.getItem('kstudio.lyrOff.'+SID)||0); }catch(e){ lyricsOffset=0; }
-  $('lyrOffV').textContent=lyricsOffset.toFixed(1)+'s';
+  try{ lyrManual=+(localStorage.getItem('kstudio.lyrOff.'+SID)||0); }catch(e){ lyrManual=0; }
+  lyrApplyOffset();
   const sid=SID;
   (function tryFetch(attempt){
     fetch('/lyrics?id='+sid).then(r=>r.json()).then(d=>{
@@ -2863,7 +2870,8 @@ function loadLyrics(){
         return;
       }
       songLyrics=(d.lyrics&&d.lyrics.length)?d.lyrics:null;
-      lyricsIdx=-2;
+      lyrAuto=+(d.auto_offset||0);
+      lyrApplyOffset();
       $('lyricsBar').classList.toggle('hidden', !songLyrics);
       fitStage();
     }).catch(()=>{});
@@ -2882,11 +2890,24 @@ setInterval(()=>{
   }
 }, 250);
 function nudgeLyrics(d){
-  lyricsOffset=+(lyricsOffset+d).toFixed(1);
-  try{ localStorage.setItem('kstudio.lyrOff.'+SID, lyricsOffset); }catch(e){}
-  $('lyrOffV').textContent=lyricsOffset.toFixed(1)+'s';
-  lyricsIdx=-2;   // force refresh
+  lyrManual=+(lyrManual+d).toFixed(2);
+  try{ localStorage.setItem('kstudio.lyrOff.'+SID, lyrManual); }catch(e){}
+  lyrApplyOffset();
 }
+// one-tap sync: the user taps at the instant the NEXT lyric line should
+// begin — snap the whole timeline so that line fires right now. Far faster
+// than hammering ±0.5s when a karaoke arrangement shifts everything by
+// 10-20 seconds.
+$('lyrSyncNow').addEventListener('click',()=>{
+  if(!songLyrics||!backingAudio) return;
+  const t=(backingAudio.currentTime||0)+lyricsOffset;
+  let next=songLyrics.find(l=>l.t>t) || songLyrics[0];
+  lyrManual=+(next.t-(backingAudio.currentTime||0)-lyrAuto).toFixed(2);
+  try{ localStorage.setItem('kstudio.lyrOff.'+SID, lyrManual); }catch(e){}
+  lyrApplyOffset();
+  const b=$('lyrSyncNow'); b.textContent='✓ synced'; b.disabled=true;
+  setTimeout(()=>{ b.textContent='⏱ line starts now'; b.disabled=false; }, 1500);
+});
 document.addEventListener('DOMContentLoaded',()=>{});
 $('lyrEarlier').addEventListener('click',()=>nudgeLyrics(0.5));
 $('lyrLater').addEventListener('click',()=>nudgeLyrics(-0.5));
