@@ -153,9 +153,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   /* Spotify's signature interaction: rows brighten on hover. One rule for
      every list row in the app (takes, search results, library, history) —
      motion/life without a single new animation. */
-  .takerow,.rcard,.libRow,.hrow{transition:background .15s,border-color .15s}
-  .takerow:hover,.rcard:hover,.libRow:hover,.hrow:hover{background:#232323;border-color:#3e3e3e}
-  :root[data-theme="light"] .takerow:hover,:root[data-theme="light"] .rcard:hover,
+  .takerow,.libRow,.hrow{transition:background .15s,border-color .15s}
+  .takerow:hover,.libRow:hover,.hrow:hover{background:#232323;border-color:#3e3e3e}
+  :root[data-theme="light"] .takerow:hover,
   :root[data-theme="light"] .libRow:hover,:root[data-theme="light"] .hrow:hover{background:#ededed;border-color:#d0d0d0}
   .npRow{display:flex;align-items:center;gap:14px}
   .npRow img{width:80px;height:45px;object-fit:cover;border-radius:8px;flex:none;background:var(--well)}
@@ -482,17 +482,18 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     transition:box-shadow .15s,color .15s,border-color .15s}
   .tab.on{background:var(--metal);color:var(--amber);border-color:var(--amber2);
     text-shadow:var(--glow-amber)}
-  .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:14px}
-  .rcard{display:flex;flex-direction:column;background:var(--well);border:1px solid var(--edge);border-radius:10px;
-    overflow:hidden;cursor:pointer;transition:border-color .12s,transform .12s}
-  .rcard:hover{border-color:var(--amber2);transform:translateY(-2px)}
-  .rthumb{position:relative;width:100%;aspect-ratio:16/9;background:var(--well);object-fit:cover;display:block}
-  .rdur{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.82);color:#fff;font-family:var(--mono);
-    font-size:10px;padding:2px 5px;border-radius:4px}
-  .rmeta{padding:9px 10px}
-  .rtitle{font-size:12.5px;line-height:1.35;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;
+  .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:14px}
+  .rcard{display:flex;flex-direction:column;background:transparent;border:none;border-radius:12px;
+    overflow:hidden;cursor:pointer;padding:8px;transition:background .15s}
+  .rcard:hover{background:var(--panel2);transform:none}
+  .rthumb{position:relative;width:100%;aspect-ratio:16/9;background:var(--well);object-fit:cover;display:block;
+    border-radius:8px}
+  .rdur{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.78);color:#fff;font-family:var(--mono);
+    font-size:10px;padding:2px 6px;border-radius:10px;backdrop-filter:blur(4px)}
+  .rmeta{padding:8px 2px 2px}
+  .rtitle{font-size:13px;font-weight:500;line-height:1.35;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;
     -webkit-box-orient:vertical;overflow:hidden}
-  .rchan{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:5px;letter-spacing:.03em;
+  .rchan{font-size:11px;color:var(--muted);margin-top:4px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rcard.loading{opacity:.5;pointer-events:none}
   .rcard{position:relative}
