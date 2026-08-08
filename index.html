@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/theme.css">
 <script>
 // applied before first paint to avoid a flash of the wrong theme
-try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
+try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.theme') || 'dark'; }catch(e){ document.documentElement.dataset.theme='dark'; }
 </script>
 <style>
   body{
@@ -2227,8 +2227,7 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'
 
 // ---- light/dark theme toggle -----------------------------------------
 function currentTheme(){
-  return document.documentElement.dataset.theme ||
-    (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  return document.documentElement.dataset.theme || 'dark';
 }
 function applyThemeIcon(){ $('themeToggle').innerHTML = '<svg class="icon"><use href="#i-'+(currentTheme()==='light'?'sun':'moon')+'"/></svg>'; }
 applyThemeIcon();
