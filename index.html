@@ -599,7 +599,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .histGroupBody .hrow{border-radius:6px}
   /* live pitch tuner */
   .tuner{background:var(--well);border:1px solid var(--edge);border-radius:12px;margin-top:12px;
-    display:flex;align-items:stretch;height:112px;overflow:hidden}
+    display:flex;align-items:stretch;height:128px;overflow:hidden}
   .tuner canvas{flex:1;min-width:0;display:block;height:100%}
   .tunerSide{flex:none;width:104px;display:flex;flex-direction:column;align-items:center;
     justify-content:center;gap:4px;border-left:1px solid var(--edge);padding:0 10px}
@@ -3640,10 +3640,21 @@ function drawRibbon(){
   const cv=$('tunerRibbon'), ctx=cv.getContext('2d');
   const W=cv.clientWidth, H=cv.clientHeight, dpr=window.devicePixelRatio||1;
   if(W===0){ RIB.raf=requestAnimationFrame(drawRibbon); return; }
-  if(cv.width!==W*dpr){ cv.width=W*dpr; cv.height=H*dpr; }
+  if(cv.width!==W*dpr){ cv.width=W*dpr; cv.height=H*dpr; RIB.stars=null; }
   ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
   const now=performance.now()/1000, SPAN=6;
   const t2x=t=>W*(1-(now-t)/SPAN);
+  // ambient depth: a whisper of drifting stars + vertical wash
+  if(!RIB.stars){ RIB.stars=[]; for(let i=0;i<26;i++) RIB.stars.push({x:Math.random(),y:Math.random(),s:Math.random()}); }
+  const wash=ctx.createLinearGradient(0,0,0,H);
+  wash.addColorStop(0,'rgba(30,215,96,.035)'); wash.addColorStop(.5,'rgba(0,0,0,0)');
+  wash.addColorStop(1,'rgba(0,0,0,.22)');
+  ctx.fillStyle=wash; ctx.fillRect(0,0,W,H);
+  for(const st of RIB.stars){
+    const sx=((st.x - now*0.008*(0.4+st.s)) % 1 + 1) % 1;
+    ctx.fillStyle='rgba(255,255,255,'+(0.03+st.s*0.05)+')';
+    ctx.fillRect(sx*W, st.y*H, 1.5, 1.5);
+  }
   // adaptive vertical window: follow the singer's recent median, ±7 semis
   const recent=RIB.trail.filter(p=>p.m!=null&&now-p.t<3).map(p=>p.m);
   if(recent.length){
@@ -3663,8 +3674,13 @@ function drawRibbon(){
     ctx.strokeStyle=inKey?'rgba(255,255,255,.13)':'rgba(255,255,255,.04)';
     ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
-    if(inKey){ ctx.fillStyle='rgba(255,255,255,.28)';
-      ctx.fillText(NOTE[pc]+(Math.floor(n/12)-1), 6, y-6); }
+    if(inKey){
+      const singing=(RIB.lockNote===n);
+      ctx.fillStyle=singing?'rgba(30,215,96,.95)':'rgba(255,255,255,.28)';
+      if(singing){ ctx.shadowColor='rgba(30,215,96,.8)'; ctx.shadowBlur=8; }
+      ctx.fillText(NOTE[pc]+(Math.floor(n/12)-1), 6, y-6);
+      ctx.shadowBlur=0;
+    }
   }
   // The trail judges only what it can KNOW without the song's melody:
   // STEADINESS. Held notes glow green (locked), sustained singing between
@@ -3710,51 +3726,100 @@ function drawRibbon(){
           if(iv.includes((((n%12)+12)%12-root+12)%12)) dK=Math.min(dK,Math.abs(p.m-n));
         }
       }
+      // run length feeds visual heat: the longer you hold, the thicker
+      // and brighter the trail burns
+      let run=0;
+      for(let j=i;j>0 && lockAt[j] && md[j].m!=null;j--) run++;
+      const heat=Math.min(1, run/90);
+      let core, glow, width;
       if(lockAt[i]&&dK<=0.3){                      // locked on an in-key note
-        ctx.strokeStyle='rgba(30,215,96,'+a+')'; ctx.lineWidth=3.2;
-        ctx.shadowColor='rgba(30,215,96,.65)'; ctx.shadowBlur=9;
+        core='rgba(30,215,96,'+a+')'; glow='rgba(30,215,96,'+(a*0.35)+')';
+        width=2.8+heat*2.4;
         if(i===md.length-1) RIB.headState='good';
       } else if(lockAt[i]&&dK<=0.6){               // locked but pitchy
-        ctx.strokeStyle='rgba(240,200,80,'+(a*0.95)+')'; ctx.lineWidth=2.6;
-        ctx.shadowBlur=0;
+        core='rgba(240,200,80,'+(a*0.95)+')'; glow='rgba(240,200,80,'+(a*0.25)+')';
+        width=2.6;
         if(i===md.length-1) RIB.headState='pitchy';
       } else if(lockAt[i]){                        // locked on a WRONG note
-        ctx.strokeStyle='rgba(240,90,120,'+(a*0.95)+')'; ctx.lineWidth=2.8;
-        ctx.shadowColor='rgba(240,90,120,.5)'; ctx.shadowBlur=6;
+        core='rgba(240,90,120,'+(a*0.95)+')'; glow='rgba(240,90,120,'+(a*0.3)+')';
+        width=2.8;
         if(i===md.length-1) RIB.headState='offkey';
       } else {                                     // transition: neutral glide
-        ctx.strokeStyle='rgba(255,255,255,'+(a*0.3)+')'; ctx.lineWidth=1.8;
-        ctx.shadowBlur=0;
+        core='rgba(255,255,255,'+(a*0.3)+')'; glow=null; width=1.8;
         if(i===md.length-1) RIB.headState='glide';
       }
       ctx.lineCap='round';
+      if(glow){                                    // halo pass under the core
+        ctx.strokeStyle=glow; ctx.lineWidth=width+7;
+        ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
+      }
+      ctx.strokeStyle=core; ctx.lineWidth=width;
       ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
-      ctx.shadowBlur=0;
     }
     prev={t:p.t,x,y,m:p.m};
     if(i===md.length-1){ headLocked=lockAt[i]; headNote=Math.round(p.m); }
   }
-  // lock celebration: the held note's gridline ignites + ripple on lock-on
+  // lock celebration: gridline ignites, ripple + spark burst on lock-on,
+  // and a steady shower of sparks while the note is held
+  if(!RIB.parts) RIB.parts=[];
   if(prev && headLocked && RIB.headState==='good' && headNote>=lo && headNote<=hi){
     const gy=m2y(headNote);
     ctx.strokeStyle='rgba(30,215,96,.4)'; ctx.lineWidth=2;
     ctx.shadowColor='rgba(30,215,96,.5)'; ctx.shadowBlur=6;
     ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke();
     ctx.shadowBlur=0;
-    if(RIB.lockNote!==headNote){ RIB.lockNote=headNote; RIB.lockT=now; }
+    if(RIB.lockNote!==headNote){
+      RIB.lockNote=headNote; RIB.lockT=now;
+      for(let k=0;k<12;k++){                       // lock-on burst
+        const ang=Math.random()*6.28, sp=30+Math.random()*70;
+        RIB.parts.push({x:prev.x,y:prev.y,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,
+          b:now,life:0.5+Math.random()*0.3});
+      }
+    }
     const age=now-RIB.lockT;
-    if(age<0.35){                                  // lock-on ripple
+    if(age<0.35){
       const r=6+age*70;
       ctx.strokeStyle='rgba(30,215,96,'+(0.7*(1-age/0.35))+')'; ctx.lineWidth=2;
       ctx.beginPath(); ctx.arc(prev.x,prev.y,r,0,7); ctx.stroke();
     }
+    if(RIB.parts.length<70 && Math.random()<0.5){  // held-note spark shower
+      RIB.parts.push({x:prev.x+(Math.random()*8-4), y:prev.y,
+        vx:-14-Math.random()*22, vy:-8-Math.random()*26, b:now, life:0.6+Math.random()*0.5});
+    }
   } else { RIB.lockNote=null; }
+  // particles
+  for(let k=RIB.parts.length-1;k>=0;k--){
+    const p2=RIB.parts[k], age=now-p2.b;
+    if(age>p2.life){ RIB.parts.splice(k,1); continue; }
+    const f=1-age/p2.life;
+    ctx.fillStyle='rgba(30,215,96,'+(0.85*f)+')';
+    const px=p2.x+p2.vx*age, py=p2.y+p2.vy*age+18*age*age;
+    ctx.beginPath(); ctx.arc(px,py,1.1+f*1.3,0,7); ctx.fill();
+  }
   if(prev){                                        // comet head
-    const grad=ctx.createRadialGradient(prev.x,prev.y,0,prev.x,prev.y,9);
+    const grad=ctx.createRadialGradient(prev.x,prev.y,0,prev.x,prev.y,10);
     grad.addColorStop(0, headLocked?'rgba(255,255,255,.95)':'rgba(255,255,255,.8)');
     grad.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(prev.x,prev.y,9,0,7); ctx.fill();
+    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(prev.x,prev.y,10,0,7); ctx.fill();
     ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(prev.x,prev.y,3,0,7); ctx.fill();
+  }
+  // combo aura: at ×2/×3/×4 the whole ribbon breathes green
+  if(recording && typeof scoreMult!=='undefined' && scoreMult>=2){
+    const pulse=0.75+0.25*Math.sin(now*3);
+    const ag=(scoreMult===2?0.10:scoreMult===3?0.18:0.28)*pulse;
+    const edge=ctx.createLinearGradient(0,0,0,H);
+    edge.addColorStop(0,'rgba(30,215,96,'+ag+')');
+    edge.addColorStop(0.25,'rgba(30,215,96,0)');
+    edge.addColorStop(0.75,'rgba(30,215,96,0)');
+    edge.addColorStop(1,'rgba(30,215,96,'+ag+')');
+    ctx.fillStyle=edge; ctx.fillRect(0,0,W,H);
+  }
+  // sustained wrong note: the ribbon itself warns
+  if(RIB.headState==='offkey'){
+    const rg=ctx.createLinearGradient(0,0,0,H);
+    rg.addColorStop(0,'rgba(240,90,120,.10)'); rg.addColorStop(.5,'rgba(0,0,0,0)');
+    rg.addColorStop(1,'rgba(240,90,120,.10)');
+    ctx.fillStyle=rg; ctx.fillRect(0,0,W,H);
   }
   RIB.raf=requestAnimationFrame(drawRibbon);
 }
