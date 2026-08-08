@@ -1018,10 +1018,13 @@ SUB_LOCK = threading.Lock()
 
 def room_state():
     with ROOM_LOCK:
+        lan = _lan_ip()
+        secure = f"https://{lan}:{PHONE_PORT}" if (lan and PHONE_HTTPS_READY) else None
         return {"code": ROOM["code"], "queue": list(ROOM["queue"]),
                 "now_playing": ROOM["now_playing"], "challenges": list(ROOM["challenges"]),
                 "guests": list(ROOM["guests"]),
-                "scores": dict(ROOM["scores"]), "live_score": ROOM["live_score"]}
+                "scores": dict(ROOM["scores"]), "live_score": ROOM["live_score"],
+                "secure_join": secure}
 
 
 def room_join(name, device_id):
@@ -2318,6 +2321,12 @@ class Handler(BaseHTTPRequestHandler):
             code = start_room()
             base = self._base_url()
             join_url = f"{base}/join?room={code}" if base else None
+            lan = _lan_ip()
+            if join_url and join_url.startswith("http://") and lan and PHONE_HTTPS_READY:
+                # phone browsers refuse the microphone on plain http to a LAN
+                # IP - guests MUST join over the HTTPS listener or scoring
+                # dies with "mic blocked" the moment their turn starts
+                join_url = "https://" + lan + ":" + str(PHONE_PORT) + "/join?room=" + code
             host_url = f"{base}/host" if base else None
             self._json(200, {"code": code, "join_url": join_url, "host_url": host_url})
             return
@@ -3767,9 +3776,20 @@ async function postScore(done){
 async function startTurnScoring(){
   if(!activeEntry) return;
   $('turnStartBtn').disabled=true;
+  // On plain http to a LAN address the browser doesn't expose the mic API at
+  // all (not a secure context) — that's not the guest denying permission,
+  // it's the URL they joined on. Hand them the HTTPS door instead of a
+  // dead-end "blocked" message.
+  if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){
+    const su=lastState.secure_join;
+    $('turnNote').innerHTML = su
+      ? 'Phones only allow the mic on a secure link. <a style="color:var(--amber2)" href="'+su+'/join?room='+encodeURIComponent(lastState.code||'')+'">Tap here to re-join over HTTPS</a> — accept the one-time certificate warning, then you can score.'
+      : 'This link can\'t use the mic (not HTTPS). Ask the host to restart the app with `openssl` installed to enable phone scoring.';
+    $('turnStartBtn').disabled=false; return;
+  }
   try{
     scoreStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}});
-  }catch(e){ $('turnNote').textContent='Mic blocked — allow microphone access to score.'; $('turnStartBtn').disabled=false; return; }
+  }catch(e){ $('turnNote').textContent='Mic blocked — allow microphone access in your browser settings, then tap Start again.'; $('turnStartBtn').disabled=false; return; }
   scoreCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
   const src=scoreCtx.createMediaStreamSource(scoreStream);
   scoreAnalyser=scoreCtx.createAnalyser(); scoreAnalyser.fftSize=2048;
@@ -4083,7 +4103,12 @@ def main():
             print("  a certificate (phone browsers block camera access without HTTPS).\n")
     print(f"  Party mode: open http://{HOST}:{PORT}/party on this machine (TV screen)")
     if lan:
-        print(f"              guests join at http://{lan}:{PORT}/join (once you start a room)\n")
+        if PHONE_HTTPS_READY:
+            print(f"              guests join at https://{lan}:{PHONE_PORT}/join (once you start a room)")
+            print("              (HTTPS so guest phones can use the mic for scoring)\n")
+        else:
+            print(f"              guests join at http://{lan}:{PORT}/join (once you start a room)")
+            print("              (no HTTPS listener - guest phones will NOT be able to score)\n")
     print(f"  Sessions saved in: {SESS_DIR}")
     print("  Ctrl+C to stop.\n")
     try:
