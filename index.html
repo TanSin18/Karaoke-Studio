@@ -3090,7 +3090,8 @@ const HW={stars:null, parts:[], lastSeg:null};
         const heat=Math.min(1,run/60);
         ctx.lineCap='round';
         if(p.good===true){
-          ctx.strokeStyle='rgba(30,215,96,.35)'; ctx.lineWidth=(2.8+heat*2.2)+7;
+          ctx.strokeStyle=p.vib?'rgba(255,215,130,.5)':'rgba(30,215,96,.35)';
+          ctx.lineWidth=(2.8+heat*2.2)+7;
           ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
           ctx.strokeStyle='rgba(30,215,96,.95)'; ctx.lineWidth=2.8+heat*2.2;
         } else if(p.good===false){
@@ -3684,22 +3685,77 @@ let scorePoints=0, scoreMult=1, scoreBestMult=1, scoreRecent=[], scoreOffRun=0;
 let droneNote=null, droneFrames=0, dronePendNote=null, dronePendRun=0;
 let melPrevNote=null, melChangeT=-9, melWasValid=false;
 window._droneK=1;
+// ---- vibrato detection: periodic oscillation (3.5-8.5Hz), meaningful
+// amplitude (±0.15-1.2 semi), around a STABLE center. The scorer's median
+// already judges the center; this makes the VISUALS understand that the
+// oscillation is artistry, not instability — vibrato locks green (judged
+// at its center) with a gold shimmer instead of rendering as a glide.
+let vibBuf=[];
+window._vib={on:false, center:0, rate:0, amp:0};
+let vibratoFrames=0;
+function vibDetect(midiFloat){
+  vibBuf.push(midiFloat); if(vibBuf.length>45) vibBuf.shift();
+  const V=window._vib;
+  if(vibBuf.length<30){ V.on=false; return; }
+  const sorted=[...vibBuf].sort((a,b)=>a-b);
+  const center=sorted[Math.floor(sorted.length/2)];
+  const h1=vibBuf.slice(0,Math.floor(vibBuf.length/2)), h2=vibBuf.slice(Math.floor(vibBuf.length/2));
+  const med=a=>[...a].sort((x,y)=>x-y)[Math.floor(a.length/2)];
+  if(Math.abs(med(h1)-med(h2))>0.3){ V.on=false; return; }   // drifting, not vibrato
+  const dev=vibBuf.map(v=>v-center);
+  const amp=(Math.max(...dev)-Math.min(...dev))/2;
+  if(amp<0.15||amp>1.2){ V.on=false; return; }
+  // periodicity, not just wiggle-count: a random wobble crosses zero
+  // often enough to fake a rate, but its crossing INTERVALS are chaotic.
+  // True vibrato is a metronome — intervals cluster tightly.
+  let sign=0, lastX=-1; const gaps=[];
+  for(let i2=0;i2<dev.length;i2++){
+    const d=dev[i2];
+    if(Math.abs(d)<0.06) continue;                            // hysteresis
+    const sg=d>0?1:-1;
+    if(sign!==0 && sg!==sign){ if(lastX>=0) gaps.push(i2-lastX); lastX=i2; }
+    sign=sg;
+  }
+  if(gaps.length<4){ V.on=false; return; }
+  const mean=gaps.reduce((a,b)=>a+b,0)/gaps.length;
+  const sd=Math.sqrt(gaps.reduce((a,b)=>a+(b-mean)*(b-mean),0)/gaps.length);
+  const rate=(1/(2*mean))*60;                                 // crossings are half-periods
+  V.on=(rate>=3.5&&rate<=8.5 && sd/mean<0.35);
+  if(V.on){ V.center=center; V.rate=rate; V.amp=amp; }
+}
 function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scoreBestStreak=0;
   scorePitchHist=[]; scorePoints=0; scoreMult=1; scoreBestMult=1; scoreRecent=[]; scoreOffRun=0;
   droneNote=null; droneFrames=0; dronePendNote=null; dronePendRun=0; window._droneK=1;
-  melPrevNote=null; melChangeT=-9; melWasValid=false; }
+  vClock=0; vNoteHist=[];
+  melPrevNote=null; melChangeT=-9; melWasValid=false; vibBuf=[]; vibratoFrames=0; window._vib.on=false; }
 // Anti-drone: without a melody reference, parking on one in-key note would
 // farm points forever. Held notes are legal (songs have real 5s holds) but
 // after ~5s on the SAME note the credit fades to zero over the next 3s.
 // Only a genuine note change — a different note held for ≥0.3s, so vibrato
 // and passing wiggles don't count — resets the clock. Melody/ghost modes
 // don't need this: their moving target already defeats a drone.
+let vClock=0, vNoteHist=[];
 function droneFactor(curNote){
+  vClock++;
   if(curNote===droneNote){ droneFrames++; dronePendRun=0; }
   else if(curNote===dronePendNote){
-    if(++dronePendRun>=18){ droneNote=curNote; droneFrames=dronePendRun; dronePendNote=null; }
+    if(++dronePendRun>=18){
+      droneNote=curNote; droneFrames=dronePendRun; dronePendNote=null;
+      vNoteHist.push({n:curNote, f:vClock});          // a COMMITTED note change
+    }
   } else { dronePendNote=curNote; dronePendRun=1; }
-  return droneFrames<=300 ? 1 : droneFrames>=480 ? 0 : (480-droneFrames)/180;
+  const dk = droneFrames<=300 ? 1 : droneFrames>=480 ? 0 : (480-droneFrames)/180;
+  // variety law: alternating two notes back and forth is just a fancier
+  // drone. Over the last ~18s, real melodies visit 3+ distinct notes;
+  // fewer than 3 for that long fades credit the same way.
+  vNoteHist=vNoteHist.filter(e=>vClock-e.f<1080);
+  const distinct=new Set(vNoteHist.map(e=>e.n)); if(droneNote!=null) distinct.add(droneNote);
+  let vk=1;
+  if(vClock>900 && distinct.size<=2){
+    const over=Math.min(180, vClock- (vNoteHist.length? Math.max(900, vNoteHist[0].f):900));
+    vk=Math.max(0, 1-over/180);
+  }
+  return Math.min(dk, vk);
 }
 // combo multiplier from the CURRENT on-pitch run: hold pitch 2s -> x2,
 // 5s -> x3, 10s -> x4. Dropping off pitch resets to x1 — the thrill is
@@ -3709,8 +3765,16 @@ function scoreRank(acc){ return acc>=90?'S' : acc>=78?'A' : acc>=64?'B' : acc>=5
 function computeScore(){
   if(scoreFrames<60) return null;  // under ~1s of confidently-voiced audio: nothing to judge
   const accuracy=Math.round(100*scoreInTune/scoreFrames);
+  // rank requires COVERAGE: 15 flawless seconds then silence used to earn
+  // an S — the letter now needs at least ~30s of judged singing, capped at
+  // B below that (accuracy itself stays honest either way)
+  let rank=scoreRank(accuracy);
+  const shortTake=scoreFrames<1800;
+  if(shortTake && (rank==='S'||rank==='A')) rank='B';
   return { accuracy, bestStreak: scoreBestStreak, frames: scoreFrames,
-           points: Math.round(scorePoints), bestMult: scoreBestMult, rank: scoreRank(accuracy) };
+           points: Math.round(scorePoints), bestMult: scoreBestMult, rank,
+           rankCapped: shortTake&&scoreRank(accuracy)!==rank,
+           vibratoSec: Math.round(vibratoFrames/60) };
 }
 function scoreTier(accuracy){
   if(accuracy>=90) return {stars:5, label:'Star Power! 🌟'};
@@ -3725,7 +3789,8 @@ function scoreTier(accuracy){
 // needle — a trail shows STABILITY and DRIFT, which a needle can't.
 const RIB={trail:[], center:null, raf:0};
 function ribbonPush(midiFloat){
-  RIB.trail.push({t:performance.now()/1000, m:midiFloat});
+  RIB.trail.push({t:performance.now()/1000, m:midiFloat,
+    vib: (midiFloat!=null && window._vib.on) ? window._vib.center : null});
   if(RIB.trail.length>500) RIB.trail.shift();
 }
 function drawRibbon(){
@@ -3823,18 +3888,33 @@ function drawRibbon(){
       // run length feeds visual heat: the longer you hold, the thicker
       // and brighter the trail burns
       let run=0;
-      for(let j=i;j>0 && lockAt[j] && md[j].m!=null;j--) run++;
+      for(let j=i;j>0 && (lockAt[j]||(pts[j]&&pts[j].vib!=null)) && md[j].m!=null;j--) run++;
       const heat=Math.min(1, run/90);
+      // vibrato: judged at its CENTER (the note), celebrated for the wave
+      const vibC=pts[i]&&pts[i].vib!=null?pts[i].vib:null;
+      let locked=lockAt[i], judgeM=p.m;
+      if(vibC!=null){ locked=true; judgeM=vibC; }
+      if(vibC!=null){
+        dK=Math.abs(judgeM-Math.round(judgeM));
+        if(iv){ dK=12;
+          for(let n=Math.round(judgeM)-2;n<=Math.round(judgeM)+2;n++){
+            if(iv.includes((((n%12)+12)%12-root+12)%12)) dK=Math.min(dK,Math.abs(judgeM-n));
+          } }
+      }
       let core, glow, width;
-      if(lockAt[i]&&dK<=0.3){                      // locked on an in-key note
+      if(vibC!=null && dK<=0.3){                   // vibrato on an in-key note
+        core='rgba(30,215,96,'+a+')'; glow='rgba(255,215,130,'+(a*0.45)+')';
+        width=3.0+heat*2.2;
+        if(i===md.length-1) RIB.headState='vibrato';
+      } else if(locked&&dK<=0.3){                  // locked on an in-key note
         core='rgba(30,215,96,'+a+')'; glow='rgba(30,215,96,'+(a*0.35)+')';
         width=2.8+heat*2.4;
         if(i===md.length-1) RIB.headState='good';
-      } else if(lockAt[i]&&dK<=0.6){               // locked but pitchy
+      } else if(locked&&dK<=0.6){                  // locked but pitchy
         core='rgba(240,200,80,'+(a*0.95)+')'; glow='rgba(240,200,80,'+(a*0.25)+')';
         width=2.6;
         if(i===md.length-1) RIB.headState='pitchy';
-      } else if(lockAt[i]){                        // locked on a WRONG note
+      } else if(locked){                           // locked on a WRONG note
         core='rgba(240,90,120,'+(a*0.95)+')'; glow='rgba(240,90,120,'+(a*0.3)+')';
         width=2.8;
         if(i===md.length-1) RIB.headState='offkey';
@@ -3851,12 +3931,16 @@ function drawRibbon(){
       ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
     }
     prev={t:p.t,x,y,m:p.m};
-    if(i===md.length-1){ headLocked=lockAt[i]; headNote=Math.round(p.m); }
+    if(i===md.length-1){
+      const vc=pts[i]&&pts[i].vib!=null?pts[i].vib:null;
+      headLocked=lockAt[i]||vc!=null;
+      headNote=Math.round(vc!=null?vc:p.m);
+    }
   }
   // lock celebration: gridline ignites, ripple + spark burst on lock-on,
   // and a steady shower of sparks while the note is held
   if(!RIB.parts) RIB.parts=[];
-  if(prev && headLocked && RIB.headState==='good' && headNote>=lo && headNote<=hi){
+  if(prev && headLocked && (RIB.headState==='good'||RIB.headState==='vibrato') && headNote>=lo && headNote<=hi){
     const gy=m2y(headNote);
     ctx.strokeStyle='rgba(30,215,96,.4)'; ctx.lineWidth=2;
     ctx.shadowColor='rgba(30,215,96,.5)'; ctx.shadowBlur=6;
@@ -3876,7 +3960,7 @@ function drawRibbon(){
       ctx.strokeStyle='rgba(30,215,96,'+(0.7*(1-age/0.35))+')'; ctx.lineWidth=2;
       ctx.beginPath(); ctx.arc(prev.x,prev.y,r,0,7); ctx.stroke();
     }
-    if(RIB.parts.length<70 && Math.random()<0.5*(window._droneK==null?1:window._droneK)){  // held-note spark shower
+    if(RIB.parts.length<70 && Math.random()<(RIB.headState==='vibrato'?0.8:0.5)*(window._droneK==null?1:window._droneK)){  // held-note spark shower
       RIB.parts.push({x:prev.x+(Math.random()*8-4), y:prev.y,
         vx:-14-Math.random()*22, vy:-8-Math.random()*26, b:now, life:0.6+Math.random()*0.5});
     }
@@ -3930,11 +4014,17 @@ function updateTuner(note, freq){
   $('tunerNote').textContent=note.name+note.octave;
   const inTune=Math.abs(cents)<=12;
   $('tunerNote').className='tuner-note '+(inTune?'good':'off');
-  ribbonPush(note.midi+note.cents/100);
-  $('tunerMsg').textContent = (window._droneK<1 && RIB.headState==='good') ? 'gorgeous hold — now follow the melody →'
+  const midiFloat=note.midi+note.cents/100;
+  vibDetect(midiFloat);
+  if(recording && window._vib.on) vibratoFrames++;
+  ribbonPush(midiFloat);
+  const vibNow=window._vib.on && RIB.headState!=='offkey';
+  $('tunerMsg').textContent = vibNow ? 'vibrato ✨ — gorgeous'
+    : (window._droneK<1 && RIB.headState==='good') ? 'gorgeous hold — now follow the melody →'
     : RIB.headState==='offkey' ? 'off key — aim for the bright lines'
     : inTune? 'on pitch ✓'
     : (cents>0? 'a little sharp — ease down' : 'a little flat — lift up');
+  if(vibNow) $('tunerNote').className='tuner-note good';
   if(RIB.headState==='offkey') $('tunerNote').className='tuner-note off';
 
   // Score the MEDIAN pitch of the last ~250ms, not the instantaneous frame.
@@ -4026,7 +4116,7 @@ function updateTuner(note, freq){
     scorePoints+=fs*scoreMult;                    // points flow only while singing well
     scoreRecent.push(fs); if(scoreRecent.length>240) scoreRecent.shift();
     if(recording && songMelody && backingAudio){
-      hwTrail.push({t:nowT, midi:m/100, good:fs>=0.75});
+      hwTrail.push({t:nowT, midi:m/100, good:fs>=0.75, vib:window._vib.on});
       if(hwTrail.length>400) hwTrail.shift();
     }
     updateLiveScoreBar(onPitch, scoreMult>prevMult);
@@ -4270,7 +4360,9 @@ function renderScoreCard(score){
   $('scoreLabel').textContent=tier.label;
   const streakSec=(score.bestStreak/60).toFixed(1);
   $('scoreDetail').textContent=score.accuracy+'% in key · best combo ×'+(score.bestMult||1)+
-    ' · longest run ~'+streakSec+'s';
+    ' · longest run ~'+streakSec+'s'+
+    ((score.vibratoSec||0)>=2 ? ' · vibrato ~'+score.vibratoSec+'s ✨' : '')+
+    (score.rankCapped ? ' · sing 30s+ for S/A ranks' : '');
   $('scoreCard').classList.remove('hidden');
   // points count up over ~1.2s — the reveal IS the reward
   const el=$('scorePoints'), target=score.points||0, t0=performance.now();

@@ -4421,10 +4421,17 @@ function scReset(){ sc={hist:[],recent:[],frames:0,inTune:0,streak:0,off:0,mult:
 // anti-drone (same law as the studio): parked on one note, credit fades
 // after ~5s; only a real note change (held >=0.3s) resets the clock
 function jDrone(cur){
+  sc.vClock=(sc.vClock||0)+1; sc.vHist=sc.vHist||[];
   if(cur===sc.dNote){ sc.dFrames++; sc.dPendRun=0; }
-  else if(cur===sc.dPend){ if(++sc.dPendRun>=18){ sc.dNote=cur; sc.dFrames=sc.dPendRun; sc.dPend=null; } }
+  else if(cur===sc.dPend){ if(++sc.dPendRun>=18){ sc.dNote=cur; sc.dFrames=sc.dPendRun; sc.dPend=null;
+    sc.vHist.push({n:cur,f:sc.vClock}); } }
   else { sc.dPend=cur; sc.dPendRun=1; }
-  return sc.dFrames<=300 ? 1 : sc.dFrames>=480 ? 0 : (480-sc.dFrames)/180;
+  const dk=sc.dFrames<=300 ? 1 : sc.dFrames>=480 ? 0 : (480-sc.dFrames)/180;
+  sc.vHist=sc.vHist.filter(e=>sc.vClock-e.f<1080);
+  const ds=new Set(sc.vHist.map(e=>e.n)); if(sc.dNote!=null) ds.add(sc.dNote);
+  let vk=1;
+  if(sc.vClock>900 && ds.size<=2) vk=Math.max(0, 1-(sc.vClock-900)/180);
+  return Math.min(dk, vk);
 }
 function jFreqToMidiCents(f){
   const midi=Math.round(12*Math.log2(f/A4J)+69);
