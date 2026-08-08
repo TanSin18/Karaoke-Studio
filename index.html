@@ -627,28 +627,37 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     letter-spacing:.08em;color:var(--muted);text-transform:uppercase;cursor:pointer}
   .tunertog input{accent-color:var(--amber2)}
   /* continue/keep choice bar */
-  .choice{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:12px;
-    background:linear-gradient(180deg,#20242e,#191c23);border:1px solid var(--amber2);border-radius:10px}
-  .choice-msg{font-family:var(--mono);font-size:12px;color:var(--amber)}
-  .scoreCard{margin-top:12px;padding:14px;border-radius:12px;text-align:center;
-    background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--pink2);box-shadow:var(--glow-pink)}
-  .scoreRank{font-family:var(--display);font-weight:800;font-size:64px;line-height:1;
-    letter-spacing:.02em;margin-bottom:2px}
-  .scoreRank[data-rank="S"]{color:var(--amber2);text-shadow:0 0 24px rgba(30,215,96,.55)}
-  .scoreRank[data-rank="A"]{color:var(--ink)}
-  .scoreRank[data-rank="B"]{color:var(--muted)}
+  .choice{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding:14px 16px;
+    background:var(--panel2);border:1px solid var(--edge);border-radius:14px}
+  .choice-msg{font-size:13px;color:var(--ink);font-weight:600}
+  .choice-msg b{color:var(--amber2)}
+  .choice audio{width:100%;height:36px;color-scheme:dark;border-radius:999px;background:var(--well)}
+  .choice .btn{border-radius:999px}
+  #continueBtn{background:var(--amber2);color:#000;border-color:var(--amber2);font-weight:700}
+  .scoreCard{margin-top:12px;padding:16px 18px;border-radius:14px;display:flex;align-items:center;
+    gap:18px;background:var(--panel2);border:1px solid var(--edge)}
+  .scoreRankWrap{flex:none}
+  .scoreRank{font-family:var(--display);font-weight:800;font-size:38px;line-height:1;width:76px;height:76px;
+    border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--well);
+    border:2px solid var(--edge);color:var(--muted)}
+  .scoreRank[data-rank="S"]{color:#000;background:var(--amber2);border-color:var(--amber2)}
+  .scoreRank[data-rank="A"]{color:var(--amber2);border-color:var(--amber2)}
+  .scoreRank[data-rank="B"]{color:var(--ink);border-color:var(--fader)}
   .scoreRank[data-rank="C"]{color:var(--muted)}
   .scoreRank[data-rank="D"]{color:var(--dim)}
   .scoreRank.reveal{animation:rankPop .6s cubic-bezier(.2,2.0,.35,1)}
-  @keyframes rankPop{0%{transform:scale(2.6);opacity:0}55%{opacity:1}100%{transform:scale(1);opacity:1}}
+  @keyframes rankPop{0%{transform:scale(2.2);opacity:0}55%{opacity:1}100%{transform:scale(1);opacity:1}}
   @media (prefers-reduced-motion: reduce){
     .scoreRank.reveal,.lsbCombo.pop{animation:none}
   }
-  .scorePoints{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--ink);margin-bottom:6px}
-  .scoreStars{font-size:24px;letter-spacing:5px}
-  .scoreLabel{font-weight:700;font-size:14.5px;margin-top:4px;color:var(--ink)}
-  .scoreDetail{color:var(--muted);font-size:11.5px;margin-top:4px;font-family:var(--mono)}
-  .scoreNote{color:var(--dim);font-size:10.5px;margin-top:8px;line-height:1.5;max-width:320px;margin-left:auto;margin-right:auto}
+  .scoreBody{min-width:0}
+  .scoreTopline{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .scorePoints{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--ink)}
+  .scoreStars{font-size:15px;letter-spacing:3px;color:var(--amber2)}
+  .scoreStars .dimstar{color:var(--fader)}
+  .scoreLabel{font-weight:700;font-size:14px;margin-top:2px;color:var(--ink)}
+  .scoreDetail{color:var(--muted);font-size:11.5px;margin-top:3px;font-family:var(--mono)}
+  .scoreNote{color:var(--dim);font-size:10.5px;margin-top:6px;line-height:1.45;max-width:460px}
   .takeScoreBadge{font-family:var(--mono);font-size:9px;color:var(--pink);margin-left:4px}
   /* take mini-mixer + test mode */
   .takemix{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;
@@ -1135,12 +1144,16 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
              (scoreNote below) rather than let "accuracy" imply more than it
              measures. -->
         <div class="scoreCard hidden" id="scoreCard">
-          <div class="scoreRank" id="scoreRank">S</div>
-          <div class="scorePoints" id="scorePoints">0</div>
-          <div class="scoreStars" id="scoreStars"></div>
-          <div class="scoreLabel" id="scoreLabel"></div>
-          <div class="scoreDetail" id="scoreDetail"></div>
-          <div class="scoreNote" id="scoreNote">Pitch in the song's key × combo multipliers — hold your best runs to build ×2, ×3, ×4.</div>
+          <div class="scoreRankWrap"><div class="scoreRank" id="scoreRank">S</div></div>
+          <div class="scoreBody">
+            <div class="scoreTopline">
+              <span class="scorePoints" id="scorePoints">0</span>
+              <span class="scoreStars" id="scoreStars"></span>
+            </div>
+            <div class="scoreLabel" id="scoreLabel"></div>
+            <div class="scoreDetail" id="scoreDetail"></div>
+            <div class="scoreNote" id="scoreNote">Pitch in the song's key × combo multipliers — hold your best runs to build ×2, ×3, ×4.</div>
+          </div>
         </div>
 
         <!-- after-stop choice: continue from here, or keep what I sang. A plain
@@ -3818,7 +3831,7 @@ function showRecUI(on){
 }
 function offerContinueOrKeep(){
   const at=window._recEndMusicPos||0;
-  $('choiceMsg').textContent='Sang up to '+fmt(at)+'. Continue from here, keep it, or redo?';
+  $('choiceMsg').innerHTML='Sang up to <b>'+fmt(at)+'</b> — continue from there, keep it, or redo?';
   $('stopChoice').style.display='flex';
   renderScoreCard(window._lastPitchScore);
 }
@@ -3829,7 +3842,7 @@ function renderScoreCard(score){
   const rk=$('scoreRank');
   rk.textContent=rank; rk.dataset.rank=rank;
   rk.classList.remove('reveal'); void rk.offsetWidth; rk.classList.add('reveal');
-  $('scoreStars').textContent='⭐'.repeat(tier.stars)+'☆'.repeat(5-tier.stars);
+  $('scoreStars').innerHTML='★'.repeat(tier.stars)+'<span class="dimstar">'+'★'.repeat(5-tier.stars)+'</span>';
   $('scoreLabel').textContent=tier.label;
   const streakSec=(score.bestStreak/60).toFixed(1);
   $('scoreDetail').textContent=score.accuracy+'% in key · best combo ×'+(score.bestMult||1)+
