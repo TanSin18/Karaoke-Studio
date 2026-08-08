@@ -308,6 +308,12 @@ def _whisper_model():
 def whisper_transcribe(jid):
     try:
         voc = os.path.join(SESS_DIR, jid, "vocals.wav")
+        if not os.path.exists(voc):
+            bt = _best_lead_take(jid)
+            if not bt:
+                WHISPER_STATE[jid] = "error"
+                return
+            voc = os.path.join(SESS_DIR, jid, bt["file"])
         segs, info = _whisper_model().transcribe(voc, vad_filter=True, beam_size=1)
         # Hindi and Urdu are the same spoken language; Whisper's language ID
         # often picks Urdu for Bollywood vocals and then emits Arabic script,
@@ -534,6 +540,25 @@ def _extract_melody_inner(jid, voc, cache):
         return None
 
 
+def _best_lead_take(jid):
+    """The user's strongest kept lead take — the same 'you are the
+    reference' trick ghost mode uses, applied to lyrics: a take is sung in
+    sync with THIS session's backing, so its voice activity and its
+    transcription are both perfectly timed to this arrangement."""
+    meta = _read_meta(jid)
+    best, best_key = None, (-1, -1)
+    for t in meta.get("takes") or []:
+        if t.get("deleted") or t.get("kind") != "lead":
+            continue
+        f = os.path.join(SESS_DIR, jid, t.get("file") or "")
+        if not os.path.exists(f):
+            continue
+        key = (((t.get("pitch_score") or {}).get("accuracy")) or 0, t.get("duration") or 0)
+        if key > best_key:
+            best, best_key = t, key
+    return best
+
+
 def lyrics_auto_offset(jid, lines):
     """Best constant shift between an LRC timeline and THIS session's audio.
 
@@ -549,8 +574,12 @@ def lyrics_auto_offset(jid, lines):
     if meta.get("lyrics_auto_offset") is not None:
         return meta["lyrics_auto_offset"]
     mel = extract_melody(jid)
+    if not mel:
+        bt = _best_lead_take(jid)
+        if bt:
+            mel = extract_take_melody(jid, bt["id"])
     if not mel or not lines:
-        return 0.0
+        return 0.0        # deliberately NOT cached: a later take may enable it
     try:
         import numpy as np
         hop = mel["hop"]
@@ -1815,7 +1844,8 @@ class Handler(BaseHTTPRequestHandler):
                         json.dump(m0, fh)
             lines = fetch_synced_lyrics(jid)
             voc = os.path.join(SESS_DIR, jid, "vocals.wav")
-            if (not lines and os.path.exists(voc) and WHISPER_STATE.get(jid) != "error"
+            has_source = os.path.exists(voc) or _best_lead_take(jid) is not None
+            if (not lines and has_source and WHISPER_STATE.get(jid) != "error"
                     and _read_meta(jid).get("lyrics_source") != "whisper"):
                 if WHISPER_STATE.get(jid) != "running":
                     WHISPER_STATE[jid] = "running"
@@ -4386,7 +4416,16 @@ function jMelodyAt(t){
   for(const j of [i,i-1,i+1,i-2,i+2]){ if(j>=0&&j<M.length&&M[j]>0) return M[j]; }
   return -1;
 }
-function scReset(){ sc={hist:[],recent:[],frames:0,inTune:0,streak:0,off:0,mult:1,bestMult:1,points:0,trail:[],trailSent:0}; }
+function scReset(){ sc={hist:[],recent:[],frames:0,inTune:0,streak:0,off:0,mult:1,bestMult:1,points:0,trail:[],trailSent:0,
+  dNote:null,dFrames:0,dPend:null,dPendRun:0}; }
+// anti-drone (same law as the studio): parked on one note, credit fades
+// after ~5s; only a real note change (held >=0.3s) resets the clock
+function jDrone(cur){
+  if(cur===sc.dNote){ sc.dFrames++; sc.dPendRun=0; }
+  else if(cur===sc.dPend){ if(++sc.dPendRun>=18){ sc.dNote=cur; sc.dFrames=sc.dPendRun; sc.dPend=null; } }
+  else { sc.dPend=cur; sc.dPendRun=1; }
+  return sc.dFrames<=300 ? 1 : sc.dFrames>=480 ? 0 : (480-sc.dFrames)/180;
+}
 function jFreqToMidiCents(f){
   const midi=Math.round(12*Math.log2(f/A4J)+69);
   const cents=Math.round(1200*Math.log2(f/(A4J*Math.pow(2,(midi-69)/12))));
@@ -4429,7 +4468,9 @@ function scFrame(){
           err=Math.min(err,Math.min(d0,1200-d0)); }
         lo=20; hi=60;
       } else { err=((m%100)+100)%100; err=Math.min(err,100-err); lo=15; hi=35; }
-      const fs=err<=lo?1:(err>=hi?0:(hi-err)/(hi-lo));
+      let fs=err<=lo?1:(err>=hi?0:(hi-err)/(hi-lo));
+      const dK=jDrone(Math.round(m/100));
+      if(!(mel>0)) fs*=dK;              // melody mode's moving target defeats drones on its own
       sc.frames++; sc.inTune+=fs;
       if(fs>=0.75){ sc.streak++; sc.off=0; } else if(++sc.off>18){ sc.streak=0; }
       const pm=sc.mult;

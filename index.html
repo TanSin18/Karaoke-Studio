@@ -3605,8 +3605,24 @@ let tunerSmooth=null;
 // judgment the tuner already makes, finalized in stopRec(). ---------------
 let scoreFrames=0, scoreInTune=0, scoreStreak=0, scoreBestStreak=0, scorePitchHist=[];
 let scorePoints=0, scoreMult=1, scoreBestMult=1, scoreRecent=[], scoreOffRun=0;
+let droneNote=null, droneFrames=0, dronePendNote=null, dronePendRun=0;
+window._droneK=1;
 function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scoreBestStreak=0;
-  scorePitchHist=[]; scorePoints=0; scoreMult=1; scoreBestMult=1; scoreRecent=[]; scoreOffRun=0; }
+  scorePitchHist=[]; scorePoints=0; scoreMult=1; scoreBestMult=1; scoreRecent=[]; scoreOffRun=0;
+  droneNote=null; droneFrames=0; dronePendNote=null; dronePendRun=0; window._droneK=1; }
+// Anti-drone: without a melody reference, parking on one in-key note would
+// farm points forever. Held notes are legal (songs have real 5s holds) but
+// after ~5s on the SAME note the credit fades to zero over the next 3s.
+// Only a genuine note change — a different note held for ≥0.3s, so vibrato
+// and passing wiggles don't count — resets the clock. Melody/ghost modes
+// don't need this: their moving target already defeats a drone.
+function droneFactor(curNote){
+  if(curNote===droneNote){ droneFrames++; dronePendRun=0; }
+  else if(curNote===dronePendNote){
+    if(++dronePendRun>=18){ droneNote=curNote; droneFrames=dronePendRun; dronePendNote=null; }
+  } else { dronePendNote=curNote; dronePendRun=1; }
+  return droneFrames<=300 ? 1 : droneFrames>=480 ? 0 : (480-droneFrames)/180;
+}
 // combo multiplier from the CURRENT on-pitch run: hold pitch 2s -> x2,
 // 5s -> x3, 10s -> x4. Dropping off pitch resets to x1 — the thrill is
 // keeping the run alive.
@@ -3782,7 +3798,7 @@ function drawRibbon(){
       ctx.strokeStyle='rgba(30,215,96,'+(0.7*(1-age/0.35))+')'; ctx.lineWidth=2;
       ctx.beginPath(); ctx.arc(prev.x,prev.y,r,0,7); ctx.stroke();
     }
-    if(RIB.parts.length<70 && Math.random()<0.5){  // held-note spark shower
+    if(RIB.parts.length<70 && Math.random()<0.5*(window._droneK==null?1:window._droneK)){  // held-note spark shower
       RIB.parts.push({x:prev.x+(Math.random()*8-4), y:prev.y,
         vx:-14-Math.random()*22, vy:-8-Math.random()*26, b:now, life:0.6+Math.random()*0.5});
     }
@@ -3837,7 +3853,8 @@ function updateTuner(note, freq){
   const inTune=Math.abs(cents)<=12;
   $('tunerNote').className='tuner-note '+(inTune?'good':'off');
   ribbonPush(note.midi+note.cents/100);
-  $('tunerMsg').textContent = RIB.headState==='offkey' ? 'off key — aim for the bright lines'
+  $('tunerMsg').textContent = (window._droneK<1 && RIB.headState==='good') ? 'gorgeous hold — now follow the melody →'
+    : RIB.headState==='offkey' ? 'off key — aim for the bright lines'
     : inTune? 'on pitch ✓'
     : (cents>0? 'a little sharp — ease down' : 'a little flat — lift up');
   if(RIB.headState==='offkey') $('tunerNote').className='tuner-note off';
@@ -3886,7 +3903,10 @@ function updateTuner(note, freq){
       wideMax=35;
     }
     const lo=wideMax===100?50:(wideMax===60?20:15);
-    const fs = err<=lo ? 1 : (err>=wideMax ? 0 : (wideMax-err)/(wideMax-lo));
+    let fs = err<=lo ? 1 : (err>=wideMax ? 0 : (wideMax-err)/(wideMax-lo));
+    const dK2=droneFactor(Math.round(m/100));
+    window._droneK = (melTarget>0) ? 1 : dK2;
+    if(melTarget<=0) fs*=window._droneK;
     scoreFrames++; scoreInTune+=fs;
     const onPitch=fs>=0.75;
     // 300ms grace before a combo breaks: the median window straddles two
@@ -4240,6 +4260,9 @@ async function saveCurrentTakeToHistory(kind){
   takes.push(d.take);
   activeTakeId=d.take.id;
   renderTakeStrip();
+  // a kept take unlocks take-based lyrics tools (whisper-the-take when the
+  // databases had nothing; auto-timing from the take's voice activity)
+  if(!songLyrics) loadLyrics();
   // The "happy path" journey used to be: Keep -> switch to Takes tab ->
   // switch to Effects tab -> switch to Export tab -> hit Render — four
   // tab hops for the simplest possible single-take case. This collapses
