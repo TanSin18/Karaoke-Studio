@@ -238,6 +238,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .liveScoreBar.hot{border-color:var(--amber2);box-shadow:0 0 0 1px rgba(30,215,96,.5),0 4px 24px rgba(30,215,96,.35)}
   .lsbDot.good{background:var(--ok);box-shadow:0 0 8px var(--ok)}
   .lsbDot.off{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .hwWrap{margin-top:10px;border-radius:12px;background:var(--well);border:1px solid var(--edge);
+    overflow:hidden;height:130px}
+  .hwWrap canvas{width:100%;height:100%;display:block}
   .lyricsBar{position:relative;margin-top:10px;padding:10px 90px 10px 14px;border-radius:12px;
     background:var(--well);border:1px solid var(--edge);text-align:center;min-height:64px}
   .lyrNow{font-family:var(--display);font-weight:700;font-size:20px;line-height:1.35;color:var(--amber2)}
@@ -921,6 +924,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <button class="btn small ghost" id="lyrLater" title="Lyrics appear 0.5s later">▶</button>
           </div>
         </div>
+        <div class="hwWrap hidden" id="hwWrap"><canvas id="hwCanvas"></canvas></div>
         <div class="seekwrap mt">
           <input type="range" id="seek" min="0" max="1000" value="0" step="1" disabled>
           <div class="time" id="time">00:00 / 00:00</div>
@@ -2818,10 +2822,102 @@ function nudgeLyrics(d){
 document.addEventListener('DOMContentLoaded',()=>{});
 $('lyrEarlier').addEventListener('click',()=>nudgeLyrics(0.5));
 $('lyrLater').addEventListener('click',()=>nudgeLyrics(-0.5));
+let songMelody=null, hwSegs=null, hwTrail=[];
+function loadMelody(){
+  songMelody=null; hwSegs=null; hwTrail=[];
+  $('hwWrap').classList.add('hidden');
+  fetch('/melody?id='+SID).then(r=>r.json()).then(d=>{
+    if(!(d.melody&&d.melody.midi&&d.melody.midi.some(v=>v>0))) return;
+    songMelody=d.melody;
+    // contiguous voiced runs on the same semitone become highway bars
+    hwSegs=[];
+    const M=songMelody.midi, hop=songMelody.hop;
+    let s0=-1, note=0;
+    for(let i=0;i<=M.length;i++){
+      const n=(i<M.length&&M[i]>0)?Math.round(M[i]):-1;
+      if(n!==note||i===M.length){
+        if(note>0&&i-s0>=3) hwSegs.push({t0:s0*hop,t1:i*hop,midi:note});
+        s0=i; note=n;
+      }
+    }
+    $('hwWrap').classList.remove('hidden');
+  }).catch(()=>{});
+}
+function melodyAt(t){
+  if(!songMelody) return -1;
+  const i=Math.round(t/songMelody.hop);
+  const M=songMelody.midi;
+  if(i<0||i>=M.length) return -1;
+  // tolerate ±2 frames of timing slop
+  for(const j of [i,i-1,i+1,i-2,i+2]){ if(j>=0&&j<M.length&&M[j]>0) return M[j]; }
+  return -1;
+}
+// ---- notes highway: the original melody scrolls toward the NOW line; your
+// pitch rides as a trail that lights up when you're on the note (octave-
+// folded into view so singing an octave off still tracks its target bar).
+(function(){
+  const NOW_X=0.22, LOOKAHEAD=4, LOOKBACK=1.2;
+  let raf=0;
+  function draw(){
+    raf=0;
+    const wrap=$('hwWrap'); if(!wrap||wrap.classList.contains('hidden')) return;
+    const cv=$('hwCanvas'), ctx=cv.getContext('2d');
+    const W=wrap.clientWidth, H=wrap.clientHeight, dpr=window.devicePixelRatio||1;
+    if(cv.width!==W*dpr){ cv.width=W*dpr; cv.height=H*dpr; }
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,W,H);
+    const now=backingAudio?(backingAudio.currentTime||0):0;
+    const t2x=t=>W*NOW_X + (t-now)*(W*(1-NOW_X)/LOOKAHEAD);
+    // visible pitch range from the segs in view (stable: whole song range)
+    let lo=127, hi=0;
+    for(const g of hwSegs){ if(g.midi<lo) lo=g.midi; if(g.midi>hi) hi=g.midi; }
+    if(hi<=lo){ lo=48; hi=72; }
+    lo-=2; hi+=2;
+    const m2y=mm=>H-(mm-lo)/(hi-lo)*H;
+    // NOW line
+    ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(W*NOW_X,0); ctx.lineTo(W*NOW_X,H); ctx.stroke();
+    // melody bars
+    const barH=Math.max(5, H/(hi-lo));
+    for(const g of hwSegs){
+      if(g.t1<now-LOOKBACK||g.t0>now+LOOKAHEAD) continue;
+      const x0=Math.max(0,t2x(g.t0)), x1=Math.min(W,t2x(g.t1));
+      const active=g.t0<=now&&now<=g.t1;
+      ctx.fillStyle=active?'rgba(30,215,96,.85)':(g.t1<now?'rgba(255,255,255,.14)':'rgba(30,215,96,.38)');
+      ctx.beginPath();
+      ctx.roundRect(x0, m2y(g.midi)-barH/2, Math.max(3,x1-x0), barH, 3);
+      ctx.fill();
+    }
+    // singer trail, folded to the nearest octave of its melody target
+    ctx.lineWidth=2.5;
+    let prev=null;
+    for(const p of hwTrail){
+      if(p.t<now-LOOKBACK||p.t>now+0.05){ prev=null; continue; }
+      const tgt=melodyAt(p.t);
+      let mm=p.midi;
+      if(tgt>0){ while(mm-tgt>6) mm-=12; while(tgt-mm>6) mm+=12; }
+      const x=t2x(p.t), y=m2y(mm);
+      if(prev && p.t-prev.t<0.2){
+        ctx.strokeStyle=p.good?'rgba(30,215,96,.95)':'rgba(240,90,120,.9)';
+        ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
+      }
+      prev={t:p.t,x,y};
+    }
+    if(prev){
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(prev.x,prev.y,4,0,7); ctx.fill();
+    }
+    raf=requestAnimationFrame(draw);
+  }
+  setInterval(()=>{                      // (re)start drawing whenever visible
+    if(!raf && hwSegs && !$('hwWrap').classList.contains('hidden')) raf=requestAnimationFrame(draw);
+  }, 500);
+})();
+
 function onReady(j){
   songKey=null;
   fetch('/songkey?id='+SID).then(r=>r.json()).then(d=>{ songKey=d.key||null; }).catch(()=>{});
   loadLyrics();
+  loadMelody();
   // Stop the PREVIOUS song's backing track before loading a new one.
   // Reassigning `backingAudio` below doesn't stop the old <audio> element —
   // it keeps playing in the background with no on-screen reference to it,
@@ -3370,7 +3466,15 @@ function updateTuner(note, freq){
   if(scorePitchHist.length>=9){
     const m=[...scorePitchHist].sort((a,b)=>a-b)[Math.floor(scorePitchHist.length/2)];
     let err, wideMax;
-    if(songKey){
+    const melTarget = (recording && songMelody) ? melodyAt(backingAudio?backingAudio.currentTime||0:0) : -1;
+    if(melTarget>0){
+      // NOTE-FOR-NOTE against the original singer's melody (from the
+      // separated vocal stem), octave-folded — singing an octave up or
+      // down from the original is correct, singing the WRONG NOTE is not.
+      let d=((m - melTarget*100)%1200+1200)%1200;
+      err=Math.min(d,1200-d);
+      wideMax=100;                      // zero credit a full semitone off
+    } else if(songKey){
       // Score against the SONG'S OWN KEY (detected from the backing track,
       // shifted by any transpose the singer applied). This is what finally
       // anchors the number to the song: off-key singing sits up to 100
@@ -3390,7 +3494,7 @@ function updateTuner(note, freq){
       err=((m%100)+100)%100; err=Math.min(err,100-err);
       wideMax=35;
     }
-    const lo=wideMax===60?20:15;
+    const lo=wideMax===100?50:(wideMax===60?20:15);
     const fs = err<=lo ? 1 : (err>=wideMax ? 0 : (wideMax-err)/(wideMax-lo));
     scoreFrames++; scoreInTune+=fs;
     const onPitch=fs>=0.75;
@@ -3406,6 +3510,10 @@ function updateTuner(note, freq){
     if(scoreMult>scoreBestMult) scoreBestMult=scoreMult;
     scorePoints+=fs*scoreMult;                    // points flow only while singing well
     scoreRecent.push(fs); if(scoreRecent.length>240) scoreRecent.shift();
+    if(recording && songMelody && backingAudio){
+      hwTrail.push({t:backingAudio.currentTime||0, midi:m/100, good:fs>=0.75});
+      if(hwTrail.length>400) hwTrail.shift();
+    }
     updateLiveScoreBar(onPitch, scoreMult>prevMult);
   }
 }
