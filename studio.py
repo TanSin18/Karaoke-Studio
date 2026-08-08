@@ -3412,6 +3412,7 @@ PARTY_HTML = r"""<meta charset="utf-8">
 // OS/browser's own light/dark setting with no override at all.
 try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
 </script>
+<script>document.documentElement.dataset.theme="dark";</script>
 <style>
   #themeToggle{position:fixed;top:16px;right:16px;z-index:50}
   body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
@@ -3521,6 +3522,24 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 .sbName{font-weight:700;color:var(--ink);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sbBest{font-size:10px;color:var(--dim)}
 .sbTotal{font-size:16px;font-weight:800;color:var(--amber2)}
+@media (max-width:760px){
+  .codeRow{flex-direction:column;gap:12px;padding:16px 12px;text-align:center;margin-bottom:12px}
+  .code.marquee-sign span{width:36px;height:52px;font-size:36px}
+  .join{font-size:12px;word-break:break-all;line-height:1.5}
+  #qrImg{width:132px;height:132px;margin:0 auto}
+  .grid{grid-template-columns:1fr;gap:12px}
+  .card{padding:12px}
+  h1{font-size:26px;flex-wrap:wrap;justify-content:center}
+  .sub{font-size:13px}
+  .idleStage{font-size:13px;padding:20px 10px}
+  .rowBtns{flex-wrap:wrap;gap:8px}
+  .liveHud{flex-wrap:wrap;gap:8px;font-size:13px}
+  .tvHwWrap{height:92px}
+  .tvLyrNow{font-size:19px}
+  .tvLyrNext{font-size:12px}
+  .partyOverlay .poBig{font-size:34px}
+  .partyOverlay .poRank{font-size:56px}
+}
 </style>
 
 <svg style="display:none" aria-hidden="true">
@@ -3532,7 +3551,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
 </svg>
 
-<button class="btn ghost small" id="themeToggle" type="button" title="Toggle light/dark theme"><svg class="icon"><use href="#i-moon"/></svg></button>
+
 
 <a href="/" class="backLink">← Back to Studio</a>
 
@@ -3600,9 +3619,9 @@ function currentTheme(){
   return document.documentElement.dataset.theme ||
     (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 }
-function applyThemeIcon(){ $('themeToggle').innerHTML = '<svg class="icon"><use href="#i-'+(currentTheme()==='light'?'sun':'moon')+'"/></svg>'; }
+function applyThemeIcon(){ (document.getElementById('themeToggle')||{addEventListener(){},innerHTML:''}).innerHTML = '<svg class="icon"><use href="#i-'+(currentTheme()==='light'?'sun':'moon')+'"/></svg>'; }
 applyThemeIcon();
-$('themeToggle').addEventListener('click',()=>{
+(document.getElementById('themeToggle')||{addEventListener(){},innerHTML:''}).addEventListener('click',()=>{
   const next = currentTheme()==='light' ? 'dark' : 'light';
   document.documentElement.dataset.theme=next;
   try{ localStorage.setItem('kstudio.theme', next); }catch(e){}
@@ -4177,6 +4196,7 @@ JOIN_HTML = r"""<meta charset="utf-8">
 // localStorage key as the main studio page.
 try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
 </script>
+<script>document.documentElement.dataset.theme="dark";</script>
 <style>
   *{-webkit-tap-highlight-color:transparent}
   /* width:auto overrides this page's blanket .btn{width:100%} (meant for
@@ -4278,6 +4298,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 .tpBig{font-family:var(--display);font-weight:800;font-size:40px;color:var(--amber2);line-height:1.15}
 .tpSub{margin-top:10px;font-size:15px;color:var(--muted)}
 .tpDismiss{margin-top:20px}
+#themeToggle{display:none}
 </style>
 
 <svg style="display:none" aria-hidden="true">
