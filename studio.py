@@ -5198,6 +5198,28 @@ $('challengeList').addEventListener('click',(ev)=>{
 """
 
 
+def _prevent_sleep():
+    """Keep the Mac awake while MicDrop runs, so a shared link keeps working
+    when you step away from the keyboard. Without this the Mac idle-sleeps
+    and the server becomes unreachable to friends — the #1 reason 'it
+    doesn't work when I'm not on my laptop'. `caffeinate` is built into
+    macOS; -i blocks idle sleep, -s blocks sleep on AC power, -w ties its
+    lifetime to this process so it stops automatically when the server does.
+    This does NOT keep a fully powered-off or lid-closed-on-battery Mac
+    awake — nothing can — but it covers the common 'walked away, Mac idle'
+    case. No-op on non-macOS.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        subprocess.Popen(["caffeinate", "-is", "-w", str(os.getpid())],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("  ☕ Keeping this Mac awake while MicDrop runs "
+              "(so the shared link stays reachable).\n")
+    except Exception:
+        pass
+
+
 def main():
     if not os.path.isfile(INDEX_PATH):
         raise SystemExit(
@@ -5211,6 +5233,7 @@ def main():
         )
     srv = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
     print(f"\n  🎤 MicDrop  →  http://{HOST}:{PORT}\n")
+    _prevent_sleep()
 
     global PHONE_HTTPS_READY
     lan = _lan_ip()
