@@ -110,7 +110,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .sessionLayout{display:block}
   .sessionRail{display:flex;flex-direction:column;gap:12px;margin-top:16px}
   @media (min-width:980px){
-    .sessionLayout{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
+    .sessionLayout{display:grid;grid-template-columns:1fr 240px;gap:14px;align-items:start}
     .sessionRail{margin-top:0;position:sticky;top:100px;min-height:calc(100vh - 120px)}
   }
   /* No-scroll session view (desktop): once a song is loaded, the session
@@ -133,6 +133,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
          scroll: the tab's non-video content measures ~690px of chrome, so
          the video gets exactly what's left (bounded to stay usable) */
       max-height:clamp(160px, calc(100vh - 615px), 52vh);margin-inline:auto}
+    /* the no-scroll clamp must never win inside real fullscreen — it out-
+       specifies .stageWrap:fullscreen .stage and was capping the "full
+       screen" video at a few hundred px */
+    body.inSession[data-page="home"] .stageWrap:fullscreen .stage{max-height:none;margin-inline:0}
   }
   .sessionRail .selfView{width:100%;height:auto;aspect-ratio:4/3}
   .railAmbient{margin-top:auto;display:flex;align-items:center;justify-content:center;gap:10px;
@@ -140,7 +144,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     text-transform:uppercase}
   .railAmbient .eq-bars{font-size:18px}
   .railCard{background:var(--glass-fill);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
-    border:1px solid var(--glass-border);border-radius:14px;padding:14px}
+    border:1px solid var(--glass-border);border-radius:14px;padding:12px}
   .railCard h3{margin:0 0 8px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
     text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
   .railCard .hint{margin:0}
