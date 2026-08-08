@@ -259,6 +259,66 @@ def get_job(jid):
         return dict(JOBS.get(jid, {}))
 
 
+LYRICS_CLEAN_RE = re.compile(
+    r"(?i)\b(karaoke|instrumental|with lyrics|lyrics|lyrical|full song|hd|4k|"
+    r"official|video|audio|version|cover|track|hq)\b|[\|\[\]\(\)~]")
+
+def fetch_synced_lyrics(jid):
+    """Fetch time-synced lyrics for this session's song from LRCLIB (free,
+    keyless) and cache them in meta.json as [{t: seconds, text: line}].
+
+    The search query is the YouTube title scrubbed of karaoke-video cruft
+    ('karaoke', 'with lyrics', channel decorations) — those words are why a
+    naive title search misses: LRCLIB indexes the ORIGINAL recordings.
+    Returns the parsed list, an empty list when nothing matched (cached as
+    such so we don't hammer the API), or None when lookup wasn't possible.
+    """
+    meta = _read_meta(jid)
+    if meta.get("lyrics") is not None:
+        return meta["lyrics"]
+    title = (meta.get("title") or "").strip()
+    if not title:
+        return None
+    # YouTube titles are segment soup: "Song Name Karaoke | Movie | Artist |
+    # ChannelName". LRCLIB indexes ORIGINAL recordings and its search is
+    # AND-ish, so one junk segment (the channel) zeroes every result. Build
+    # cleaned segments and retry with progressively fewer of them — measured
+    # on real titles: the full string got 0 hits while "song + movie" or
+    # "song + artist" found the exact track with synced lyrics.
+    segs = []
+    for raw in re.split(r"[|/]+|\s-\s|\|\|", title):
+        c = LYRICS_CLEAN_RE.sub(" ", raw)
+        c = re.sub(r"\s+", " ", c).strip()
+        if c:
+            segs.append(c)
+    if not segs:
+        return None
+    import urllib.request, urllib.parse
+    synced = None
+    for k in range(len(segs), 0, -1):
+        q = " ".join(segs[:k])[:120]
+        try:
+            u = "https://lrclib.net/api/search?q=" + urllib.parse.quote(q)
+            req = urllib.request.Request(u, headers={"User-Agent": "MicDrop karaoke (local app)"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                hits = json.load(r)
+        except Exception:
+            return None                  # network trouble: retry next time
+        synced = next((h.get("syncedLyrics") for h in hits if h.get("syncedLyrics")), None)
+        if synced:
+            break
+    lines = []
+    if synced:
+        for m in re.finditer(r"\[(\d+):(\d+(?:\.\d+)?)\](.*)", synced):
+            t = int(m.group(1)) * 60 + float(m.group(2))
+            text = m.group(3).strip()
+            if text:
+                lines.append({"t": round(t, 2), "text": text[:200]})
+        lines.sort(key=lambda x: x["t"])
+    _write_meta(jid, lyrics=lines)       # empty list = "looked, none found"
+    return lines
+
+
 def detect_song_key(jid):
     """Detect the song's musical key from the backing track (cached in meta).
 
@@ -1462,6 +1522,14 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     j["video_status"] = None
             self._json(200, j)
+            return
+
+        if p.path == "/lyrics":
+            jid = (parse_qs(p.query).get("id") or [""])[0]
+            if not job_or_disk(jid):
+                self._json(404, {"error": "unknown session"})
+                return
+            self._json(200, {"lyrics": fetch_synced_lyrics(jid)})
             return
 
         if p.path == "/songkey":
@@ -2947,6 +3015,11 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .guestChip{background:var(--panel);border:1px solid var(--edge);border-radius:999px;
     padding:5px 12px;font-size:13px;color:var(--ink)}
 
+/* synced lyrics under the stage */
+.tvLyrics{margin-top:10px;text-align:center;padding:10px 14px;border-radius:12px;
+  background:var(--well);border:1px solid var(--edge)}
+.tvLyrNow{font-family:var(--display);font-weight:700;font-size:26px;line-height:1.3;color:var(--amber2)}
+.tvLyrNext{font-size:14px;color:var(--dim);margin-top:4px}
 /* full-stage announcement / celebration overlay */
 .partyOverlay{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
   background:rgba(6,8,7,.86);backdrop-filter:blur(6px);border-radius:inherit}
@@ -3024,6 +3097,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       </div>
       <div class="partyOverlay hidden" id="partyOverlay"><div class="poInner" id="poInner"></div></div>
       <div id="stage"><div class="idleStage"><span class="eq-bars"><i></i><i></i><i></i><i></i></span>Nobody queued yet — waiting for guests to join and add songs.</div></div>
+      <div class="tvLyrics hidden" id="tvLyrics">
+        <div class="tvLyrNow" id="tvLyrNow">&nbsp;</div>
+        <div class="tvLyrNext" id="tvLyrNext">&nbsp;</div>
+      </div>
       <div class="nowSingers" id="singers"></div>
       <div class="nowTitle" id="songTitle"></div>
       <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
@@ -3171,6 +3248,35 @@ function render(){
   mcReact();
 }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ---- synced lyrics on the TV --------------------------------------------
+const tvLyrCache={};   // jid -> lines|null
+let tvLyrJid=null, tvLyrIdx=-1;
+setInterval(()=>{
+  const now=state.queue.find(e=>e.entry_id===state.now_playing);
+  const jid=now&&now.jid;
+  if(!jid){ $('tvLyrics').classList.add('hidden'); tvLyrJid=null; return; }
+  if(jid!==tvLyrJid){
+    tvLyrJid=jid; tvLyrIdx=-1;
+    if(!(jid in tvLyrCache)){
+      tvLyrCache[jid]='loading';
+      fetch('/lyrics?id='+jid).then(r=>r.json())
+        .then(d=>{ tvLyrCache[jid]=(d.lyrics&&d.lyrics.length)?d.lyrics:null; })
+        .catch(()=>{ tvLyrCache[jid]=null; });
+    }
+  }
+  const L=tvLyrCache[jid];
+  if(!L || L==='loading' || !backingAudio){ $('tvLyrics').classList.add('hidden'); return; }
+  $('tvLyrics').classList.remove('hidden');
+  const t=backingAudio.currentTime||0;
+  let i=-1;
+  while(i+1<L.length && L[i+1].t<=t) i++;
+  if(i!==tvLyrIdx){
+    tvLyrIdx=i;
+    $('tvLyrNow').textContent = i>=0 ? L[i].text : '♪';
+    $('tvLyrNext').textContent = (i+1<L.length) ? L[i+1].text : '';
+  }
+}, 300);
 
 // ---- party MC: announcements between songs, hype after each one -----------
 // The TV is the room's MC: when a song ends it celebrates the singer with a
