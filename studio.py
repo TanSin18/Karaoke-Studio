@@ -409,9 +409,10 @@ def fetch_synced_lyrics(jid):
                 continue
             sc = hit_score(h)
             if sc is not None and (best is None or sc < best[0]):
-                best = (sc, h["syncedLyrics"])
+                best = (sc, h["syncedLyrics"], float(h.get("duration") or 0))
         if best:
             synced = best[1]
+            _write_meta(jid, lyrics_hit_duration=best[2])
             break
     lines = []
     if synced:
@@ -604,7 +605,7 @@ def lyrics_auto_offset(jid, lines):
                 best, best_off = score, -float(off)
         conf = best / denom
         result = round(best_off, 2) if conf >= 0.4 else 0.0
-        _write_meta(jid, lyrics_auto_offset=result)
+        _write_meta(jid, lyrics_auto_offset=result, lyrics_align_conf=round(float(conf), 3))
         return result
     except Exception:
         return 0.0
@@ -1855,6 +1856,13 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 lines = _read_meta(jid).get("lyrics")
             auto_off = 0.0
+            meta_l = _read_meta(jid)
+            # migration: offsets cached before confidences existed can't be
+            # trusted or distrusted — recompute once so a verdict is possible
+            if meta_l.get("lyrics_auto_offset") is not None and "lyrics_align_conf" not in meta_l:
+                meta_l.pop("lyrics_auto_offset", None)
+                with open(os.path.join(SESS_DIR, jid, "meta.json"), "w", encoding="utf-8") as fh:
+                    json.dump(meta_l, fh)
             if lines:
                 if _read_meta(jid).get("lyrics_source") != "whisper":
                     # whisper lines were timed against THIS session's own audio
@@ -1865,7 +1873,23 @@ class Handler(BaseHTTPRequestHandler):
                     out.append({"t": ln["t"], "text": r} if r == ln["text"]
                                else {"t": ln["t"], "text": r, "orig": ln["text"]})
                 lines = out
-            self._json(200, {"lyrics": lines, "auto_offset": auto_off})
+            # SYNC GUARANTEE: line-by-line display is only worth showing when
+            # the timing is actually verified — karaoke videos carry their own
+            # on-screen lyrics, so a drifting overlay is worse than none.
+            meta_l = _read_meta(jid)
+            conf = float(meta_l.get("lyrics_align_conf") or 0)
+            hd = float(meta_l.get("lyrics_hit_duration") or 0)
+            dur = float(meta_l.get("duration") or 0)
+            how = None
+            if meta_l.get("lyrics_source") == "whisper":
+                how = "whisper"            # transcribed from THIS audio
+            elif conf >= 0.4:
+                how = "aligned"            # voice-activity match, confident
+            elif hd and dur and abs(hd - dur) <= 3:
+                how = "duration"           # same recording length -> same timeline
+            self._json(200, {"lyrics": lines, "auto_offset": auto_off,
+                             "sync": {"verified": how is not None, "how": how,
+                                      "confidence": conf}})
             return
 
         if p.path == "/melody":
@@ -3845,7 +3869,8 @@ setInterval(()=>{
             setTimeout(()=>{ if(tvLyrCache[jid]==='loading'){ delete tvLyrCache[jid]; if(tvLyrJid===jid) tvLyrJid=null; } }, 10000);
             return;
           }
-          tvLyrCache[jid]=(d.lyrics&&d.lyrics.length)?{lines:d.lyrics, off:+(d.auto_offset||0)}:null;
+          tvLyrCache[jid]=(d.lyrics&&d.lyrics.length&&d.sync&&d.sync.verified)
+            ?{lines:d.lyrics, off:+(d.auto_offset||0)}:null;   // unverified timing: no overlay
         })
         .catch(()=>{ tvLyrCache[jid]=null; });
     }
