@@ -55,7 +55,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   #landingScreen{position:fixed;inset:0;z-index:200;background:var(--bg);
     display:flex;align-items:center;justify-content:center;padding:24px}
   .landingBox{width:100%;max-width:420px;text-align:center;display:flex;flex-direction:column;gap:14px}
-  .landingBox .logo{font-family:var(--mono);font-weight:700;font-size:22px;letter-spacing:.14em;
+  .landingBox .logo{font-family:var(--display);font-weight:800;font-size:34px;letter-spacing:-0.035em;
     text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:12px;margin-bottom:6px}
   .landingSub{color:var(--muted);font-family:var(--display);font-size:20px;margin:0}
   .landingProfiles{display:flex;flex-direction:column;gap:8px;max-height:240px;overflow-y:auto}
@@ -93,9 +93,14 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .profileList button{width:100%;text-align:left;background:none;border:none;color:var(--muted);
     padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12.5px}
   .profileList button:hover{background:rgba(255,255,255,.06);color:var(--ink)}
-  .logo{font-family:var(--mono);font-weight:700;font-size:19px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:12px}
-  .logo b{color:var(--amber);text-shadow:var(--glow-amber)}
+  .logo{font-family:var(--display);font-weight:800;font-size:21.5px;letter-spacing:-0.035em;
+    color:var(--ink);display:flex;align-items:center;gap:9px}
+  .logo b{color:var(--amber2)}
+  /* one clean green for the 'drop' letters — the multi-tint marquee look
+     fought the lowercase wordmark; the lit-letter reveal + hover wave stay */
+  .logo .marquee-sign{gap:0}
+  .logo .marquee-sign span{color:var(--amber2)!important;
+    text-shadow:0 0 16px rgba(30,215,96,.5)!important}
 
   /* One full-width step at a time (tab-switched) once a song is loaded,
      rather than a 2-column layout that made you scroll past everything. */
@@ -882,7 +887,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
 <div class="wrap">
   <header>
-    <div class="logo"><span class="logoMic"><svg class="icon"><use href="#i-mic"/></svg><span class="logoRipple"></span></span>MIC <b class="marquee-sign" id="logoStudio"></b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
+    <div class="logo"><span class="logoMic"><svg class="icon"><use href="#i-mic"/></svg><span class="logoRipple"></span></span>mic<b class="marquee-sign" id="logoStudio"></b> <span class="marquee"><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i><i class="bulb"></i></span></div>
     <nav class="appNav" id="appNav">
       <button class="appTab active" id="navHome" type="button" data-page="home"><svg class="icon"><use href="#i-home"/></svg><span class="navLabel">Home</span></button>
       <button class="appTab" id="navLibrary" type="button" data-page="library"><svg class="icon"><use href="#i-bookmark"/></svg><span class="navLabel">Library</span></button>
@@ -1601,7 +1606,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
      rather than nested inside its max-width. -->
 <div id="landingScreen" class="hidden">
   <div class="landingBox">
-    <div class="logo" style="justify-content:center"><span class="logoMic"><svg class="icon"><use href="#i-mic"/></svg><span class="logoRipple"></span></span>MIC <b class="marquee-sign" id="landingLogoStudio"></b></div>
+    <div class="logo" style="justify-content:center"><span class="logoMic"><svg class="icon"><use href="#i-mic"/></svg><span class="logoRipple"></span></span>mic<b class="marquee-sign" id="landingLogoStudio"></b></div>
     <p class="landingSub">Who's singing tonight?</p>
     <div class="landingProfiles" id="landingProfiles"></div>
     <div class="landingDivider">or</div>
@@ -2131,7 +2136,7 @@ function currentTheme(){
 }
 function applyThemeIcon(){ $('themeToggle').innerHTML = '<svg class="icon"><use href="#i-'+(currentTheme()==='light'?'sun':'moon')+'"/></svg>'; }
 applyThemeIcon();
-$('logoStudio').innerHTML=[...'DROP'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
+$('logoStudio').innerHTML=[...'drop'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
 $('themeToggle').addEventListener('click',()=>{
   const next = currentTheme()==='light' ? 'dark' : 'light';
   document.documentElement.dataset.theme=next;
@@ -2186,7 +2191,7 @@ async function showLandingScreen(){
   }));
 }
 if(!$('landingLogoStudio').dataset.lit){
-  $('landingLogoStudio').innerHTML=[...'DROP'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
+  $('landingLogoStudio').innerHTML=[...'drop'].map((c,i)=>'<span style="--i:'+i+'">'+c+'</span>').join('');
   $('landingLogoStudio').dataset.lit='1';
 }
 $('landingCreateBtn').addEventListener('click',()=>{
