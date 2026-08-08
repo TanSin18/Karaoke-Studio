@@ -132,7 +132,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       /* sized so the WHOLE Record tab fits the panel with zero internal
          scroll: the tab's non-video content measures ~690px of chrome, so
          the video gets exactly what's left (bounded to stay usable) */
-      max-height:clamp(160px, calc(100vh - 690px), 46vh);margin-inline:auto}
+      max-height:clamp(160px, calc(100vh - 615px), 52vh);margin-inline:auto}
   }
   .sessionRail .selfView{width:100%;height:auto;aspect-ratio:4/3}
   .railAmbient{margin-top:auto;display:flex;align-items:center;justify-content:center;gap:10px;
@@ -997,12 +997,6 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <button class="btn" id="keepBtn" title="Keep this take as it is (Enter)">✓ Keep as-is</button>
             <button class="btn" id="redoBtn" title="Throw this take away and sing again from the start">↺ Redo all</button>
           </div>
-        </div>
-
-        <div class="hint">
-          Wear headphones so your mic captures only your voice. The clean track is what
-          records &amp; exports — the sliders above only change what YOU hear.
-          <kbd>Space</kbd> record · <kbd>P</kbd> play/pause · <kbd>Enter</kbd> keep take.
         </div>
 
       </div>
@@ -4841,7 +4835,7 @@ function checkPhoneStatus(){
     const chip=$('recPhoneChip');
     if(chip){
       if(phonePaired){ chip.textContent='📹 Phone camera connected — this take will include video'; chip.className='recPhoneChip on'; }
-      else{ chip.textContent='📹 No phone camera paired — this take will be audio-only'; chip.className='recPhoneChip off'; }
+      else{ chip.textContent=''; chip.className='recPhoneChip'; }
     }
     const status=$('phoneStatusText');
     if(status){
