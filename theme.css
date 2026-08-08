@@ -10,55 +10,59 @@
    stop looking like a generic template. The app already depends on network
    access for its core feature (YouTube search/download), so a font request
    adds no new offline constraint. */
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Righteous&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap');
 
-/* NEON NIGHTCLUB / RAVE system. Kept every existing token NAME (dozens of
-   call sites across index.html, /party, /join, /host reference them) but
-   pushed the values much further: near-black stage-lighting background,
-   higher-saturation neon, real glassmorphism (backdrop-filter, not just a
-   gradient overlay pretending to be glass), and a set of new utilities
-   (glow-pulse motion, grain texture, equalizer bars, gradient text) that
-   didn't exist before. Nothing here is a rename — only intensification. */
+/* SPOTIFY-STYLE system. Kept every existing token NAME (dozens of call
+   sites across index.html, /party, /join, /host reference them) but the
+   values now speak Spotify: flat near-black stage (#121212 base) with
+   elevation done by SHADE (#181818 cards, #282828 edges) instead of
+   borders-and-glow, ONE saturated accent (#1DB954 green, #1ed760 hot) doing
+   every job the old cyan/magenta/violet trio split between them, white ink
+   with #b3b3b3 secondary, and Figtree — the closest open face to Spotify's
+   Circular — for both display and body. All --glow-* tokens collapse to a
+   whisper: the identity of this look IS the flatness; glow was the old
+   theme's identity, not this one's. Token names like --amber/--pink are
+   now historical aliases (primary/secondary accent slots) — renaming them
+   would touch every page for zero visual gain. */
 :root{
-  --panel:#160b28; --panel2:#1e1038; --rack:#0f0620; --edge:#3d2a5e;
-  --ink:#f7f2ff; --muted:#bcaee0; --dim:#8577ac;
-  --amber:#00f0ff; --amber2:#00b8cc;              /* "primary" = electric cyan */
-  --pink:#ff2ee0; --pink2:#e000b8;                 /* brighter, hotter magenta */
-  --purple:#8b2fff; --green:#39ff8a;               /* UV violet + green (green reserved for
-                                                       success/ok states, not part of the party trio) */
-  --rec:#ff3b47; --ok:#39ff8a;
-  --fader:#4a3a70; --track:#0a0512;
-  --field:#0a0512;                                 /* text-input/select fill — separate from
+  --panel:#181818; --panel2:#1f1f1f; --rack:#0a0a0a; --edge:#2a2a2a;
+  --ink:#ffffff; --muted:#b3b3b3; --dim:#7f7f7f;
+  --amber:#1db954; --amber2:#1ed760;               /* "primary" accent slot = Spotify green */
+  --pink:#1ed760; --pink2:#169c46;                 /* secondary accent slot: hotter green */
+  --purple:#535353; --green:#1ed760;               /* old violet slot goes neutral gray;
+                                                       green stays for success/ok states */
+  --rec:#f0184c; --ok:#1ed760;
+  --fader:#535353; --track:#000000;
+  --field:#242424;                                 /* text-input/select fill — separate from
                                                        --track so we can flip it in light mode
                                                        without also relighting the mixing-console
                                                        sliders, which stay dark on purpose */
-  --well:#08040f; --well2:#120a22;                 /* sunken content panels — result cards, queue
+  --well:#000000; --well2:#161616;                 /* sunken content panels — result cards, queue
                                                        rows, take strip, tuner, player chrome —
                                                        as opposed to --rack/--fader/--metal which
                                                        are the deliberately-always-dark "hardware" */
   --mono:'SF Mono',ui-monospace,Menlo,monospace;
-  --display:'Righteous',ui-rounded,system-ui,sans-serif;
-  --body:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --display:'Figtree',-apple-system,BlinkMacSystemFont,sans-serif;
+  --body:'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 
-  --glow-amber: 0 0 8px rgba(0,240,255,.75), 0 0 24px rgba(0,240,255,.4), 0 0 48px rgba(0,240,255,.18);
-  --glow-pink:  0 0 8px rgba(255,46,224,.75), 0 0 24px rgba(224,0,184,.4), 0 0 48px rgba(224,0,184,.18);
-  --glow-purple:0 0 8px rgba(139,47,255,.75), 0 0 24px rgba(139,47,255,.4), 0 0 48px rgba(139,47,255,.18);
-  --glow-green: 0 0 8px rgba(57,255,138,.75), 0 0 24px rgba(57,255,138,.4), 0 0 48px rgba(57,255,138,.18);
-  --glow-rec:   0 0 10px var(--rec), 0 0 4px #fff;
+  /* Glow tokens kept (call sites everywhere) but reduced to a faint halo —
+     enough to read "active", never neon. */
+  --glow-amber: 0 0 0 1px rgba(29,185,84,.35), 0 2px 12px rgba(29,185,84,.25);
+  --glow-pink:  0 0 0 1px rgba(30,215,96,.35), 0 2px 12px rgba(30,215,96,.25);
+  --glow-purple:0 0 0 1px rgba(255,255,255,.12), 0 2px 12px rgba(0,0,0,.4);
+  --glow-green: 0 0 0 1px rgba(30,215,96,.35), 0 2px 12px rgba(30,215,96,.25);
+  --glow-rec:   0 0 0 1px rgba(240,24,76,.4), 0 2px 12px rgba(240,24,76,.3);
   --glow-ok:    var(--glow-green);
-  --metal: linear-gradient(180deg,#2f1d52,#1a0f30);
-  --glass: linear-gradient(180deg,rgba(255,255,255,.07),rgba(0,0,0,.22));
-  --bg: radial-gradient(1000px 560px at 12% -6%, rgba(139,47,255,.28) 0%, transparent 55%),
-        radial-gradient(900px 620px at 88% 8%, rgba(0,240,255,.22) 0%, transparent 52%),
-        radial-gradient(1100px 700px at 50% 108%, rgba(255,46,224,.16) 0%, transparent 58%),
-        #060310;
+  --metal: linear-gradient(180deg,#232323,#181818);
+  --glass: linear-gradient(180deg,rgba(255,255,255,.04),rgba(0,0,0,.18));
+  --bg: linear-gradient(180deg, #1c2a20 0%, #16181a 22%, #121212 45%, #121212 100%);
 
-  /* new: glass panel surface (real blur, not a fake gradient), used by
+  /* glass panel surface (real blur, not a fake gradient), used by
      .glass-panel and layered onto .card so cards actually blur whatever's
      behind them instead of just looking vaguely translucent. */
-  --glass-fill: rgba(30,16,56,.52);
-  --glass-border: rgba(255,255,255,.09);
-  --grain-opacity: .05;
+  --glass-fill: rgba(24,24,24,.72);
+  --glass-border: rgba(255,255,255,.06);
+  --grain-opacity: .02;
 }
 
 /* Light mode: everything flips, including the "hardware" tokens
@@ -75,29 +79,25 @@
    (set by the toggle in index.html) overrides it. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
-    --panel:#ffffff; --panel2:#f5f2fc; --edge:#e0d8f5;
-    --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
-    --bg: radial-gradient(1000px 560px at 12% -6%, rgba(139,47,255,.10) 0%, transparent 55%),
-          radial-gradient(900px 620px at 88% 8%, rgba(0,224,255,.08) 0%, transparent 52%),
-          #f8f6fc;
+    --panel:#ffffff; --panel2:#f6f6f6; --edge:#e2e2e2;
+    --ink:#121212; --muted:#5f5f5f; --dim:#8f8f8f;
+    --bg: linear-gradient(180deg, #eaf5ee 0%, #f6f8f6 20%, #f8f8f8 100%);
     --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
-    --field:#ffffff; --well:#f2eefc; --well2:#e8ddf8;
-    --rack:#ece4fa; --metal: linear-gradient(180deg,#f6f3fc,#e8dff7);
-    --glass-fill: rgba(255,255,255,.6); --glass-border: rgba(28,19,48,.08);
-    --grain-opacity: .025;
+    --field:#ffffff; --well:#f0f0f0; --well2:#e8e8e8;
+    --rack:#ececec; --metal: linear-gradient(180deg,#f8f8f8,#ececec);
+    --glass-fill: rgba(255,255,255,.7); --glass-border: rgba(0,0,0,.08);
+    --grain-opacity: .015;
   }
 }
 :root[data-theme="light"]{
-  --panel:#ffffff; --panel2:#f5f2fc; --edge:#e0d8f5;
-  --ink:#1c1330; --muted:#5c5378; --dim:#8d84a6;
-  --bg: radial-gradient(1000px 560px at 12% -6%, rgba(139,47,255,.10) 0%, transparent 55%),
-        radial-gradient(900px 620px at 88% 8%, rgba(0,224,255,.08) 0%, transparent 52%),
-        #f8f6fc;
+  --panel:#ffffff; --panel2:#f6f6f6; --edge:#e2e2e2;
+  --ink:#121212; --muted:#5f5f5f; --dim:#8f8f8f;
+  --bg: linear-gradient(180deg, #eaf5ee 0%, #f6f8f6 20%, #f8f8f8 100%);
   --glass: linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.05));
-  --field:#ffffff; --well:#f2eefc; --well2:#e8ddf8;
-  --rack:#ece4fa; --metal: linear-gradient(180deg,#f6f3fc,#e8dff7);
-  --glass-fill: rgba(255,255,255,.6); --glass-border: rgba(28,19,48,.08);
-  --grain-opacity: .025;
+  --field:#ffffff; --well:#f0f0f0; --well2:#e8e8e8;
+  --rack:#ececec; --metal: linear-gradient(180deg,#f8f8f8,#ececec);
+  --glass-fill: rgba(255,255,255,.7); --glass-border: rgba(0,0,0,.08);
+  --grain-opacity: .015;
 }
 
 *{box-sizing:border-box}
@@ -189,9 +189,9 @@ body::before{
 .btn:hover{filter:brightness(1.18);transform:translateY(-1px)}
 .btn:active{transform:translateY(0) scale(.97)}
 .btn:disabled{opacity:.4;cursor:default;transform:none}
-.btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#001a1f;
+.btn.amber{background:linear-gradient(180deg,var(--amber),var(--amber2));color:#000;
   border-color:#008494;box-shadow:var(--glow-amber)}
-.btn.pink{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#2a0022;
+.btn.pink{background:linear-gradient(180deg,var(--pink),var(--pink2));color:#000;
   border-color:#8a0070;box-shadow:var(--glow-pink)}
 .btn.purple{background:linear-gradient(180deg,var(--purple),#7a0fd6);color:#fff;
   border-color:#6a0fc0;box-shadow:var(--glow-purple)}
