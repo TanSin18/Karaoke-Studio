@@ -715,12 +715,16 @@ def _safe_profile_name(name):
     return name[:40]
 
 
-def _profile_slug(name):
-    return re.sub(r"\s+", "_", name.lower())
+def _profile_slug(name, owner=None):
+    base = re.sub(r"\s+", "_", name.lower())
+    # host (owner=None) keeps bare slugs — same files as before, no
+    # migration. Guests get a per-device prefix so two people can both have
+    # a 'Guest' profile without sharing one library.
+    return f"u_{owner[:12]}_{base}" if owner else base
 
 
-def _read_profile(name):
-    slug = _profile_slug(name)
+def _read_profile(name, owner=None):
+    slug = _profile_slug(name, owner)
     try:
         with open(os.path.join(_profiles_dir(), slug + ".json"), encoding="utf-8") as fh:
             return json.load(fh)
@@ -728,9 +732,9 @@ def _read_profile(name):
         return {"display_name": name, "library": []}
 
 
-def _write_profile(name, **kw):
-    slug = _profile_slug(name)
-    prof = _read_profile(name)
+def _write_profile(name, owner=None, **kw):
+    slug = _profile_slug(name, owner)
+    prof = _read_profile(name, owner)
     prof["display_name"] = name
     prof.update(kw)
     with open(os.path.join(_profiles_dir(), slug + ".json"), "w", encoding="utf-8") as fh:
@@ -738,28 +742,38 @@ def _write_profile(name, **kw):
     return prof
 
 
-def list_profiles():
+def list_profiles(owner=None):
     out = []
     try:
         entries = os.listdir(_profiles_dir())
     except OSError:
         return out
+    pref = f"u_{owner[:12]}_" if owner else None
     for fn in entries:
         if not fn.endswith(".json"):
             continue
+        stem = fn[:-5]
+        if pref:                                   # guest: only their own
+            if not stem.startswith(pref):
+                continue
+            disp_slug = stem[len(pref):]
+        else:                                      # host: only bare (legacy) files
+            if stem.startswith("u_"):
+                continue
+            disp_slug = stem
         try:
             with open(os.path.join(_profiles_dir(), fn), encoding="utf-8") as fh:
                 d = json.load(fh)
         except (OSError, ValueError):
             continue
-        out.append({"name": d.get("display_name") or fn[:-5], "slug": fn[:-5],
+        out.append({"name": d.get("display_name") or disp_slug, "slug": disp_slug,
                      "email": d.get("email") or ""})
     out.sort(key=lambda p: p["name"].lower())
     return out
 
 
-def _delete_profile(name):
-    slug = _profile_slug(name)
+def _delete_profile(name, owner=None):
+    slug = _profile_slug(name, owner)
     try:
         os.remove(os.path.join(_profiles_dir(), slug + ".json"))
         return True
@@ -767,10 +781,10 @@ def _delete_profile(name):
         return False
 
 
-def _rename_profile(old_name, new_name):
-    old_slug = _profile_slug(old_name)
-    new_slug = _profile_slug(new_name)
-    prof = _read_profile(old_name)
+def _rename_profile(old_name, new_name, owner=None):
+    old_slug = _profile_slug(old_name, owner)
+    new_slug = _profile_slug(new_name, owner)
+    prof = _read_profile(old_name, owner)
     prof["display_name"] = new_name
     with open(os.path.join(_profiles_dir(), new_slug + ".json"), "w", encoding="utf-8") as fh:
         json.dump(prof, fh)
@@ -830,7 +844,7 @@ def _dir_size(path):
     return total
 
 
-def list_recent_sessions(profile=None, limit=8):
+def list_recent_sessions(profile=None, limit=8, viewer_id=None, viewer_host=False):
     """Sessions with a downloaded backing track, newest first, for the
     'resume a recent song' panel and the History page. Survives server
     restarts (reads meta.json + checks disk for finished outputs directly).
@@ -848,6 +862,11 @@ def list_recent_sessions(profile=None, limit=8):
         if not os.path.isfile(backing):
             continue
         meta = _read_meta(jid)
+        # per-device privacy: you see sessions your device made; the host
+        # also sees legacy/untagged ones. Never anyone else's.
+        tag = meta.get("owner_id")
+        if not ((tag and tag == viewer_id) or (viewer_host and not tag)):
+            continue
         if want_slug is not None and meta.get("profile") != want_slug:
             continue
         created_at = meta.get("created_at")
@@ -1072,7 +1091,7 @@ def separate_vocals(jid, backing_path):
     shutil.rmtree(outdir, ignore_errors=True)
 
 
-def do_prepare(jid, url, profile=None, strip_vocals=False):
+def do_prepare(jid, url, profile=None, strip_vocals=False, owner_id=None):
     set_job(jid, status="running", stage="downloading", pct=0, error=None)
     vid = extract_video_id(url)
     sdir = os.path.join(SESS_DIR, jid)
@@ -1140,6 +1159,8 @@ def do_prepare(jid, url, profile=None, strip_vocals=False):
                "url": url, "created_at": time.time(), "separated": separated}
     if profile:
         meta_kw["profile"] = _profile_slug(profile)
+    if owner_id:
+        meta_kw["owner_id"] = owner_id       # this device owns the session
     _write_meta(jid, **meta_kw)
 
 
@@ -1148,7 +1169,7 @@ def do_prepare(jid, url, profile=None, strip_vocals=False):
 MAX_IMPORT_BYTES = 500 * 1024 * 1024  # 500MB
 
 
-def do_import(jid, upload_path, filename):
+def do_import(jid, upload_path, filename, owner_id=None):
     """Convert an uploaded local audio/video file into the session's backing
     track, the same role yt-dlp's download plays for a YouTube session. No
     video_id is set, so the client falls into the existing lyrics-fallback
@@ -1173,8 +1194,13 @@ def do_import(jid, upload_path, filename):
         return
 
     title = os.path.splitext(os.path.basename(filename or ""))[0].strip() or "Karaoke"
+    dur = _probe_duration(backing)
     set_job(jid, status="ready", stage="ready", pct=100,
-            video_id=None, title=title, duration=_probe_duration(backing))
+            video_id=None, title=title, duration=dur)
+    mk = {"title": title, "duration": dur, "created_at": time.time()}
+    if owner_id:
+        mk["owner_id"] = owner_id
+    _write_meta(jid, **mk)
 
 
 # ---- Backing transpose (change key), rendered on demand + cached ------------
@@ -1747,10 +1773,30 @@ class Handler(BaseHTTPRequestHandler):
         return ra in ("127.0.0.1", "::1") and not self.headers.get("X-Forwarded-For")
 
     def _is_owner(self):
+        # "the host" — sees legacy/untagged data (the pre-scoping sessions and
+        # profiles). Direct-local browser, or a device holding the host key.
         if self._direct_local():
             return True
         key = self.headers.get("X-Owner-Key", "")
         return bool(key) and _hmac.compare_digest(key, _owner_secret())
+
+    def _req_owner(self):
+        # per-device identity: every browser sends a stable random token, so
+        # each guest gets their OWN private studio (their sessions, library,
+        # profiles) — visible to them, invisible to everyone else.
+        oid = (self.headers.get("X-Owner-Id") or "").strip()
+        return oid if _valid_id(oid) else None
+
+    def _scope(self):
+        # (owner_id, is_host) — the identity used to tag new data and to
+        # filter what this request may see.
+        return (self._req_owner(), self._is_owner())
+
+    def _owns(self, tag):
+        oid, host = self._scope()
+        if tag and oid and tag == oid:
+            return True
+        return host and not tag        # legacy/untagged belongs to the host
 
     def _guard(self, p):
         """One gate for every request: block foreign hosts (DNS-rebind) and
@@ -1931,21 +1977,20 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/sessions":
-            if not self._is_owner():
-                self._json(200, {"sessions": []}); return
             q = parse_qs(p.query)
             profile = (q.get("profile") or [""])[0]
             try:
                 limit = max(1, min(200, int((q.get("limit") or ["8"])[0])))
             except ValueError:
                 limit = 8
-            self._json(200, {"sessions": list_recent_sessions(profile or None, limit=limit)})
+            oid, host = self._scope()
+            self._json(200, {"sessions": list_recent_sessions(
+                profile or None, limit=limit, viewer_id=oid, viewer_host=host)})
             return
 
         if p.path == "/profiles":
-            if not self._is_owner():
-                self._json(200, {"profiles": []}); return
-            self._json(200, {"profiles": list_profiles()})
+            oid, host = self._scope()
+            self._json(200, {"profiles": list_profiles(None if host else oid)})
             return
 
         if p.path == "/owner/status":
@@ -1956,13 +2001,12 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p.path == "/profile/library":
-            if not self._is_owner():
-                self._json(200, {"library": []}); return
             name = _safe_profile_name((parse_qs(p.query).get("name") or [""])[0])
             if not name:
                 self._json(400, {"error": "Missing profile name."})
                 return
-            prof = _read_profile(name)
+            oid, host = self._scope()
+            prof = _read_profile(name, None if host else oid)
             self._json(200, {"display_name": prof.get("display_name") or name,
                               "library": prof.get("library") or []})
             return
@@ -2424,7 +2468,10 @@ class Handler(BaseHTTPRequestHandler):
             strip_vocals = bool(body.get("strip_vocals"))
             jid = uuid.uuid4().hex[:12]
             set_job(jid, status="queued")
-            threading.Thread(target=do_prepare, args=(jid, url, profile, strip_vocals), daemon=True).start()
+            oid, host = self._scope()
+            threading.Thread(target=do_prepare,
+                             args=(jid, url, profile, strip_vocals, None if host else oid),
+                             daemon=True).start()
             self._json(200, {"id": jid})
             return
 
@@ -2435,11 +2482,6 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200 if ok else 403, {"ok": ok})
             return
 
-        if p.path.startswith("/profile/") or p.path == "/sessions_delete":
-            if not self._is_owner():
-                self._json(403, {"error": "not the owner of this device"})
-                return
-
         if p.path == "/profile/library/add":
             body = self._read_body()
             name = _safe_profile_name(body.get("name"))
@@ -2447,7 +2489,8 @@ class Handler(BaseHTTPRequestHandler):
             if not name or not video_id:
                 self._json(400, {"error": "Missing profile name or song."})
                 return
-            prof = _read_profile(name)
+            oid, host = self._scope(); pown = None if host else oid
+            prof = _read_profile(name, pown)
             lib = prof.get("library") or []
             if not any(e.get("video_id") == video_id for e in lib):
                 lib.append({
@@ -2457,7 +2500,7 @@ class Handler(BaseHTTPRequestHandler):
                     "channel": (body.get("channel") or "").strip(),
                     "added_at": time.time(),
                 })
-            prof = _write_profile(name, library=lib)
+            prof = _write_profile(name, pown, library=lib)
             self._json(200, prof)
             return
 
@@ -2468,9 +2511,10 @@ class Handler(BaseHTTPRequestHandler):
             if not name:
                 self._json(400, {"error": "Missing profile name."})
                 return
-            prof = _read_profile(name)
+            oid, host = self._scope(); pown = None if host else oid
+            prof = _read_profile(name, pown)
             lib = [e for e in (prof.get("library") or []) if e.get("video_id") != video_id]
-            prof = _write_profile(name, library=lib)
+            prof = _write_profile(name, pown, library=lib)
             self._json(200, prof)
             return
 
@@ -2484,10 +2528,11 @@ class Handler(BaseHTTPRequestHandler):
             # menu (e.g. "signed in as alice@example.com"). No verification,
             # no OAuth, no outbound network call of any kind.
             email = (body.get("email") or "").strip()[:120]
+            oid, host = self._scope(); pown = None if host else oid
             if "email" in body:
-                prof = _write_profile(name, email=email)
+                prof = _write_profile(name, pown, email=email)
             else:
-                prof = _write_profile(name)
+                prof = _write_profile(name, pown)
             self._json(200, prof)
             return
 
@@ -2498,7 +2543,8 @@ class Handler(BaseHTTPRequestHandler):
             if not old_name or not new_name:
                 self._json(400, {"error": "Missing account name."})
                 return
-            prof = _rename_profile(old_name, new_name)
+            oid, host = self._scope()
+            prof = _rename_profile(old_name, new_name, None if host else oid)
             self._json(200, prof)
             return
 
@@ -2508,7 +2554,8 @@ class Handler(BaseHTTPRequestHandler):
             if not name:
                 self._json(400, {"error": "Missing account name."})
                 return
-            _delete_profile(name)
+            oid, host = self._scope()
+            _delete_profile(name, None if host else oid)
             self._json(200, {"ok": True})
             return
 
@@ -2520,7 +2567,8 @@ class Handler(BaseHTTPRequestHandler):
             if not name or not video_id or not title:
                 self._json(400, {"error": "Missing profile name, song, or title."})
                 return
-            prof = _read_profile(name)
+            oid, host = self._scope(); pown = None if host else oid
+            prof = _read_profile(name, pown)
             lib = prof.get("library") or []
             found = False
             for e in lib:
@@ -2530,7 +2578,7 @@ class Handler(BaseHTTPRequestHandler):
             if not found:
                 self._json(404, {"error": "Song not in library."})
                 return
-            prof = _write_profile(name, library=lib)
+            prof = _write_profile(name, pown, library=lib)
             self._json(200, prof)
             return
 
@@ -2565,7 +2613,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(500, {"error": "Could not save the uploaded file."})
                 return
             set_job(jid, status="queued")
-            threading.Thread(target=do_import, args=(jid, upload_path, filename),
+            threading.Thread(target=do_import, args=(jid, upload_path, filename, (lambda sc: None if sc[1] else sc[0])(self._scope())),
                              daemon=True).start()
             self._json(200, {"id": jid})
             return

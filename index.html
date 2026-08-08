@@ -1701,18 +1701,28 @@ const $=id=>document.getElementById(id);
 // the host and any device that entered this key. Attached to every request
 // so the server can authorize; stored per-device. ------------------------
 const OWNER_KEY='kstudio.ownerKey';
+const DEVICE_KEY='kstudio.deviceId';
 function ownerKey(){ try{ return localStorage.getItem(OWNER_KEY)||''; }catch(e){ return ''; } }
+function deviceId(){
+  // a stable per-browser id — this is what makes each person's sessions,
+  // takes and library private to their own device on a shared link
+  try{ let d=localStorage.getItem(DEVICE_KEY);
+    if(!d){ d='dev'+Math.random().toString(36).slice(2,12)+Date.now().toString(36).slice(-4);
+      localStorage.setItem(DEVICE_KEY,d); }
+    return d;
+  }catch(e){ return 'dev-ephemeral'; }
+}
 let isOwner=false;
 (function(){
   const _f=window.fetch;
   window.fetch=function(input, init){
     init=init||{};
-    // only same-origin requests (all of ours are) get the key
     const url=(typeof input==='string')?input:(input&&input.url)||'';
     if(!/^https?:\/\//i.test(url) || url.startsWith(location.origin)){
+      init.headers=new Headers(init.headers||(typeof input!=='string'&&input.headers)||{});
+      init.headers.set('X-Owner-Id', deviceId());
       const k=ownerKey();
-      if(k){ init.headers=new Headers(init.headers||(typeof input!=='string'&&input.headers)||{});
-        init.headers.set('X-Owner-Key', k); }
+      if(k) init.headers.set('X-Owner-Key', k);
     }
     return _f(input, init);
   };
@@ -2250,15 +2260,15 @@ $('profileNameLabel').textContent=activeProfile;
 // nothing of the host's — with a small 🔒 to unlock if it's actually the
 // host's own phone.
 function applyOwnerUI(){
-  document.body.classList.toggle('guestMode', !isOwner);
-  $('profileChip').style.display = isOwner ? '' : 'none';
-  $('navLibrary').style.display = isOwner ? '' : 'none';
-  $('navHistory').style.display = isOwner ? '' : 'none';
-  const lk=$('ownerLockBtn');
-  if(lk) lk.style.display = isOwner ? 'none' : '';
-  if(!isOwner && !$('homeSection').classList.contains('hidden')===false){}
-  if(!isOwner && (document.body.dataset.page==='library'||document.body.dataset.page==='history'))
-    switchAppPage('home');
+  // Every device sees its OWN studio in full — profile, Library, History
+  // are always available; the server scopes their CONTENTS per device, so
+  // a friend simply never receives the host's data. The 'It's me' unlock
+  // only matters for the host reaching pre-existing (legacy) data from a
+  // second device, so it's offered but unobtrusive.
+  $('profileChip').style.display='';
+  $('navLibrary').style.display='';
+  $('navHistory').style.display='';
+  const lk=$('ownerLockBtn'); if(lk) lk.style.display = isOwner ? 'none' : '';
 }
 async function refreshOwner(){
   try{ const d=await (await fetch('/owner/status')).json();
