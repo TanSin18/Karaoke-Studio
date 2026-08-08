@@ -3632,8 +3632,10 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 // The melody bars scroll on the big screen; the singer's pitch trail rides
 // them, relayed from their phone through /party/score posts. The TV is the
 // song clock — it reports position so phones can score note-for-note.
-const tvMelCache={};   // jid -> {segs,hop}|null|'loading'
+const tvMelCache={};   // jid -> {segs,mel}|null|'loading'
+const tvKeyCache={};   // jid -> {root,scale}|null
 let tvHwJid=null, tvTrail=[], tvHwRaf=0, tvPosPost=0;
+const TVFX={stars:null, parts:[]};
 function tvBuildSegs(mel){
   const segs=[]; const M=mel.midi, hop=mel.hop;
   let s0=-1, note=0;
@@ -3661,9 +3663,13 @@ setInterval(()=>{
     fetch('/melody?id='+jid).then(r=>r.json())
       .then(d=>{ tvMelCache[jid]=(d.melody&&d.melody.midi&&d.melody.midi.some(v=>v>0))?tvBuildSegs(d.melody):null; })
       .catch(()=>{ tvMelCache[jid]=null; });
+    fetch('/songkey?id='+jid).then(r=>r.json())
+      .then(d=>{ tvKeyCache[jid]=d.key||null; }).catch(()=>{ tvKeyCache[jid]=null; });
   }
   const H=tvMelCache[jid];
-  const ok=H&&H!=='loading'&&backingAudio;
+  // melody -> highway; no melody -> ribbon (key grid + the singer's
+  // phone-judged trail). Either way the note shower is on the big screen.
+  const ok=backingAudio && (H&&H!=='loading' || tvTrail.length>0);
   $('tvHwWrap').classList.toggle('hidden', !ok);
   if(ok&&!tvHwRaf) tvHwRaf=requestAnimationFrame(tvHwDraw);
   // absorb new trail points from the singer's phone
@@ -3683,43 +3689,142 @@ setInterval(()=>{   // report the song clock for the phones
 function tvHwDraw(){
   tvHwRaf=0;
   const wrap=$('tvHwWrap'); if(wrap.classList.contains('hidden')) return;
-  const H0=tvMelCache[tvHwJid]; if(!H0||H0==='loading'||!backingAudio) return;
+  const H0=tvMelCache[tvHwJid];
+  const key=tvKeyCache[tvHwJid];
+  if(!backingAudio) return;
+  const highway=H0&&H0!=='loading';
   const cv=$('tvHw'), ctx=cv.getContext('2d');
   const W=wrap.clientWidth, HH=wrap.clientHeight, dpr=window.devicePixelRatio||1;
-  if(cv.width!==W*dpr){ cv.width=W*dpr; cv.height=HH*dpr; }
+  if(cv.width!==W*dpr){ cv.width=W*dpr; cv.height=HH*dpr; TVFX.stars=null; }
   ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,HH);
-  const NOW_X=0.22, LOOK=4, BACK=1.2;
-  const now=backingAudio.currentTime||0;
+  const now=backingAudio.currentTime||0, wall=performance.now()/1000;
+  // shared atmosphere
+  if(!TVFX.stars){ TVFX.stars=[]; for(let i=0;i<30;i++) TVFX.stars.push({x:Math.random(),y:Math.random(),s:Math.random()}); }
+  const wash=ctx.createLinearGradient(0,0,0,HH);
+  wash.addColorStop(0,'rgba(30,215,96,.035)'); wash.addColorStop(.5,'rgba(0,0,0,0)');
+  wash.addColorStop(1,'rgba(0,0,0,.22)');
+  ctx.fillStyle=wash; ctx.fillRect(0,0,W,HH);
+  for(const st of TVFX.stars){
+    const sx=((st.x - wall*0.008*(0.4+st.s)) % 1 + 1) % 1;
+    ctx.fillStyle='rgba(255,255,255,'+(0.03+st.s*0.05)+')';
+    ctx.fillRect(sx*W, st.y*HH, 1.5, 1.5);
+  }
+  const NOW_X=0.22, LOOK=4, BACK=1.6;
   const t2x=t=>W*NOW_X+(t-now)*(W*(1-NOW_X)/LOOK);
-  let lo=127,hi=0;
-  for(const g of H0.segs){ if(g.midi<lo)lo=g.midi; if(g.midi>hi)hi=g.midi; }
-  if(hi<=lo){lo=48;hi=72;} lo-=2; hi+=2;
+  let lo, hi;
+  if(highway){
+    lo=127; hi=0;
+    for(const g of H0.segs){ if(g.midi<lo)lo=g.midi; if(g.midi>hi)hi=g.midi; }
+    if(hi<=lo){lo=48;hi=72;}
+  } else {
+    // ribbon mode: window follows the singer's recent register
+    const rec=tvTrail.filter(p=>now-p.t<4).map(p=>p.midi);
+    const c=rec.length? rec.sort((a,b)=>a-b)[Math.floor(rec.length/2)] : 60;
+    lo=c-7; hi=c+7;
+  }
+  lo-=2; hi+=2;
   const m2y=mm=>HH-(mm-lo)/(hi-lo)*HH;
   ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=2;
   ctx.beginPath(); ctx.moveTo(W*NOW_X,0); ctx.lineTo(W*NOW_X,HH); ctx.stroke();
-  const barH=Math.max(4,HH/(hi-lo));
-  for(const g of H0.segs){
-    if(g.t1<now-BACK||g.t0>now+LOOK) continue;
-    const x0=Math.max(0,t2x(g.t0)), x1=Math.min(W,t2x(g.t1));
-    const active=g.t0<=now&&now<=g.t1;
-    ctx.fillStyle=active?'rgba(30,215,96,.85)':(g.t1<now?'rgba(255,255,255,.14)':'rgba(30,215,96,.38)');
-    ctx.beginPath(); ctx.roundRect(x0,m2y(g.midi)-barH/2,Math.max(3,x1-x0),barH,3); ctx.fill();
+  const NOTEJ2=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  let activeSeg=null;
+  if(highway){
+    const barH=Math.max(4,HH/(hi-lo));
+    ctx.font='10px ui-monospace,monospace'; ctx.textBaseline='middle';
+    for(const g of H0.segs){
+      if(g.t1<now-BACK||g.t0>now+LOOK) continue;
+      const x0=Math.max(0,t2x(g.t0)), x1=Math.min(W,t2x(g.t1));
+      const active=g.t0<=now&&now<=g.t1;
+      if(active){ activeSeg=g;
+        ctx.shadowColor='rgba(30,215,96,.7)'; ctx.shadowBlur=12;
+        ctx.fillStyle='rgba(30,215,96,'+(0.75+0.2*Math.sin(wall*6))+')';
+      } else { ctx.shadowBlur=0;
+        ctx.fillStyle=(g.t1<now)?'rgba(255,255,255,.14)':'rgba(30,215,96,.38)'; }
+      ctx.beginPath(); ctx.roundRect(x0,m2y(g.midi)-barH/2,Math.max(3,x1-x0),barH,3); ctx.fill();
+      ctx.shadowBlur=0;
+      if(active){ ctx.fillStyle='rgba(30,215,96,.95)';
+        ctx.fillText(NOTEJ2[((g.midi%12)+12)%12], Math.max(4,x0)+4, m2y(g.midi)-barH/2-8); }
+    }
+  } else {
+    // ribbon grid: the song's in-key note lines, labeled
+    const iv=key?(key.scale==='minor'?[0,2,3,5,7,8,10]:[0,2,4,5,7,9,11]):null;
+    const root=key?key.root:0;
+    ctx.font='10px ui-monospace,monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
+    for(let n=Math.ceil(lo);n<=Math.floor(hi);n++){
+      const pc=((n%12)+12)%12;
+      const inKey=iv?iv.includes(((pc-root)%12+12)%12):true;
+      const y=m2y(n);
+      ctx.strokeStyle=inKey?'rgba(255,255,255,.13)':'rgba(255,255,255,.04)';
+      ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+      if(inKey){ ctx.fillStyle='rgba(255,255,255,.3)';
+        ctx.fillText(NOTEJ2[pc]+(Math.floor(n/12)-1), 6, y-7); }
+    }
   }
-  ctx.lineWidth=3;
-  let prev=null;
+  // the singer's trail — phone-judged colors, glow pass, folded in highway mode
+  let prev=null, headGood=false, run=0;
   for(const p of tvTrail){
-    if(p.t<now-BACK||p.t>now+0.1){ prev=null; continue; }
-    const tgt=tvMelodyAt(H0.mel,p.t);
+    if(p.t<now-BACK||p.t>now+0.3){ prev=null; continue; }
     let mm=p.midi;
-    if(tgt>0){ while(mm-tgt>6)mm-=12; while(tgt-mm>6)mm+=12; }
-    const x=t2x(p.t), y=m2y(mm);
+    if(highway){
+      const tgt=tvMelodyAt(H0.mel,p.t);
+      if(tgt>0){ while(mm-tgt>6)mm-=12; while(tgt-mm>6)mm+=12; }
+    }
+    const x=t2x(p.t), y=m2y(Math.max(lo,Math.min(hi,mm)));
+    run=p.good?run+1:0;
     if(prev&&p.t-prev.t<0.4){
-      ctx.strokeStyle=p.good?'rgba(30,215,96,.95)':'rgba(240,90,120,.9)';
+      const heat=Math.min(1,run/40);
+      ctx.lineCap='round';
+      if(p.good){
+        ctx.strokeStyle='rgba(30,215,96,.35)'; ctx.lineWidth=(3+heat*2.5)+8;
+        ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
+        ctx.strokeStyle='rgba(30,215,96,.95)'; ctx.lineWidth=3+heat*2.5;
+      } else {
+        ctx.strokeStyle='rgba(240,90,120,.3)'; ctx.lineWidth=3+8;
+        ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
+        ctx.strokeStyle='rgba(240,90,120,.9)'; ctx.lineWidth=3;
+      }
       ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(x,y); ctx.stroke();
     }
     prev={t:p.t,x,y};
+    headGood=!!p.good;
   }
-  if(prev){ ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(prev.x,prev.y,4.5,0,7); ctx.fill(); }
+  // particles at the head while the singer is on it
+  if(prev&&headGood){
+    if(TVFX.parts.length<80&&Math.random()<0.6)
+      TVFX.parts.push({x:prev.x+(Math.random()*10-5),y:prev.y,
+        vx:-16-Math.random()*26, vy:-10-Math.random()*30, b:wall, life:0.6+Math.random()*0.5});
+    if(highway&&activeSeg&&TVFX.lastSeg!==activeSeg.t0){
+      TVFX.lastSeg=activeSeg.t0;
+      for(let k=0;k<12;k++){ const ang=Math.random()*6.28, sp=40+Math.random()*80;
+        TVFX.parts.push({x:prev.x,y:prev.y,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,b:wall,life:0.5+Math.random()*0.3}); }
+    }
+  }
+  for(let k=TVFX.parts.length-1;k>=0;k--){
+    const p2=TVFX.parts[k], age=wall-p2.b;
+    if(age>p2.life){ TVFX.parts.splice(k,1); continue; }
+    const f=1-age/p2.life;
+    ctx.fillStyle='rgba(30,215,96,'+(0.85*f)+')';
+    ctx.beginPath(); ctx.arc(p2.x+p2.vx*age,p2.y+p2.vy*age+20*age*age,1.3+f*1.6,0,7); ctx.fill();
+  }
+  if(prev){
+    const grad=ctx.createRadialGradient(prev.x,prev.y,0,prev.x,prev.y,12);
+    grad.addColorStop(0,'rgba(255,255,255,.95)'); grad.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(prev.x,prev.y,12,0,7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(prev.x,prev.y,3.5,0,7); ctx.fill();
+  }
+  // combo aura from the singer's live multiplier
+  const mult=state.live_score?state.live_score.mult||1:1;
+  if(mult>=2){
+    const pulse=0.75+0.25*Math.sin(wall*3);
+    const ag=(mult===2?0.10:mult===3?0.18:0.28)*pulse;
+    const edge=ctx.createLinearGradient(0,0,0,HH);
+    edge.addColorStop(0,'rgba(30,215,96,'+ag+')');
+    edge.addColorStop(0.25,'rgba(30,215,96,0)');
+    edge.addColorStop(0.75,'rgba(30,215,96,0)');
+    edge.addColorStop(1,'rgba(30,215,96,'+ag+')');
+    ctx.fillStyle=edge; ctx.fillRect(0,0,W,HH);
+  }
   tvHwRaf=requestAnimationFrame(tvHwDraw);
 }
 
