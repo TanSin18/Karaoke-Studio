@@ -143,9 +143,16 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     padding:18px 0 6px;color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:.16em;
     text-transform:uppercase}
   .railAmbient .eq-bars{font-size:18px}
-  .drawer-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;
-    margin-top:14px;align-items:start}
-  .drawer-cols .selfView{grid-column:1/-1;max-width:300px}
+  .drawer-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;
+    align-items:stretch}
+  .drawer-cols .railCard{display:flex;flex-direction:column;gap:8px;margin:0}
+  .drawer-cols .railCard h3{margin-bottom:2px}
+  .drawer-cols .selfView{max-width:100%;border-radius:10px;overflow:hidden}
+  .setRow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .drawer-cols input[type=range].wide{width:100%}
+  .drawer-cols .tunertog{display:flex;align-items:center;gap:7px}
+  .drawer-cols #phoneQrImg{max-width:140px}
+  .drawer-cols kbd{white-space:nowrap}
   .railCard{background:var(--glass-fill);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
     border:1px solid var(--glass-border);border-radius:14px;padding:12px}
   .railCard h3{margin:0 0 8px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
@@ -610,11 +617,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .cdiv{width:1px;height:22px;background:var(--edge);flex:none}
   .clbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
     color:var(--dim);flex:none}
-  .console input[type=range]{width:64px;flex:none;-webkit-appearance:none;appearance:none;height:3px;
+  .console input[type=range],.drawer-cols input[type=range]{flex:none;-webkit-appearance:none;appearance:none;height:3px;
     border-radius:2px;background:var(--fader);outline:none}
-  .console input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;
+  .console input[type=range]::-webkit-slider-thumb,.drawer-cols input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;
     border-radius:50%;background:var(--ink);border:none;cursor:pointer;transition:transform .1s}
-  .console input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.25);background:var(--amber2)}
+  .console input[type=range]::-webkit-slider-thumb:hover,.drawer-cols input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.25);background:var(--amber2)}
+  .console input[type=range]{width:64px}
   .cval{font-family:var(--mono);font-size:9.5px;color:var(--muted);min-width:26px;flex:none}
   .console .tunertog{flex:none;white-space:nowrap}
   .console .keybox{margin-left:auto;flex:none}
@@ -1026,39 +1034,31 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <details class="drawer">
           <summary>Additional settings</summary>
           <div class="drawer-body">
-            <!-- vocal timing calibration: pulls your recorded voice earlier to
-                 cancel mic input latency (the "vocals lag the track" problem) -->
-            <div class="mons">
-              <div class="monrow">
-                <span class="monlbl" title="Move your recorded vocals earlier/later to line up with the music">Vocal timing</span>
-                <input type="range" id="vocalDelay" min="-100" max="400" value="140" step="5">
-                <span class="monval" id="vocalDelayV">140ms</span>
-              </div>
-              <span class="tunertog" id="delayHint" style="cursor:default">vocals lag → slide right</span>
-            </div>
-
-            <!-- metronome: count-in before recording, optional click while singing -->
-            <div class="mons" id="metroRow">
-              <div class="monrow" style="flex:none">
-                <span class="monlbl">Metronome</span>
-                <button id="bpmdn" class="ksmall" title="Slower">−</button>
-                <span class="kval" id="bpmval">100</span>
-                <button id="bpmup" class="ksmall" title="Faster">+</button>
-                <span class="monlbl">bpm</span>
-              </div>
-              <label class="tunertog"><input type="checkbox" id="countInToggle" checked> 4-click count-in</label>
-              <label class="tunertog" title="Click track heard only in your headphones — never recorded (M)">
-                <input type="checkbox" id="clickRecToggle"> click while recording</label>
-            </div>
-
-            <!-- formerly the right rail: quick reference, phone camera sync,
-                 stage lighting — same elements (same ids, so all pairing/
-                 lighting JS is untouched), now tucked in here 3-up. -->
+            <!-- four equal cards: timing/practice, quick reference, phone
+                 sync, lighting. Same element ids throughout — the layout is
+                 the only thing that changed. -->
             <div class="drawer-cols">
 
-    <div class="selfView hidden" id="selfViewBox" title="Live view from your phone">
-      <video id="phoneSelfView" autoplay muted playsinline></video>
-      <span class="selfViewLabel"><svg class="icon"><use href="#i-phone"/></svg> live</span>
+    <div class="railCard">
+      <h3><svg class="icon"><use href="#i-mic"/></svg> Timing &amp; practice</h3>
+      <div class="setRow">
+        <span class="monlbl" title="Move your recorded vocals earlier/later to line up with the music">Vocal timing</span>
+        <span class="monval" id="vocalDelayV">140ms</span>
+      </div>
+      <input type="range" id="vocalDelay" min="-100" max="400" value="140" step="5" class="wide">
+      <div class="railHint" id="delayHint">vocals lag → slide right</div>
+      <div class="setRow mt" id="metroRow">
+        <span class="monlbl">Metronome</span>
+        <span style="display:flex;align-items:center;gap:6px">
+          <button id="bpmdn" class="ksmall" title="Slower">−</button>
+          <span class="kval" id="bpmval">100</span>
+          <button id="bpmup" class="ksmall" title="Faster">+</button>
+          <span class="monlbl">bpm</span>
+        </span>
+      </div>
+      <label class="tunertog"><input type="checkbox" id="countInToggle" checked> 4-click count-in</label>
+      <label class="tunertog" title="Click track heard only in your headphones — never recorded (M)">
+        <input type="checkbox" id="clickRecToggle"> click while recording</label>
     </div>
     <div class="railCard">
       <h3>Quick reference
@@ -1084,6 +1084,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <button type="button" class="infoBtn" id="phoneInfoBtn" aria-label="About phone pairing" style="margin-left:auto">ⓘ</button>
       </h3>
       <div class="railHint hidden" id="phoneInfoText">Scan the code, or open the link on your phone (same WiFi, iPhone or Android). Your phone's browser will warn "not secure" the first time — that's the local self-signed cert, not a real problem; tap Advanced/Details → Proceed to continue.</div>
+      <div class="selfView hidden" id="selfViewBox" title="Live view from your phone">
+        <video id="phoneSelfView" autoplay muted playsinline></video>
+        <span class="selfViewLabel"><svg class="icon"><use href="#i-phone"/></svg> live</span>
+      </div>
       <div class="hint" id="phonePairPanel">
         <span id="phoneStatusText">Loading phone-pairing link…</span>
         <button class="btn small" id="phoneDisconnectBtn" type="button"
@@ -1106,7 +1110,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       <h3><svg class="icon"><use href="#i-bulb"/></svg> Stage lighting</h3>
       <div class="hint">
         <label class="tunertog"><input type="checkbox" id="lightsEnabled"> react to my singing</label>
-        <div class="mt" style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="mt" style="display:flex;flex-direction:column;gap:7px">
           <label class="tunertog"><input type="radio" name="lightsMode" value="multi" id="lightsModeMulti" checked> Multi-color (by note)</label>
           <label class="tunertog"><input type="radio" name="lightsMode" value="mono" id="lightsModeMono"> Single color</label>
         </div>
