@@ -3235,8 +3235,8 @@ let tunerSmooth=null;
 // aggregating it over a take instead of adding a separate pitch-detection
 // pass. Reset in startRec(), accumulated here on every in-tune-or-not
 // judgment the tuner already makes, finalized in stopRec(). ---------------
-let scoreFrames=0, scoreInTune=0, scoreStreak=0, scoreBestStreak=0;
-function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scoreBestStreak=0; }
+let scoreFrames=0, scoreInTune=0, scoreStreak=0, scoreBestStreak=0, scorePitchHist=[];
+function resetScoreTracking(){ scoreFrames=0; scoreInTune=0; scoreStreak=0; scoreBestStreak=0; scorePitchHist=[]; }
 function computeScore(){
   if(scoreFrames<60) return null;  // under ~1s of confidently-voiced audio: nothing to judge
   return { accuracy: Math.round(100*scoreInTune/scoreFrames), bestStreak: scoreBestStreak, frames: scoreFrames };
@@ -3266,17 +3266,28 @@ function updateTuner(note, freq){
   $('tunerMsg').textContent = inTune? 'on pitch ✓'
     : (cents>0? 'a little sharp — ease down' : 'a little flat — lift up');
 
-  scoreFrames++;
-  // Scoring is deliberately looser than the needle display: ±12 cents is
-  // tuner precision, not singing precision — healthy vibrato swings ±30-60
-  // cents around a perfectly-centered note, so judging frames at ±12 caps
-  // even excellent singing near 50%. Full credit inside 35 cents, half
-  // credit out to 55 (vibrato edges), nothing beyond.
-  const scoredIn = Math.abs(cents)<=35;
-  if(scoredIn){ scoreInTune++; scoreStreak++; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
-  else if(Math.abs(cents)<=55){ scoreInTune+=0.5; scoreStreak=0; }
-  else{ scoreStreak=0; }
-  updateLiveScoreBar(scoredIn);
+  // Score the MEDIAN pitch of the last ~250ms, not the instantaneous frame.
+  // Two failed designs preceded this: judging raw frames at ±12 cents
+  // capped genuinely good singers near 50% (healthy vibrato swings ±30-60
+  // cents), and loosening the per-frame window to ±35/±55 made everything
+  // score ~98 — the nearest chromatic note is NEVER more than 50 cents
+  // away, so a wide window can't fail at all. The median fixes both ends:
+  // vibrato averages out to its note center (good singing scores high),
+  // while aimless pitch leaves the median stranded BETWEEN note centers
+  // (bad singing actually fails). ±12 on the median = on pitch; credit
+  // tapers to zero at 35 cents off.
+  scorePitchHist.push(note.midi*100+note.cents);
+  if(scorePitchHist.length>15) scorePitchHist.shift();
+  if(scorePitchHist.length>=9){
+    const m=[...scorePitchHist].sort((a,b)=>a-b)[Math.floor(scorePitchHist.length/2)];
+    let err=((m%100)+100)%100; err=Math.min(err,100-err);
+    const fs = err<=15 ? 1 : (err>=35 ? 0 : (35-err)/20);
+    scoreFrames++; scoreInTune+=fs;
+    const onPitch=fs>=0.75;
+    if(onPitch){ scoreStreak++; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
+    else{ scoreStreak=0; }
+    updateLiveScoreBar(onPitch);
+  }
 }
 
 // live "island" bar: cumulative %-so-far (scoreInTune/scoreFrames, same
