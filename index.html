@@ -2792,14 +2792,30 @@ $('npChangeBtn').addEventListener('click',()=>{
 
 let songKey=null;   // {root:0-11, scale:'major'|'minor'} — detected server-side from the backing
 let songLyrics=null, lyricsOffset=0, lyricsIdx=-1;
+let lyricsPollTimer=null;
 function loadLyrics(){
   songLyrics=null; lyricsIdx=-1;
+  clearTimeout(lyricsPollTimer);
   try{ lyricsOffset=+(localStorage.getItem('kstudio.lyrOff.'+SID)||0); }catch(e){ lyricsOffset=0; }
   $('lyrOffV').textContent=lyricsOffset.toFixed(1)+'s';
-  fetch('/lyrics?id='+SID).then(r=>r.json()).then(d=>{
-    songLyrics=(d.lyrics&&d.lyrics.length)?d.lyrics:null;
-    $('lyricsBar').classList.toggle('hidden', !songLyrics);
-  }).catch(()=>{});
+  const sid=SID;
+  (function tryFetch(attempt){
+    fetch('/lyrics?id='+sid).then(r=>r.json()).then(d=>{
+      if(sid!==SID) return;                      // switched songs meanwhile
+      if(d.pending){
+        // Whisper is transcribing the separated vocal in the background —
+        // typically a minute or two; keep checking while the user sets up
+        $('lyricsBar').classList.remove('hidden');
+        $('lyrNow').textContent='✍️ transcribing lyrics from the vocals…';
+        $('lyrNext').textContent='';
+        if(attempt<40) lyricsPollTimer=setTimeout(()=>tryFetch(attempt+1), 10000);
+        return;
+      }
+      songLyrics=(d.lyrics&&d.lyrics.length)?d.lyrics:null;
+      lyricsIdx=-2;
+      $('lyricsBar').classList.toggle('hidden', !songLyrics);
+    }).catch(()=>{});
+  })(0);
 }
 // follows the backing clock; cheap enough to just always tick
 setInterval(()=>{
