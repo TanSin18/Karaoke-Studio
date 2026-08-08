@@ -505,6 +505,53 @@ def _extract_melody_inner(jid, voc, cache):
         return None
 
 
+def lyrics_auto_offset(jid, lines):
+    """Best constant shift between an LRC timeline and THIS session's audio.
+
+    LRCLIB timelines belong to the ORIGINAL recording; karaoke and re-uploads
+    pad intros/interludes, so lines land early or late by a constant. When
+    the session has a separated vocal stem we know exactly when the original
+    singer sings (the melody's voiced mask) — slide the lyric-line activity
+    pattern against it and take the offset with maximal overlap. Cached in
+    meta as lyrics_auto_offset. Returns 0.0 when it can't be computed or the
+    match is too weak to trust.
+    """
+    meta = _read_meta(jid)
+    if meta.get("lyrics_auto_offset") is not None:
+        return meta["lyrics_auto_offset"]
+    mel = extract_melody(jid)
+    if not mel or not lines:
+        return 0.0
+    try:
+        import numpy as np
+        hop = mel["hop"]
+        voiced = np.array([1.0 if v > 0 else 0.0 for v in mel["midi"]])
+        n = len(voiced)
+        act = np.zeros(n)
+        for i, ln in enumerate(lines):
+            t0 = ln["t"]
+            t1 = min(lines[i + 1]["t"] if i + 1 < len(lines) else t0 + 4, t0 + 6)
+            a, b = int(t0 / hop), min(n, int(t1 / hop))
+            if a < n:
+                act[a:b] = 1.0
+        best, best_off = -1.0, 0.0
+        denom = min(voiced.sum(), act.sum()) or 1.0
+        for off in np.arange(-25, 25.01, 0.25):
+            sh = int(round(off / hop))
+            if sh >= 0:
+                score = float((act[:n - sh] * voiced[sh:]).sum()) if sh < n else 0.0
+            else:
+                score = float((act[-sh:] * voiced[:n + sh]).sum()) if -sh < n else 0.0
+            if score > best:
+                best, best_off = score, -float(off)
+        conf = best / denom
+        result = round(best_off, 2) if conf >= 0.4 else 0.0
+        _write_meta(jid, lyrics_auto_offset=result)
+        return result
+    except Exception:
+        return 0.0
+
+
 def detect_song_key(jid):
     """Detect the song's musical key from the backing track (cached in meta).
 
@@ -1733,6 +1780,7 @@ class Handler(BaseHTTPRequestHandler):
                 if m0.get("lyrics_source") != "whisper":   # whisper results are per-session truth
                     m0.pop("lyrics", None)
                     m0.pop("lyrics_source", None)
+                    m0.pop("lyrics_auto_offset", None)
                     sdir0 = os.path.join(SESS_DIR, jid)
                     with open(os.path.join(sdir0, "meta.json"), "w", encoding="utf-8") as fh:
                         json.dump(m0, fh)
@@ -1747,14 +1795,18 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(200, {"lyrics": None, "pending": True})
                     return
                 lines = _read_meta(jid).get("lyrics")
+            auto_off = 0.0
             if lines:
+                if _read_meta(jid).get("lyrics_source") != "whisper":
+                    # whisper lines were timed against THIS session's own audio
+                    auto_off = lyrics_auto_offset(jid, lines)
                 out = []
                 for ln in lines:
                     r = romanize_line(ln["text"])
                     out.append({"t": ln["t"], "text": r} if r == ln["text"]
                                else {"t": ln["t"], "text": r, "orig": ln["text"]})
                 lines = out
-            self._json(200, {"lyrics": lines})
+            self._json(200, {"lyrics": lines, "auto_offset": auto_off})
             return
 
         if p.path == "/melody":
@@ -3626,15 +3678,16 @@ setInterval(()=>{
             setTimeout(()=>{ if(tvLyrCache[jid]==='loading'){ delete tvLyrCache[jid]; if(tvLyrJid===jid) tvLyrJid=null; } }, 10000);
             return;
           }
-          tvLyrCache[jid]=(d.lyrics&&d.lyrics.length)?d.lyrics:null;
+          tvLyrCache[jid]=(d.lyrics&&d.lyrics.length)?{lines:d.lyrics, off:+(d.auto_offset||0)}:null;
         })
         .catch(()=>{ tvLyrCache[jid]=null; });
     }
   }
-  const L=tvLyrCache[jid];
-  if(!L || L==='loading' || !backingAudio){ $('tvLyrics').classList.add('hidden'); return; }
+  const E=tvLyrCache[jid];
+  if(!E || E==='loading' || !backingAudio){ $('tvLyrics').classList.add('hidden'); return; }
+  const L=E.lines;
   $('tvLyrics').classList.remove('hidden');
-  const t=backingAudio.currentTime||0;
+  const t=(backingAudio.currentTime||0)+E.off;
   let i=-1;
   while(i+1<L.length && L[i+1].t<=t) i++;
   if(i!==tvLyrIdx){
