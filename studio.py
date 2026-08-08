@@ -259,6 +259,75 @@ def get_job(jid):
         return dict(JOBS.get(jid, {}))
 
 
+# ---- Hinglish romanization -------------------------------------------------
+# Hindi lyrics (LRCLIB's and Whisper's alike) arrive in Devanagari, but the
+# way people actually read karaoke lyrics here is romanized — "Hum tere bin
+# ab reh nahi sakte", not "हम तेरे बिन...". IAST transliteration plus two
+# schwa-deletion passes (word-final: tuma→tum; one medial: sakate→sakte)
+# and diacritic stripping gets natural-reading Hinglish. Applied at serve
+# time so cached Devanagari lyrics benefit too and the original is kept.
+_DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
+_ROMA_CONS = "kgcjṭḍtdnpbmyrlvśṣshṅñṇqxzf"
+
+def romanize_line(text):
+    if not _DEVANAGARI_RE.search(text):
+        return text
+    import unicodedata
+    from indic_transliteration import sanscript
+    t = sanscript.transliterate(text, sanscript.DEVANAGARI, sanscript.IAST)
+    words = []
+    for w in t.split(" "):
+        if len(w) > 2 and w.endswith("a") and w[-2] in _ROMA_CONS:
+            w = w[:-1]
+        w = re.sub(r"([aeiouāīūṛeo][" + _ROMA_CONS + r"]+)a([" + _ROMA_CONS + r"][aeiouāīūṛeo])",
+                   r"\1\2", w, count=1)
+        words.append(w)
+    t = " ".join(words)
+    t = t.replace("ṁ", "n").replace("ṃ", "n").replace("m̐", "n").replace("~", "n")
+    t = "".join(c for c in unicodedata.normalize("NFD", t) if not unicodedata.combining(c))
+    return t
+
+
+# ---- Whisper fallback --------------------------------------------------------
+# When LRCLIB has nothing (rare/regional songs), transcribe the SEPARATED
+# vocal stem locally — vocals.wav is the original singer with the band
+# stripped away, which is close to ideal transcription input. Runs in a
+# background thread; /lyrics reports {"pending": true} while it works.
+WHISPER_STATE = {}
+_WHISPER_MODEL = None
+_WHISPER_LOCK = threading.Lock()
+
+def _whisper_model():
+    global _WHISPER_MODEL
+    with _WHISPER_LOCK:
+        if _WHISPER_MODEL is None:
+            from faster_whisper import WhisperModel
+            _WHISPER_MODEL = WhisperModel("small", compute_type="int8")
+        return _WHISPER_MODEL
+
+def whisper_transcribe(jid):
+    try:
+        voc = os.path.join(SESS_DIR, jid, "vocals.wav")
+        segs, info = _whisper_model().transcribe(voc, vad_filter=True, beam_size=1)
+        # Hindi and Urdu are the same spoken language; Whisper's language ID
+        # often picks Urdu for Bollywood vocals and then emits Arabic script,
+        # which the Devanagari romanizer can't read. Re-run forced to Hindi
+        # so the output is Devanagari -> romanized Hinglish downstream.
+        if getattr(info, "language", None) == "ur":
+            segs, info = _whisper_model().transcribe(voc, language="hi",
+                                                     vad_filter=True, beam_size=1)
+        lines = []
+        for sg in segs:
+            text = sg.text.strip()
+            if text:
+                lines.append({"t": round(float(sg.start), 2), "text": text[:200]})
+        _write_meta(jid, lyrics=lines, lyrics_source="whisper")
+        WHISPER_STATE[jid] = "done"
+    except Exception as e:
+        WHISPER_STATE[jid] = "error"
+        print(f"whisper failed for {jid}: {e}")
+
+
 LYRICS_CLEAN_RE = re.compile(
     r"(?i)\b(karaoke|instrumental|with lyrics|lyrics|lyrical|full song|hd|4k|"
     r"official|video|audio|version|cover|track|hq)\b|[\|\[\]\(\)~]")
@@ -1598,7 +1667,25 @@ class Handler(BaseHTTPRequestHandler):
             if not job_or_disk(jid):
                 self._json(404, {"error": "unknown session"})
                 return
-            self._json(200, {"lyrics": fetch_synced_lyrics(jid)})
+            lines = fetch_synced_lyrics(jid)
+            voc = os.path.join(SESS_DIR, jid, "vocals.wav")
+            if (not lines and os.path.exists(voc) and WHISPER_STATE.get(jid) != "error"
+                    and _read_meta(jid).get("lyrics_source") != "whisper"):
+                if WHISPER_STATE.get(jid) != "running":
+                    WHISPER_STATE[jid] = "running"
+                    threading.Thread(target=whisper_transcribe, args=(jid,), daemon=True).start()
+                if not (_read_meta(jid).get("lyrics") or None):
+                    self._json(200, {"lyrics": None, "pending": True})
+                    return
+                lines = _read_meta(jid).get("lyrics")
+            if lines:
+                out = []
+                for ln in lines:
+                    r = romanize_line(ln["text"])
+                    out.append({"t": ln["t"], "text": r} if r == ln["text"]
+                               else {"t": ln["t"], "text": r, "orig": ln["text"]})
+                lines = out
+            self._json(200, {"lyrics": lines})
             return
 
         if p.path == "/melody":
@@ -3338,7 +3425,13 @@ setInterval(()=>{
     if(!(jid in tvLyrCache)){
       tvLyrCache[jid]='loading';
       fetch('/lyrics?id='+jid).then(r=>r.json())
-        .then(d=>{ tvLyrCache[jid]=(d.lyrics&&d.lyrics.length)?d.lyrics:null; })
+        .then(d=>{
+          if(d.pending){   // whisper still transcribing: retry in a while
+            setTimeout(()=>{ if(tvLyrCache[jid]==='loading'){ delete tvLyrCache[jid]; if(tvLyrJid===jid) tvLyrJid=null; } }, 10000);
+            return;
+          }
+          tvLyrCache[jid]=(d.lyrics&&d.lyrics.length)?d.lyrics:null;
+        })
         .catch(()=>{ tvLyrCache[jid]=null; });
     }
   }
