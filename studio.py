@@ -1009,7 +1009,8 @@ def _run_render_locked(jid, vocal_path, fx, mix_opts, lock, scope_id=None):
 # still go through the existing JOBS/do_prepare pipeline — a queue entry just
 # points at a jid once that job's status is "ready".
 
-ROOM = {"code": None, "queue": [], "now_playing": None, "challenges": [], "guests": []}
+ROOM = {"code": None, "queue": [], "now_playing": None, "challenges": [], "guests": [],
+        "scores": {}, "live_score": None}
 ROOM_LOCK = threading.Lock()
 SUBSCRIBERS = []
 SUB_LOCK = threading.Lock()
@@ -1019,7 +1020,8 @@ def room_state():
     with ROOM_LOCK:
         return {"code": ROOM["code"], "queue": list(ROOM["queue"]),
                 "now_playing": ROOM["now_playing"], "challenges": list(ROOM["challenges"]),
-                "guests": list(ROOM["guests"])}
+                "guests": list(ROOM["guests"]),
+                "scores": dict(ROOM["scores"]), "live_score": ROOM["live_score"]}
 
 
 def room_join(name, device_id):
@@ -1063,6 +1065,8 @@ def start_room():
         ROOM["now_playing"] = None
         ROOM["challenges"] = []
         ROOM["guests"] = []
+        ROOM["scores"] = {}
+        ROOM["live_score"] = None
     broadcast_room()
     return code
 
@@ -1094,10 +1098,32 @@ def queue_add(jid, singers, semitones):
     return entry
 
 
+def _finalize_live_score_locked():
+    """Fold the current live score into the party scoreboard (caller holds
+    ROOM_LOCK). Runs when a turn ends — either the singer's phone said
+    'done' or the host hit Next mid-song."""
+    ls = ROOM.get("live_score")
+    if not ls or not ls.get("points"):
+        ROOM["live_score"] = None
+        return
+    for name in ls.get("singers") or [ls.get("name")]:
+        if not name:
+            continue
+        rec = ROOM["scores"].setdefault(name, {"total": 0, "best": 0, "songs": 0, "best_rank": "D"})
+        pts = int(ls["points"])
+        rec["total"] += pts
+        rec["songs"] += 1
+        if pts > rec["best"]:
+            rec["best"] = pts
+            rec["best_rank"] = ls.get("rank") or "D"
+    ROOM["live_score"] = None
+
+
 def queue_advance():
     """Mark the current now-playing entry done (if any) and promote the next
     queued entry."""
     with ROOM_LOCK:
+        _finalize_live_score_locked()
         q = ROOM["queue"]
         for e in q:
             if e["status"] == "now_playing":
@@ -1497,6 +1523,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(b)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(b)
             return
@@ -1521,6 +1548,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(b)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(b)
             return
@@ -1530,6 +1558,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(b)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(b)
             return
@@ -1539,6 +1568,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(b)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(b)
             return
@@ -2319,6 +2349,34 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"entry": entry})
             return
 
+        if p.path == "/party/score":
+            body = self._read_body()
+            device_id = body.get("device_id") or ""
+            entry_id = body.get("entry_id") or ""
+            with ROOM_LOCK:
+                guest = next((g for g in ROOM["guests"] if g["device_id"] == device_id), None)
+                now = next((e for e in ROOM["queue"] if e["entry_id"] == ROOM.get("now_playing")), None)
+                # only the phone of someone actually SINGING the current song
+                # can post scores for it
+                if not guest or not now or now["entry_id"] != entry_id or guest["name"] not in now["singers"]:
+                    self._json(403, {"error": "not your turn"})
+                    return
+                ROOM["live_score"] = {
+                    "name": guest["name"], "singers": list(now["singers"]),
+                    "entry_id": entry_id,
+                    "points": max(0, int(body.get("points") or 0)),
+                    "form": max(0, min(100, int(body.get("form") or 0))),
+                    "mult": max(1, min(4, int(body.get("mult") or 1))),
+                    "accuracy": max(0, min(100, int(body.get("accuracy") or 0))),
+                    "rank": (body.get("rank") or "D")[:1],
+                }
+                done = bool(body.get("done"))
+                if done:
+                    _finalize_live_score_locked()
+            broadcast_room()
+            self._json(200, {"ok": True})
+            return
+
         if p.path == "/queue/next":
             queue_advance()
             self._json(200, room_state())
@@ -2817,6 +2875,43 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .guestList{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
   .guestChip{background:var(--panel);border:1px solid var(--edge);border-radius:999px;
     padding:5px 12px;font-size:13px;color:var(--ink)}
+
+/* full-stage announcement / celebration overlay */
+.partyOverlay{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+  background:rgba(6,8,7,.86);backdrop-filter:blur(6px);border-radius:inherit}
+.poInner{text-align:center;padding:30px;max-width:80%;animation:poIn .55s cubic-bezier(.2,1.8,.35,1)}
+@keyframes poIn{0%{transform:scale(.55);opacity:0}100%{transform:scale(1);opacity:1}}
+.poKicker{font-family:var(--mono);font-size:14px;letter-spacing:.22em;text-transform:uppercase;color:var(--amber2);margin-bottom:10px}
+.poBig{font-family:var(--display);font-weight:800;font-size:44px;line-height:1.15;color:var(--ink)}
+.poSub{margin-top:12px;font-size:18px;color:var(--muted)}
+.poRank{font-family:var(--display);font-weight:800;font-size:96px;line-height:1;color:var(--amber2);
+  text-shadow:0 0 34px rgba(30,215,96,.5);margin:6px 0}
+.poPts{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--ink)}
+/* live score HUD above the stage — the singer's phone streams this */
+.grid .card:first-child{position:relative}
+.liveHud{display:flex;align-items:center;gap:14px;margin-bottom:10px;padding:9px 16px;
+  border-radius:14px;background:var(--well);border:1px solid var(--edge);
+  font-family:var(--mono);transition:box-shadow .2s,border-color .2s}
+.liveHud.hot{border-color:var(--amber2);box-shadow:0 0 0 1px rgba(30,215,96,.5),0 4px 28px rgba(30,215,96,.35)}
+.lhName{font-weight:700;color:var(--ink);font-size:15px}
+.lhForm{font-size:22px;font-weight:700;color:var(--amber2)}
+.lhMult{font-weight:800;font-size:16px;padding:3px 10px;border-radius:10px;border:1px solid var(--edge);color:var(--dim)}
+.lhMult.m2{color:var(--ink)}
+.lhMult.m3{color:var(--amber2);border-color:var(--amber2)}
+.lhMult.m4{color:#000;background:var(--amber2);border-color:var(--amber2)}
+.lhMult.pop{animation:lhPop .45s cubic-bezier(.2,2.2,.4,1)}
+@keyframes lhPop{0%{transform:scale(1)}40%{transform:scale(1.6)}100%{transform:scale(1)}}
+.lhPts{margin-left:auto;font-size:22px;font-weight:700;color:var(--ink)}
+/* scoreboard */
+.scoreboard{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-direction:column;gap:6px}
+.scoreboard li{display:flex;align-items:center;gap:10px;background:var(--well);border:1px solid var(--edge);
+  border-radius:10px;padding:8px 12px;font-family:var(--mono)}
+.scoreboard li.singingNow{border-color:var(--amber2);box-shadow:0 0 0 1px rgba(30,215,96,.4)}
+.scoreboard li.empty{color:var(--dim);border-style:dashed;font-size:12px}
+.sbPos{width:26px;text-align:center;font-size:15px}
+.sbName{font-weight:700;color:var(--ink);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sbBest{font-size:10px;color:var(--dim)}
+.sbTotal{font-size:16px;font-weight:800;color:var(--amber2)}
 </style>
 
 <svg style="display:none" aria-hidden="true">
@@ -2850,6 +2945,13 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   </div>
   <div class="grid">
     <div class="card">
+      <div class="liveHud hidden" id="liveHud">
+        <span class="lhName" id="lhName"></span>
+        <span class="lhForm" id="lhForm">--%</span>
+        <span class="lhMult m1" id="lhMult">×1</span>
+        <span class="lhPts" id="lhPts">0</span>
+      </div>
+      <div class="partyOverlay hidden" id="partyOverlay"><div class="poInner" id="poInner"></div></div>
       <div id="stage"><div class="idleStage"><span class="eq-bars"><i></i><i></i><i></i><i></i></span>Nobody queued yet — waiting for guests to join and add songs.</div></div>
       <div class="nowSingers" id="singers"></div>
       <div class="nowTitle" id="songTitle"></div>
@@ -2858,6 +2960,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <div class="card">
       <h3 style="margin-top:0">Up next <span style="font-size:11px;color:var(--dim);font-weight:400">— drag to reorder</span></h3>
       <ul class="upnext" id="upnext"><li class="empty">Queue is empty.</li></ul>
+      <h3>🏆 Scoreboard</h3>
+      <ol class="scoreboard" id="scoreboard"><li class="empty">No scores yet — sing with your phone in hand!</li></ol>
       <h3><svg class="icon"><use href="#i-users"/></svg> Who's here <span id="guestCount" style="color:var(--dim);font-weight:400"></span></h3>
       <div class="guestList" id="guestList"><span class="empty">Waiting for guests to join…</span></div>
     </div>
@@ -2950,8 +3054,95 @@ function render(){
   $('guestList').innerHTML = guests.length
     ? guests.map(g=>'<span class="guestChip">'+esc(g.name)+'</span>').join('')
     : '<span class="empty">Waiting for guests to join…</span>';
+
+  // live score HUD: whoever is singing right now, straight off their phone
+  const ls=state.live_score;
+  $('liveHud').classList.toggle('hidden', !ls);
+  if(ls){
+    $('lhName').textContent=ls.name;
+    $('lhForm').textContent=(ls.form!=null?ls.form:'--')+'%';
+    const lm=$('lhMult');
+    const prev=+((lm.dataset.m)||1);
+    lm.textContent='×'+ls.mult; lm.className='lhMult m'+ls.mult; lm.dataset.m=ls.mult;
+    if(ls.mult>prev){ lm.classList.remove('pop'); void lm.offsetWidth; lm.classList.add('pop'); }
+    $('lhPts').textContent=(ls.points||0).toLocaleString();
+    $('liveHud').classList.toggle('hot', ls.mult>=3);
+  }
+
+  // scoreboard: party standings by total points, medals on the podium
+  const scores=Object.entries(state.scores||{}).sort((a,b)=>b[1].total-a[1].total);
+  const medals=['🥇','🥈','🥉'];
+  $('scoreboard').innerHTML = scores.length
+    ? scores.map(([name,rec],i)=>`
+       <li class="${ls&&ls.singers&&ls.singers.includes(name)?'singingNow':''}">
+         <span class="sbPos">${medals[i]||(i+1)}</span>
+         <span class="sbName">${esc(name)}</span>
+         <span class="sbBest">best ${rec.best.toLocaleString()} (${esc(rec.best_rank||'')})</span>
+         <span class="sbTotal">${rec.total.toLocaleString()}</span>
+       </li>`).join('')
+    : '<li class="empty">No scores yet — sing with your phone in hand!</li>';
+  mcReact();
 }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ---- party MC: announcements between songs, hype after each one -----------
+// The TV is the room's MC: when a song ends it celebrates the singer with a
+// rank-appropriate comment, and when the next one starts it announces them.
+// Pure client-side reaction to state transitions — no new server state.
+const HYPE={
+  S:["ABSOLUTE STAR POWER! 🌟","THE ROOF IS GONE! 🔥","SOMEBODY CALL A RECORD LABEL!","FLAWLESS. FRAME IT. 🖼️"],
+  A:["The crowd goes WILD! 🎉","That was HOT! 🔥","Chills. Actual chills.","Encore! Encore!"],
+  B:["Solid set of pipes! 👏","That's how it's done!","The party approves! 🍻"],
+  C:["Heart of a champion! 💪","Sung with FEELING — love it!","The mic survived. Barely. 😄"],
+  D:["Bravest performance of the night! 🫡","10/10 for courage!","Legends are built on nights like this!"]};
+const INTROS=["Make some noise for","Put your hands together for","On the mic next…","Clear the floor for","The stage belongs to"];
+let poTimer=null, prevNowId=null, prevScoreSig='';
+function showOverlay(html, ms){
+  clearTimeout(poTimer);
+  $('poInner').innerHTML=html;
+  const po=$('partyOverlay');
+  po.classList.remove('hidden');
+  // retrigger the pop-in
+  const inner=$('poInner'); inner.style.animation='none'; void inner.offsetWidth; inner.style.animation='';
+  poTimer=setTimeout(()=>po.classList.add('hidden'), ms);
+}
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function mcReact(){
+  const nowId=state.now_playing||null;
+  const scoreSig=JSON.stringify(state.scores||{});
+  const scoresChanged = prevScoreSig && scoreSig!==prevScoreSig;
+  const songChanged = nowId!==prevNowId;
+  if(scoresChanged){
+    // someone just finished — find who improved and celebrate them
+    let who=null, prev={};
+    try{ prev=JSON.parse(prevScoreSig)||{}; }catch(e){}
+    for(const [name,rec] of Object.entries(state.scores||{})){
+      const p=prev[name];
+      if(!p || rec.songs>p.songs){ who={name, pts:rec.total-(p?p.total:0), rank:rec.best_rank}; break; }
+    }
+    if(who && who.pts>0){
+      const rank=(who.rank||'C');
+      showOverlay(
+        '<div class="poKicker">that just happened</div>'+
+        '<div class="poBig">'+esc(who.name)+'</div>'+
+        '<div class="poRank">'+esc(rank)+'</div>'+
+        '<div class="poPts">+'+who.pts.toLocaleString()+' pts</div>'+
+        '<div class="poSub">'+esc(pick(HYPE[rank]||HYPE.C))+'</div>', 6000);
+    }
+  }
+  if(songChanged && nowId){
+    const now=state.queue.find(e=>e.entry_id===nowId);
+    if(now){
+      const announce=()=>showOverlay(
+        '<div class="poKicker">'+esc(pick(INTROS))+'</div>'+
+        '<div class="poBig">'+esc(now.singers.join(' & '))+' 🎤</div>'+
+        '<div class="poSub">'+esc(now.title||'')+'</div>', 5000);
+      // if a celebration is on screen, let it land first
+      if(scoresChanged) setTimeout(announce, 6200); else announce();
+    }
+  }
+  prevNowId=nowId; prevScoreSig=scoreSig;
+}
 
 $('upnext').addEventListener('click',(ev)=>{
   const b=ev.target.closest('button'); if(!b) return;
@@ -3166,6 +3357,31 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .guestChip{background:var(--panel);border:1px solid var(--edge);border-radius:999px;
     padding:5px 10px;font-size:12px;color:var(--muted)}
   .guestChip.me{color:var(--pink);border-color:var(--pink2)}
+/* your-turn scoring card + HUD */
+.turnCard{border-color:var(--pink2);box-shadow:var(--glow-pink);text-align:center}
+.turnFlag{font-family:var(--display);font-size:26px;font-weight:800;color:var(--amber2);
+  animation:turnPulse 1.4s ease-in-out infinite}
+@keyframes turnPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+.turnSong{color:var(--muted);font-size:13px;margin:6px 0 12px}
+.turnHud{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:10px}
+.turnHud small{display:block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.hudForm span,.hudPts span{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--ink)}
+.hudMult{font-family:var(--mono);font-weight:800;font-size:22px;padding:6px 12px;border-radius:12px;
+  border:1px solid var(--edge);color:var(--dim)}
+.hudMult.m2{color:var(--ink)}
+.hudMult.m3{color:var(--amber2);border-color:var(--amber2)}
+.hudMult.m4{color:#000;background:var(--amber2);border-color:var(--amber2)}
+.hudMult.pop{animation:hudPop .45s cubic-bezier(.2,2.2,.4,1)}
+@keyframes hudPop{0%{transform:scale(1)}40%{transform:scale(1.5)}100%{transform:scale(1)}}
+.turnNote{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+/* full-screen turn pop-up */
+.turnPopup{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;
+  background:rgba(4,6,5,.9);backdrop-filter:blur(8px);padding:24px}
+.tpInner{text-align:center;animation:tpIn .5s cubic-bezier(.2,1.9,.35,1)}
+@keyframes tpIn{0%{transform:scale(.5);opacity:0}100%{transform:scale(1);opacity:1}}
+.tpBig{font-family:var(--display);font-weight:800;font-size:40px;color:var(--amber2);line-height:1.15}
+.tpSub{margin-top:10px;font-size:15px;color:var(--muted)}
+.tpDismiss{margin-top:20px}
 </style>
 
 <svg style="display:none" aria-hidden="true">
@@ -3197,6 +3413,24 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 <div id="mainApp" class="hidden">
   <div class="whoRow"><svg class="icon"><use href="#i-sparkle"/></svg> Joined as <b id="whoLabel"></b> · room <b id="whoRoom"></b>
     <button class="btn ghost small" id="leaveBtn" type="button" style="width:auto;margin-left:auto">Not you?</button></div>
+
+  <!-- your-turn scoring: this phone becomes the scoring mic while its owner
+       sings — held close, the voice dominates the room's speakers, which is
+       what makes per-singer party scoring possible at all. -->
+  <div class="turnPopup hidden" id="turnPopup">
+    <div class="tpInner" id="tpInner"></div>
+  </div>
+  <div class="card turnCard hidden" id="turnCard">
+    <div class="turnFlag">🎤 YOU'RE UP!</div>
+    <div class="turnSong" id="turnSong"></div>
+    <button class="btn pink" id="turnStartBtn" type="button">Start scoring — hold phone near your mouth</button>
+    <div class="turnHud hidden" id="turnHud">
+      <div class="hudForm"><span id="hudForm">--%</span><small>form</small></div>
+      <div class="hudMult m1" id="hudMult">×1</div>
+      <div class="hudPts"><span id="hudPts">0</span><small>pts</small></div>
+    </div>
+    <div class="turnNote" id="turnNote"></div>
+  </div>
 
   <div class="tabbar">
     <button class="tabbtn active" id="tabBtnFind" type="button"><svg class="icon"><use href="#i-search"/></svg> Find a song</button>
@@ -3327,7 +3561,7 @@ function switchTab(name){
 function subscribeRoom(){
   if(roomEvents) roomEvents.close();
   roomEvents=new EventSource('/room/events');
-  roomEvents.onmessage=(ev)=>{ lastState=JSON.parse(ev.data); renderQueueView(); renderGuests(); };
+  roomEvents.onmessage=(ev)=>{ lastState=JSON.parse(ev.data); renderQueueView(); renderGuests(); checkTurn(); };
 }
 
 function renderQueueView(){
@@ -3456,6 +3690,152 @@ $('addBtn').addEventListener('click', async()=>{
   if(r.ok){ $('feedback').innerHTML='<div class="msg">You\'re queued! 🎉</div>'; switchTab('queue'); }
   else { $('feedback').innerHTML='<div class="err">'+esc(j.error||'Could not queue.')+'</div>'; }
 });
+
+// ==== YOUR-TURN SCORING ======================================================
+// The exact same engine as the studio's Record tab, compacted: confident
+// pitch detection (level + periodicity + vocal-range gates), median-of-250ms
+// scored against the SONG'S detected key, combo multipliers with a 300ms
+// transition grace, points = quality x multiplier. Results stream to the TV.
+const A4J=440, NOTEJ=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+let scoreCtx=null, scoreStream=null, scoreAnalyser=null, scoreRaf=0, scorePost=0;
+let sc=null, activeEntry=null, turnKey=null;
+function scReset(){ sc={hist:[],recent:[],frames:0,inTune:0,streak:0,off:0,mult:1,bestMult:1,points:0}; }
+function jFreqToMidiCents(f){
+  const midi=Math.round(12*Math.log2(f/A4J)+69);
+  const cents=Math.round(1200*Math.log2(f/(A4J*Math.pow(2,(midi-69)/12))));
+  return midi*100+cents;
+}
+function jAutoCorrelate(buf,sr){
+  let rms=0; for(let i=0;i<buf.length;i++) rms+=buf[i]*buf[i];
+  rms=Math.sqrt(rms/buf.length);
+  if(rms<0.02) return -1;
+  const n=buf.length, c=new Array(n).fill(0);
+  for(let lag=0;lag<n;lag++){ for(let i=0;i<n-lag;i++) c[lag]+=buf[i]*buf[i+lag]; }
+  let d=0; while(d<n-1 && c[d]>c[d+1]) d++;
+  let maxv=-1,maxp=-1;
+  for(let i=d;i<n;i++){ if(c[i]>maxv){maxv=c[i];maxp=i;} }
+  if(maxv<0.45*c[0]) return -1;
+  let T0=maxp;
+  if(T0>0&&T0<n-1){ const x1=c[T0-1],x2=c[T0],x3=c[T0+1],a=(x1+x3-2*x2)/2,b=(x3-x1)/2; if(a) T0=T0-b/(2*a); }
+  const f=sr/T0; return (f>=70&&f<=1200)?f:-1;
+}
+function scFrame(){
+  const buf=new Float32Array(scoreAnalyser.fftSize);
+  scoreAnalyser.getFloatTimeDomainData(buf);
+  const f=jAutoCorrelate(buf,scoreCtx.sampleRate);
+  if(f>0){
+    sc.hist.push(jFreqToMidiCents(f)); if(sc.hist.length>15) sc.hist.shift();
+    if(sc.hist.length>=9){
+      const m=[...sc.hist].sort((a,b)=>a-b)[Math.floor(sc.hist.length/2)];
+      let err,lo,hi;
+      if(turnKey){
+        const iv=turnKey.scale==='minor'?[0,2,3,5,7,8,10]:[0,2,4,5,7,9,11];
+        const root=((turnKey.root+(activeEntry.semitones||0))%12+12)%12;
+        const pos=((m%1200)+1200)%1200;
+        err=1200;
+        for(const x of iv){ const c0=((root+x)%12)*100; const d0=Math.abs(pos-c0);
+          err=Math.min(err,Math.min(d0,1200-d0)); }
+        lo=20; hi=60;
+      } else { err=((m%100)+100)%100; err=Math.min(err,100-err); lo=15; hi=35; }
+      const fs=err<=lo?1:(err>=hi?0:(hi-err)/(hi-lo));
+      sc.frames++; sc.inTune+=fs;
+      if(fs>=0.75){ sc.streak++; sc.off=0; } else if(++sc.off>18){ sc.streak=0; }
+      const pm=sc.mult;
+      sc.mult=sc.streak>=600?4:sc.streak>=300?3:sc.streak>=120?2:1;
+      if(sc.mult>sc.bestMult) sc.bestMult=sc.mult;
+      sc.points+=fs*sc.mult;
+      sc.recent.push(fs); if(sc.recent.length>240) sc.recent.shift();
+      const form=Math.round(100*sc.recent.reduce((a,b)=>a+b,0)/sc.recent.length);
+      $('hudForm').textContent=form+'%';
+      const hm=$('hudMult'); hm.textContent='×'+sc.mult; hm.className='hudMult m'+sc.mult;
+      if(sc.mult>pm){ hm.classList.remove('pop'); void hm.offsetWidth; hm.classList.add('pop'); }
+      $('hudPts').textContent=Math.round(sc.points).toLocaleString();
+    }
+  }
+  scoreRaf=requestAnimationFrame(scFrame);
+}
+function scAccuracy(){ return sc.frames>0? Math.round(100*sc.inTune/sc.frames):0; }
+function scRank(a){ return a>=90?'S':a>=78?'A':a>=64?'B':a>=50?'C':'D'; }
+async function postScore(done){
+  if(!activeEntry) return;
+  try{ await fetch('/party/score',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({device_id:DEVICE_ID, entry_id:activeEntry.entry_id,
+      points:Math.round(sc.points), form:sc.recent.length?Math.round(100*sc.recent.reduce((a,b)=>a+b,0)/sc.recent.length):0,
+      mult:sc.mult, accuracy:scAccuracy(), rank:scRank(scAccuracy()), done:!!done})});
+  }catch(e){}
+}
+async function startTurnScoring(){
+  if(!activeEntry) return;
+  $('turnStartBtn').disabled=true;
+  try{
+    scoreStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}});
+  }catch(e){ $('turnNote').textContent='Mic blocked — allow microphone access to score.'; $('turnStartBtn').disabled=false; return; }
+  scoreCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
+  const src=scoreCtx.createMediaStreamSource(scoreStream);
+  scoreAnalyser=scoreCtx.createAnalyser(); scoreAnalyser.fftSize=2048;
+  src.connect(scoreAnalyser);
+  scReset();
+  turnKey=null;
+  fetch('/songkey?id='+activeEntry.jid).then(r=>r.json()).then(d=>{ turnKey=d.key||null;
+    $('turnNote').textContent=turnKey? 'Scoring in '+NOTEJ[turnKey.root]+' '+turnKey.scale+' — sing!':''; }).catch(()=>{});
+  $('turnStartBtn').classList.add('hidden');
+  $('turnHud').classList.remove('hidden');
+  scFrame();
+  scorePost=setInterval(()=>postScore(false), 900);
+}
+function stopTurnScoring(finalize){
+  cancelAnimationFrame(scoreRaf); scoreRaf=0;
+  clearInterval(scorePost); scorePost=0;
+  if(finalize && sc && sc.frames>60) postScore(true);
+  if(scoreStream){ scoreStream.getTracks().forEach(t=>t.stop()); scoreStream=null; }
+  if(scoreCtx){ try{ scoreCtx.close(); }catch(e){} scoreCtx=null; }
+  $('turnHud').classList.add('hidden');
+  $('turnStartBtn').classList.remove('hidden');
+  $('turnStartBtn').disabled=false;
+}
+$('turnStartBtn').addEventListener('click', startTurnScoring);
+
+// ---- turn pop-ups: a heads-up when you're NEXT, a hype blast when you're ON.
+const PUMP_NEXT=["Warm up those pipes! 🎤","Stretch! Hydrate! Believe! 💧","Your moment is loading…","Deep breaths — you were born for this."];
+const PUMP_NOW=["GO GO GO! 🔥","This is YOUR song!","Own it. Every note.","The room is yours!"];
+const PUMP_SINGING=["You sound AMAZING — keep going! 🔥","Hold those notes for combo ×4!","The TV is watching — style points!","Louder! Prouder!","Chase that ×4!"];
+let warnedNextId=null, poppedNowId=null, pumpTimer=null;
+function showTurnPopup(big, sub, ms){
+  $('tpInner').innerHTML='<div class="tpBig">'+big+'</div><div class="tpSub">'+sub+'</div>'+
+    '<button class="btn ghost small tpDismiss" onclick="document.getElementById(\'turnPopup\').classList.add(\'hidden\')">Got it</button>';
+  $('turnPopup').classList.remove('hidden');
+  try{ navigator.vibrate && navigator.vibrate([180,70,180]); }catch(e){}
+  setTimeout(()=>$('turnPopup').classList.add('hidden'), ms);
+}
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function checkTurn(){
+  const now=lastState.queue.find(e=>e.entry_id===lastState.now_playing);
+  const mine=now && myName && now.singers.includes(myName);
+  // heads-up: my song is FIRST in the waiting queue -> "you're next"
+  const upcoming=lastState.queue.filter(e=>e.status==='queued');
+  const nextEntry=upcoming[0];
+  if(nextEntry && myName && nextEntry.singers.includes(myName) && warnedNextId!==nextEntry.entry_id && !mine){
+    warnedNextId=nextEntry.entry_id;
+    showTurnPopup('You\'re up NEXT! ⏳', esc(nextEntry.title||'')+'<br>'+esc(pick(PUMP_NEXT)), 7000);
+  }
+  if(mine && (!activeEntry || activeEntry.entry_id!==now.entry_id)){
+    if(scoreRaf) stopTurnScoring(true);   // a new song of mine started back-to-back
+    activeEntry=now;
+    $('turnSong').textContent=now.title||'';
+    $('turnCard').classList.remove('hidden');
+    if(poppedNowId!==now.entry_id){
+      poppedNowId=now.entry_id;
+      showTurnPopup('🎤 YOU\'RE ON!', esc(pick(PUMP_NOW))+'<br>Hit Start scoring and sing!', 6000);
+    }
+    clearInterval(pumpTimer);
+    pumpTimer=setInterval(()=>{ if(scoreRaf) $('turnNote').textContent=pick(PUMP_SINGING); }, 8000);
+  } else if(!mine && activeEntry){
+    if(scoreRaf) stopTurnScoring(true);   // my turn ended (host hit Next)
+    activeEntry=null;
+    $('turnCard').classList.add('hidden');
+    clearInterval(pumpTimer); pumpTimer=null;
+  }
+}
 </script>
 """
 
