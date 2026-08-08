@@ -1731,6 +1731,69 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b)
             return
 
+        if p.path == "/manifest.json":
+            self._json(200, {
+                "name": "MicDrop", "short_name": "micdrop",
+                "start_url": "/", "display": "standalone",
+                "background_color": "#121212", "theme_color": "#121212",
+                "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml",
+                           "purpose": "any"},
+                          {"src": "/icon-180.png", "sizes": "180x180", "type": "image/png"}],
+            })
+            return
+
+        if p.path == "/icon.svg":
+            svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+                   '<rect width="100" height="100" rx="22" fill="#121212"/>'
+                   '<rect x="38" y="18" width="24" height="42" rx="12" fill="#1ed760"/>'
+                   '<path d="M28 48v4a22 22 0 0 0 44 0v-4" fill="none" stroke="#1ed760" stroke-width="7" stroke-linecap="round"/>'
+                   '<rect x="46" y="76" width="8" height="10" rx="3" fill="#1ed760"/>'
+                   '<ellipse cx="50" cy="91" rx="16" ry="3.5" fill="#1ed760" opacity="0.5"/>'
+                   '</svg>').encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(svg)))
+            self.send_header("Cache-Control", "max-age=86400")
+            self.end_headers()
+            self.wfile.write(svg)
+            return
+
+        if p.path == "/icon-180.png":
+            # iOS wants a PNG. Hand-rolled 180x180: dark tile with a green
+            # mic-ish block motif (no PIL dependency).
+            import struct, zlib
+            W = H = 180
+            bg, green = (18, 18, 18), (30, 215, 96)
+            rows = []
+            for y in range(H):
+                row = bytearray([0])
+                for x in range(W):
+                    c = bg
+                    if 66 <= x < 114 and 30 <= y < 96:        # capsule body
+                        c = green
+                    elif 54 <= x < 126 and 96 <= y < 108:     # cradle arc band
+                        c = green if (x < 66 or x >= 114) else bg
+                    elif 84 <= x < 96 and 108 <= y < 140:     # stem
+                        c = green
+                    elif 60 <= x < 120 and 148 <= y < 156:    # floor shadow
+                        c = (24, 90, 48)
+                    row += bytes(c)
+                rows.append(bytes(row))
+            raw = zlib.compress(b"".join(rows), 9)
+            def chunk(tag, data):
+                return (struct.pack(">I", len(data)) + tag + data +
+                        struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff))
+            png = (b"\x89PNG\r\n\x1a\n" +
+                   chunk(b"IHDR", struct.pack(">IIBBBBB", W, H, 8, 2, 0, 0, 0)) +
+                   chunk(b"IDAT", raw) + chunk(b"IEND", b""))
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(png)))
+            self.send_header("Cache-Control", "max-age=86400")
+            self.end_headers()
+            self.wfile.write(png)
+            return
+
         if p.path == "/theme.css":
             try:
                 b = _read_theme()
