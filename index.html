@@ -34,7 +34,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
      leaving it sitting above the now-playing bar in plain document flow. */
   .landingHero:not(.centered) .landingAmbient{display:none}
 
-  header{display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;
+  header{display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap;
     padding:14px 20px;border-radius:20px;position:sticky;top:12px;z-index:40;
     background:var(--glass-fill);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);
     border:1px solid var(--glass-border);box-shadow:0 8px 32px rgba(0,0,0,.35)}
@@ -108,12 +108,16 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
      .grid sits capped at .wrap's max-width. Collapses back under .grid on
      narrower/mobile viewports, where a side-by-side rail has no room. */
   .sessionLayout{display:block}
-  .sessionRail{display:flex;flex-direction:column;gap:14px;margin-top:16px}
+  .sessionRail{display:flex;flex-direction:column;gap:12px;margin-top:16px}
   @media (min-width:980px){
-    .sessionLayout{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start}
-    .sessionRail{margin-top:0;position:sticky;top:100px}
+    .sessionLayout{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
+    .sessionRail{margin-top:0;position:sticky;top:100px;min-height:calc(100vh - 120px)}
   }
   .sessionRail .selfView{width:100%;height:auto;aspect-ratio:4/3}
+  .railAmbient{margin-top:auto;display:flex;align-items:center;justify-content:center;gap:10px;
+    padding:18px 0 6px;color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:.16em;
+    text-transform:uppercase}
+  .railAmbient .eq-bars{font-size:18px}
   .railCard{background:var(--glass-fill);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
     border:1px solid var(--glass-border);border-radius:14px;padding:14px}
   .railCard h3{margin:0 0 8px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
@@ -121,6 +125,13 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .railCard .hint{margin:0}
   .railHint{font-size:11px;line-height:1.5;color:var(--muted);margin:0 0 8px}
 
+  /* Spotify's signature interaction: rows brighten on hover. One rule for
+     every list row in the app (takes, search results, library, history) —
+     motion/life without a single new animation. */
+  .takerow,.rcard,.libRow,.hrow{transition:background .15s,border-color .15s}
+  .takerow:hover,.rcard:hover,.libRow:hover,.hrow:hover{background:#232323;border-color:#3e3e3e}
+  :root[data-theme="light"] .takerow:hover,:root[data-theme="light"] .rcard:hover,
+  :root[data-theme="light"] .libRow:hover,:root[data-theme="light"] .hrow:hover{background:#ededed;border-color:#d0d0d0}
   .npRow{display:flex;align-items:center;gap:14px}
   .npRow img{width:80px;height:45px;object-fit:cover;border-radius:8px;flex:none;background:var(--well)}
   .npInfo{flex:1;min-width:0}
@@ -132,8 +143,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
      syncStickyOffsets() in JS) so a scroll never leaves them caught between
      "still in the document flow" and "under the header" — they either
      scroll fully into view together with it, or don't move at all. */
-  #nowPlayingBar{position:sticky;z-index:35}
-  .sessionNav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;position:sticky;z-index:30}
+  #nowPlayingBar{position:sticky;z-index:35;
+    background:linear-gradient(115deg, rgba(29,185,84,.22), rgba(29,185,84,.05) 42%, transparent 68%), var(--glass-fill)}
+  .sessionNav{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;position:sticky;z-index:30}
   .sessionTab{flex:1;min-width:120px;padding:12px 14px;border-radius:14px;border:1px solid var(--edge);
     background:var(--metal);color:var(--muted);font-weight:650;font-size:13px;cursor:pointer;
     display:inline-flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.02em;
@@ -219,6 +231,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 
   /* transport */
   .transport{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+  /* KEY cluster balances the row's right edge instead of leaving the whole
+     right half of the transport strip empty (the play/stop pair is short) */
+  .transport .keybox{margin-left:auto}
   .recPhoneChip{font-family:var(--mono);font-size:11px;margin-top:6px;color:var(--dim)}
   .recPhoneChip.on{color:var(--ok)}
   .recPhoneChip.off{color:var(--amber2)}
@@ -1318,6 +1333,11 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         <div id="lightsList" class="mt"></div>
         <div id="lightsStatus" class="mt" style="font-size:11px;opacity:.8"></div>
       </div>
+    </div>
+    <div class="railAmbient" aria-hidden="true">
+      <span class="eq-bars"><i></i><i></i><i></i><i></i></span>
+      mic drop
+      <span class="eq-bars"><i></i><i></i><i></i><i></i></span>
     </div>
   </aside>
   </div>
