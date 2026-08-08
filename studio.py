@@ -1010,7 +1010,7 @@ def _run_render_locked(jid, vocal_path, fx, mix_opts, lock, scope_id=None):
 # points at a jid once that job's status is "ready".
 
 ROOM = {"code": None, "queue": [], "now_playing": None, "challenges": [], "guests": [],
-        "scores": {}, "live_score": None}
+        "scores": {}, "live_score": None, "scoring_enabled": True}
 ROOM_LOCK = threading.Lock()
 SUBSCRIBERS = []
 SUB_LOCK = threading.Lock()
@@ -1024,7 +1024,8 @@ def room_state():
                 "now_playing": ROOM["now_playing"], "challenges": list(ROOM["challenges"]),
                 "guests": list(ROOM["guests"]),
                 "scores": dict(ROOM["scores"]), "live_score": ROOM["live_score"],
-                "secure_join": secure}
+                "secure_join": secure,
+                "scoring_enabled": ROOM.get("scoring_enabled", True)}
 
 
 def room_join(name, device_id):
@@ -1070,6 +1071,7 @@ def start_room():
         ROOM["guests"] = []
         ROOM["scores"] = {}
         ROOM["live_score"] = None
+        ROOM["scoring_enabled"] = True
     broadcast_room()
     return code
 
@@ -2358,11 +2360,28 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"entry": entry})
             return
 
+        if p.path == "/party/scoring":
+            # host toggle: score mode on/off for this party. When turned off
+            # mid-song, any in-flight live score is finalized first so a
+            # singer's points aren't silently dropped.
+            body = self._read_body()
+            enabled = bool(body.get("enabled"))
+            with ROOM_LOCK:
+                if not enabled:
+                    _finalize_live_score_locked()
+                ROOM["scoring_enabled"] = enabled
+            broadcast_room()
+            self._json(200, room_state())
+            return
+
         if p.path == "/party/score":
             body = self._read_body()
             device_id = body.get("device_id") or ""
             entry_id = body.get("entry_id") or ""
             with ROOM_LOCK:
+                if not ROOM.get("scoring_enabled", True):
+                    self._json(409, {"error": "scoring is off for this party"})
+                    return
                 guest = next((g for g in ROOM["guests"] if g["device_id"] == device_id), None)
                 now = next((e for e in ROOM["queue"] if e["entry_id"] == ROOM.get("now_playing")), None)
                 # only the phone of someone actually SINGING the current song
@@ -2964,7 +2983,10 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       <div id="stage"><div class="idleStage"><span class="eq-bars"><i></i><i></i><i></i><i></i></span>Nobody queued yet — waiting for guests to join and add songs.</div></div>
       <div class="nowSingers" id="singers"></div>
       <div class="nowTitle" id="songTitle"></div>
-      <div style="margin-top:14px"><button class="btn pink" id="nextBtn">Next ▶</button></div>
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+        <button class="btn pink" id="nextBtn">Next ▶</button>
+        <button class="btn ghost" id="scoringToggle" title="Turn singing scores on/off for this party">🎯 Scoring: ON</button>
+      </div>
     </div>
     <div class="card">
       <h3 style="margin-top:0">Up next <span style="font-size:11px;color:var(--dim);font-weight:400">— drag to reorder</span></h3>
@@ -3016,6 +3038,11 @@ $('startBtn').addEventListener('click',async()=>{
   subscribe();
 });
 
+$('scoringToggle').addEventListener('click',()=>{
+  const currentlyOn=state.scoring_enabled!==false;
+  fetch('/party/scoring',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({enabled:!currentlyOn})});
+});
 $('nextBtn').addEventListener('click',()=>{
   // mount synchronously inside the click so audio.play() rides this user gesture
   const next=state.queue.find(e=>e.status==='queued');
@@ -3064,8 +3091,12 @@ function render(){
     ? guests.map(g=>'<span class="guestChip">'+esc(g.name)+'</span>').join('')
     : '<span class="empty">Waiting for guests to join…</span>';
 
+  // scoring toggle + everything it gates
+  const scoringOn = state.scoring_enabled!==false;
+  const tg=$('scoringToggle');
+  if(tg){ tg.textContent='🎯 Scoring: '+(scoringOn?'ON':'OFF'); tg.classList.toggle('ghost', scoringOn); }
   // live score HUD: whoever is singing right now, straight off their phone
-  const ls=state.live_score;
+  const ls=scoringOn ? state.live_score : null;
   $('liveHud').classList.toggle('hidden', !ls);
   if(ls){
     $('lhName').textContent=ls.name;
@@ -3078,7 +3109,11 @@ function render(){
     $('liveHud').classList.toggle('hot', ls.mult>=3);
   }
 
-  // scoreboard: party standings by total points, medals on the podium
+  // scoreboard: party standings by total points, medals on the podium.
+  // Hidden entirely while scoring is off — a frozen leaderboard reads as
+  // broken, and some parties just don't want the competition.
+  document.getElementById('scoreboard').style.display=scoringOn?'':'none';
+  document.querySelectorAll('h3').forEach(h=>{ if(h.textContent.includes('Scoreboard')) h.style.display=scoringOn?'':'none'; });
   const scores=Object.entries(state.scores||{}).sort((a,b)=>b[1].total-a[1].total);
   const medals=['🥇','🥈','🥉'];
   $('scoreboard').innerHTML = scores.length
@@ -3121,7 +3156,18 @@ function mcReact(){
   const scoreSig=JSON.stringify(state.scores||{});
   const scoresChanged = prevScoreSig && scoreSig!==prevScoreSig;
   const songChanged = nowId!==prevNowId;
-  if(scoresChanged){
+  const scoringOnMc = state.scoring_enabled!==false;
+  if(songChanged && prevNowId && !scoringOnMc){
+    // scoring off: no score to celebrate, but the singer still deserves a
+    // send-off before the next announcement
+    const prevEntry=state.queue.find(e=>e.entry_id===prevNowId);
+    if(prevEntry){
+      showOverlay('<div class="poKicker">give it up for</div>'+
+        '<div class="poBig">'+esc(prevEntry.singers.join(' & '))+' 👏</div>'+
+        '<div class="poSub">'+esc(pick(HYPE.B))+'</div>', 4500);
+    }
+  }
+  if(scoresChanged && scoringOnMc){
     // someone just finished — find who improved and celebrate them
     let who=null, prev={};
     try{ prev=JSON.parse(prevScoreSig)||{}; }catch(e){}
@@ -3146,8 +3192,10 @@ function mcReact(){
         '<div class="poKicker">'+esc(pick(INTROS))+'</div>'+
         '<div class="poBig">'+esc(now.singers.join(' & '))+' 🎤</div>'+
         '<div class="poSub">'+esc(now.title||'')+'</div>', 5000);
-      // if a celebration is on screen, let it land first
-      if(scoresChanged) setTimeout(announce, 6200); else announce();
+      // if a celebration/send-off is on screen, let it land first
+      if(scoresChanged && scoringOnMc) setTimeout(announce, 6200);
+      else if(prevNowId && !scoringOnMc) setTimeout(announce, 4700);
+      else announce();
     }
   }
   prevNowId=nowId; prevScoreSig=scoreSig;
@@ -3838,17 +3886,21 @@ function checkTurn(){
     warnedNextId=nextEntry.entry_id;
     showTurnPopup('You\'re up NEXT! ⏳', esc(nextEntry.title||'')+'<br>'+esc(pick(PUMP_NEXT)), 7000);
   }
+  const scoringOn = lastState.scoring_enabled!==false;
   if(mine && (!activeEntry || activeEntry.entry_id!==now.entry_id)){
     if(scoreRaf) stopTurnScoring(true);   // a new song of mine started back-to-back
     activeEntry=now;
     $('turnSong').textContent=now.title||'';
-    $('turnCard').classList.remove('hidden');
+    $('turnCard').classList.toggle('hidden', !scoringOn);
     if(poppedNowId!==now.entry_id){
       poppedNowId=now.entry_id;
-      showTurnPopup('🎤 YOU\'RE ON!', esc(pick(PUMP_NOW))+'<br>Hit Start scoring and sing!', 6000);
+      showTurnPopup('🎤 YOU\'RE ON!', esc(pick(PUMP_NOW))+'<br>'+(scoringOn?'Hit Start scoring and sing!':'Grab the mic and sing your heart out!'), 6000);
     }
     clearInterval(pumpTimer);
     pumpTimer=setInterval(()=>{ if(scoreRaf) $('turnNote').textContent=pick(PUMP_SINGING); }, 8000);
+  } else if(mine && activeEntry && !scoringOn){
+    if(scoreRaf) stopTurnScoring(true);   // host turned scoring off mid-song
+    $('turnCard').classList.add('hidden');
   } else if(!mine && activeEntry){
     if(scoreRaf) stopTurnScoring(true);   // my turn ended (host hit Next)
     activeEntry=null;
