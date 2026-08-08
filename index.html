@@ -119,6 +119,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .railCard h3{margin:0 0 8px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
     text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
   .railCard .hint{margin:0}
+  .railHint{font-size:11px;line-height:1.5;color:var(--muted);margin:0 0 8px}
 
   .npRow{display:flex;align-items:center;gap:14px}
   .npRow img{width:80px;height:45px;object-fit:cover;border-radius:8px;flex:none;background:var(--well)}
@@ -146,7 +147,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     display:flex;align-items:center;gap:8px}
   .card h2::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber);
     box-shadow:var(--glow-amber)}
-  #duetCard h2::before,#mixCard h2::before{background:var(--pink);box-shadow:var(--glow-pink)}
+  #mixCard h2::before{background:var(--pink);box-shadow:var(--glow-pink)}
 
   /* practice/advanced disclosure drawers (native <details>, styled to match card headers) */
   details.drawer{margin-top:12px;border-top:1px dashed var(--edge);padding-top:10px}
@@ -403,6 +404,13 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   .te-ms.on[id*="Solo"]{background:var(--amber2);color:#1a1400;border-color:var(--amber2)}
   .te-trackctl input[type=range]{flex:1;max-width:220px}
   .te-fval{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:38px}
+  .te-align{display:flex;align-items:center;gap:4px;padding-left:6px;border-left:1px solid var(--edge)}
+  .te-align .te-fval{min-width:44px;text-align:center}
+  .te-align .btn.small{padding:2px 7px;font-size:11px}
+  #teFxPreviewWrap{margin-left:auto;padding-left:6px}
+  .te-fxbanner{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--well2);
+    border:1px solid var(--amber2);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:12.5px;color:var(--muted)}
+  .te-fxbanner #teFxRestoreDismiss{margin-left:auto;padding:2px 8px}
   .te-eqrow{display:flex;gap:14px;padding-left:72px;flex-wrap:wrap}
   .te-eqrow label{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
   .te-eqrow input[type=range]{width:80px}
@@ -800,7 +808,6 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     <button class="sessionTab active" data-step="stageCard"><svg class="icon"><use href="#i-mic"/></svg> Record</button>
     <button class="sessionTab" data-step="takesCard"><svg class="icon"><use href="#i-takes"/></svg> Takes</button>
     <button class="sessionTab" data-step="fxCard"><svg class="icon"><use href="#i-sliders"/></svg> Effects</button>
-    <button class="sessionTab" data-step="duetCard"><svg class="icon"><use href="#i-music"/></svg> Duet</button>
     <button class="sessionTab" data-step="mixCard"><svg class="icon"><use href="#i-download"/></svg> Export</button>
   </div>
 
@@ -1037,8 +1044,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
               <span class="te-tname">Karaoke</span>
               <button class="te-ms" id="teKaraokeMute" title="Mute karaoke">M</button>
               <button class="te-ms" id="teKaraokeSolo" title="Solo karaoke">S</button>
-              <input type="range" id="teKaraokeFader" min="-18" max="6" step="0.5" value="-3">
-              <span class="te-fval" id="teKaraokeFaderV">−3dB</span>
+              <input type="range" id="teKaraokeFader" min="-18" max="6" step="0.5" value="-4">
+              <span class="te-fval" id="teKaraokeFaderV">−4dB</span>
               <button class="btn small ghost" id="teKaraokeEqToggle" title="Karaoke tone EQ">EQ</button>
             </div>
             <div class="te-eqrow hidden" id="teKaraokeEq">
@@ -1050,9 +1057,32 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
               <span class="te-tname">Vocal</span>
               <button class="te-ms" id="teVocalMute" title="Mute vocal">M</button>
               <button class="te-ms" id="teVocalSolo" title="Solo vocal">S</button>
-              <input type="range" id="teVocalFader" min="-12" max="12" step="0.5" value="0">
-              <span class="te-fval" id="teVocalFaderV">0dB</span>
+              <input type="range" id="teVocalFader" min="-12" max="12" step="0.5" value="2">
+              <span class="te-fval" id="teVocalFaderV">+2dB</span>
+              <span class="te-align" title="Nudge this take's timing against the karaoke track — non-destructive, editable any time, actually affects the final render">
+                <button class="btn small ghost" id="teVocalAlignEarlier" title="10ms earlier">◀</button>
+                <span class="te-fval" id="teVocalAlignV">0ms</span>
+                <button class="btn small ghost" id="teVocalAlignLater" title="10ms later">▶</button>
+                <button class="btn small ghost" id="teVocalAlignReset" title="Reset timing to 0" style="display:none">↺</button>
+              </span>
+              <label class="te-chk" id="teFxPreviewWrap" title="Route this take's playback through the Effects tab's Pro Chain live — EQ/compression/de-ess/reverb only; pitch-fix and de-noise still need a render">
+                <input type="checkbox" id="teFxPreviewToggle"> 🎧 Preview FX
+              </label>
             </div>
+            <!-- Any number of REAL simultaneous tracks, not just alternates
+                 in Compare mode's audition list — one row per harmony linked
+                 to the active take (teBuildHarmonyTrackCtls/
+                 teSyncHarmonyTrackUI), built dynamically since there's no
+                 fixed count. Hidden in Compare mode (that mode already puts
+                 every harmony on the uniform vocal fader, auditioning them
+                 as interchangeable takes rather than layered parts). -->
+            <div id="teHarmonyTrackCtls"></div>
+          </div>
+          <div class="te-fxbanner hidden" id="teFxRestoreBar">
+            <span id="teFxRestoreMsg"></span>
+            <button class="btn small" id="teFxRestoreBtn">Restore this take's FX</button>
+            <button class="btn small ghost" id="teFxSaveHereBtn">Save current FX to this take</button>
+            <button class="btn small ghost" id="teFxRestoreDismiss">✕</button>
           </div>
           <div class="te-compbuild hidden" id="teCompBuildRow">
             <span id="teSegmentsSummary" class="klabel">Drag on a lane below to assign that take to a region</span>
@@ -1070,7 +1100,21 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <button class="btn small amber" id="teSingAlong" title="Play this take and sing along; it auto-records when the take runs out">▶ Sing-along + continue</button>
             <span class="tp-note" id="teRecNote"></span>
           </div>
-          <div class="te-hint">Click the timeline to seek · drag the ◢◣ handles to trim · drag the vertical join line to move the comp point · I/O set trim at playhead, Space play/pause, Z/⇧Z undo/redo (while hovering here)</div>
+          <!-- Duet used to be its own tab with its own lead-take picker —
+               redundant now that this editor already has a clear notion of
+               "the take you're looking at": harmony always records against
+               THAT take, no picker needed. Hidden entirely for a harmony
+               take itself (no harmony-of-a-harmony). Always ADDS another
+               layer — any number can stack on one lead, each with its own
+               fader/mute/solo below (teBuildHarmonyTrackCtls) and its own
+               bus in the final mix (mixdown's `harmonies` list). -->
+          <div class="takemix" id="harmonyRecRow" style="margin-top:6px">
+            <span class="monlbl">Harmony</span>
+            <button class="btn small" id="harmonyRecBtn">+ Add a harmony</button>
+            <button class="btn small" id="harmonyStopBtn" style="display:none">■ Stop</button>
+            <span class="tp-note" id="harmonyRecNote"></span>
+          </div>
+          <div class="te-hint">Click the timeline to seek · drag the ◢◣ handles to trim · drag the vertical join line to move the comp point · I/O set trim at playhead, Space play/pause, Z/⇧Z undo/redo (while hovering here) · ◀/▶ nudge vocal timing · 🎧 Preview FX to audition the Effects rack live</div>
           </div>
       </div>
     </div>
@@ -1084,6 +1128,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <button id="fxRedoBtn" class="ksmall" style="width:auto;padding:0 8px" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↻ Redo</button>
           </span>
         </h2>
+        <!-- These sliders are ONE live rack, not a per-take store — this is
+             the one thing they map to right now: whatever renders, renders
+             with THIS. A harmony take is the one exception (it has no
+             "live" rack of its own to share this one with) — it renders
+             with its OWN saved snapshot instead, set from the Takes tab. -->
+        <div class="hint" id="fxMappingHint" style="margin:-4px 0 10px"></div>
         <div class="rack" id="rack">
           <!-- pitch -->
           <div class="fxrow">
@@ -1133,33 +1183,26 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
         </div>
       </div>
 
-      <div class="card step mt" id="duetCard" style="margin-top:16px">
-        <h2>Duet / harmony</h2>
-        <div class="status" id="duetHint">Keep at least one take (see the Takes tab) to sing a harmony against it.</div>
-        <div class="row mt" id="duetPicker" style="display:none">
-          <select id="duetLead" style="flex:1"></select>
-          <button id="duetRecBtn" class="btn rec">● Record harmony</button>
-          <button id="duetStopBtn" class="btn" style="display:none">■ Stop</button>
-        </div>
-        <div class="status mt" id="duetStatus"></div>
-      </div>
-
       <div class="card step mt" id="mixCard" style="margin-top:16px">
         <h2>Mix &amp; export</h2>
         <div class="mixrow">
           <div class="fxname">Vocal</div>
-          <input type="range" id="vgain" min="-12" max="12" value="0">
-          <div class="val" id="vgainv">0 dB</div>
+          <input type="range" id="vgain" min="-12" max="12" value="2">
+          <div class="val" id="vgainv">+2 dB</div>
         </div>
         <div class="mixrow">
           <div class="fxname">Music</div>
-          <input type="range" id="mgain" min="-18" max="6" value="-3">
-          <div class="val" id="mgainv">-3 dB</div>
+          <input type="range" id="mgain" min="-18" max="6" value="-4">
+          <div class="val" id="mgainv">-4 dB</div>
         </div>
+        <!-- No single gain slider here any more — there can be several
+             harmonies at once now, each with its OWN level, mute and solo
+             right on its own row in the Takes tab (next to its waveform,
+             where you're actually listening to it), not one shared control
+             pretending to speak for all of them. This is just a summary. -->
         <div class="mixrow" id="harmonyRow" style="display:none">
           <div class="fxname">Harmony</div>
-          <input type="range" id="hgain" min="-18" max="6" value="-3">
-          <div class="val" id="hgainv">-3 dB</div>
+          <div class="hint" id="harmonySummary" style="margin:0"></div>
         </div>
 
         <!-- trim the exported song (and phone video, if recorded) to a
@@ -1216,20 +1259,29 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       <span class="selfViewLabel"><svg class="icon"><use href="#i-phone"/></svg> live</span>
     </div>
     <div class="railCard">
-      <h3>Quick reference</h3>
+      <h3>Quick reference
+        <button type="button" class="infoBtn" id="quickRefInfoBtn" aria-label="Why headphones?" style="margin-left:auto">ⓘ</button>
+      </h3>
       <div class="hint">
         <kbd>Space</kbd> record · <kbd>P</kbd> play/pause · <kbd>Enter</kbd> keep take.
-        Wear headphones so your mic captures only your voice.
       </div>
+      <div class="railHint hidden" id="quickRefInfoText" style="margin-top:6px">Wear headphones so your mic captures only your voice, not the backing track.</div>
     </div>
 
     <!-- phone camera sync: right below Quick reference so the rail's spare
          vertical space is doing something, instead of pairing info being
          buried in a drawer down inside the Record tab. Visible across every
          session tab, not just Record, since pairing status stays relevant
-         throughout. -->
+         throughout. The "not secure" self-signed-cert explanation used to
+         run TWICE, verbatim in spirit, once above the QR code and once
+         below it — collapsed into one ⓘ toggle (same pattern as the FX
+         rack's per-parameter info buttons) so the default view is just the
+         status line + QR + link, not three paragraphs of caveat. -->
     <div class="railCard">
-      <h3><svg class="icon"><use href="#i-phone"/></svg> Phone camera sync</h3>
+      <h3><svg class="icon"><use href="#i-phone"/></svg> Phone camera sync
+        <button type="button" class="infoBtn" id="phoneInfoBtn" aria-label="About phone pairing" style="margin-left:auto">ⓘ</button>
+      </h3>
+      <div class="railHint hidden" id="phoneInfoText">Scan the code, or open the link on your phone (same WiFi, iPhone or Android). Your phone's browser will warn "not secure" the first time — that's the local self-signed cert, not a real problem; tap Advanced/Details → Proceed to continue.</div>
       <div class="hint" id="phonePairPanel">
         <span id="phoneStatusText">Loading phone-pairing link…</span>
         <button class="btn small" id="phoneDisconnectBtn" type="button"
@@ -1240,10 +1292,6 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <code id="phoneUrlText" style="user-select:all;word-break:break-all;font-size:11px"></code>
             <div class="mt"><button class="btn small" id="phoneCopyBtn" type="button">Copy link</button></div>
           </div>
-          <div style="opacity:.8;margin-top:8px;font-size:11px">Scan the code, or open the link on your phone (same
-            WiFi). Works on iPhone and Android — your phone's browser will warn "not secure" the
-            first time (that's the local self-signed cert, not a real problem); tap Advanced/Details
-            → Proceed to continue.</div>
         </div>
       </div>
     </div>
@@ -1773,7 +1821,6 @@ function bindVal(id, fmt){ const el=$(id),out=$(id+'v'); if(!el||!out)return;
   el.addEventListener('input',upd); upd(); }
 bindVal('pstr',v=>v+'%'); bindVal('denoise',v=>v+'%');
 bindVal('vgain',v=>(v>=0?'+':'')+v+' dB'); bindVal('mgain',v=>(v>=0?'+':'')+v+' dB');
-bindVal('hgain',v=>(v>=0?'+':'')+v+' dB');
 refreshTogs();
 // Restore any FX rack state saved from a previous session BEFORE seeding
 // undo history, so the seeded state (and everything Ctrl+Z can ever get
@@ -2400,7 +2447,14 @@ function resumeSession(sid){
   $('loadbar').style.display='block'; $('loadfill').style.width='100%';
   $('loadstatus').textContent='Resuming session…';
   fetch('/status?id='+sid).then(r=>r.json()).then(j=>{
-    if(j && (j.status==='ready'||j.stage==='ready')){ onReady(j); }
+    // "ready" is only the status of a session that has never rendered —
+    // finishing a render overwrites it with "done" (a failed one with
+    // "error"), so requiring status==='ready' here rejected every session
+    // the user had already exported once: click it in History → "That
+    // session is no longer available", takes never load, and the Takes tab
+    // silently keeps showing the PREVIOUS session's content. has_backing
+    // (backing.wav exists on disk) is the real resumability test.
+    if(j && (j.status==='ready'||j.stage==='ready'||j.status==='done'||j.has_backing)){ onReady(j); }
     else{
       document.querySelectorAll('.rcard.loading,.libRow.loading,.hrow.loading').forEach(c=>c.classList.remove('loading'));
       $('loadbar').style.display='none';
@@ -2512,7 +2566,7 @@ $('autoAdvance').addEventListener('change',e=>{ autoAdvanceOn=e.target.checked; 
 // vocal buffers, FX-rack settings are deliberately left alone — a singer's
 // preferred reverb/EQ carries over to the next song).
 function resetForNewSong(){
-  takes=[]; activeTakeId=null; activeHarmonyTakeId=null; lastDeletedTakeId=null;
+  takes=[]; activeTakeId=null; activeHarmonyTakeIds=[]; lastDeletedTakeId=null;
   keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
   $('undoDeleteBtn').style.display='none';
   $('takeHistory').style.display='none';
@@ -2526,6 +2580,11 @@ function resetForNewSong(){
   teStopPlayback();
   TE.karaokeBuffer=null; TE.vocalBuffers={}; TE.duration=0; TE.playhead=0;
   TE.trimStart=0; TE.trimEnd=null; TE.segments=[]; TE.markers=[]; TE._zoomInitialized=false;
+  // takes=[] above means the next refreshTrackEditor() call early-returns
+  // before ever reaching the buffersReady toggle — without resetting it
+  // here too, it would keep whatever value the PREVIOUS song left behind
+  // (true, typically) even though karaokeBuffer was just nulled above.
+  TE.buffersReady=false;
   $('result').innerHTML=''; $('rendererr').textContent='';
 }
 function playNext(){
@@ -2624,7 +2683,7 @@ function switchSessionTab(stepId){
   // from, say, a playing take in Takes leaves audio running with no player
   // in view to stop it from.
   if(!recording) stopAllPlayback();
-  ['stageCard','takesCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.toggle('active', id===stepId));
+  ['stageCard','takesCard','fxCard','mixCard'].forEach(id=>$(id).classList.toggle('active', id===stepId));
   document.querySelectorAll('.sessionTab').forEach(b=>b.classList.toggle('active', b.dataset.step===stepId));
 }
 document.querySelectorAll('.sessionTab').forEach(b=>b.addEventListener('click',()=>switchSessionTab(b.dataset.step)));
@@ -2634,7 +2693,7 @@ $('npChangeBtn').addEventListener('click',()=>{
   $('nowPlayingBar').classList.add('hidden');
   $('sessionNav').classList.add('hidden');
   $('sessionRail').classList.add('hidden');
-  ['stageCard','takesCard','fxCard','duetCard','mixCard'].forEach(id=>$(id).classList.remove('active'));
+  ['stageCard','takesCard','fxCard','mixCard'].forEach(id=>$(id).classList.remove('active'));
   $('step1Card').scrollIntoView({behavior:'smooth', block:'start'});
 });
 
@@ -2852,19 +2911,11 @@ async function primeMic(){
   }catch(e){ $('loaderr').textContent='Microphone blocked. Allow mic access and reload.'; return; }
   audioCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000, latencyHint:'interactive'});
 
-  // Seed the vocal-timing calibration from the browser's reported latency
-  // (base + output) — but ONLY the first time this browser/device has ever
-  // used this app. Once you've ear-tuned the slider, that saved value must
-  // win forever after, on every future reload — re-guessing from the
-  // browser's (often inaccurate) latency numbers on top of your real
-  // calibration is exactly what made sync feel like it randomly regressed.
-  if(!vocalDelaySaved){
-    try{
-      const est=Math.round(((audioCtx.baseLatency||0)+(audioCtx.outputLatency||0))*1000)+80;
-      if(est>0 && est<400){ vocalDelayMs=est; $('vocalDelay').value=est;
-        $('vocalDelayV').textContent=est+'ms'; }
-    }catch(_){}
-  }
+  // First read of the auto vocal-timing estimate now that a live context
+  // exists. Display seed only — the value that actually matters is
+  // re-measured at each recording start (see recorder.onstart), when the
+  // output device has real audio flowing and reports its true latency.
+  refreshVocalDelay();
 
   micSource=audioCtx.createMediaStreamSource(mediaStream);
   micAnalyser=audioCtx.createAnalyser(); micAnalyser.fftSize=2048;
@@ -2876,6 +2927,9 @@ async function primeMic(){
   wireMonitorSource();
 
   startMeterAndPitch();
+  // measure the REAL record-path latency now that mic + output are both
+  // live — see runLoopbackCalibration; harmless no-op with sealed headphones
+  runLoopbackCalibration();
 }
 
 // (Re)connects micSource to monitorGain, either directly (dry) or through
@@ -3183,25 +3237,171 @@ $('monVol').addEventListener('input',()=>{ const v=(+$('monVol').value)/100;
   if(monitorGain) monitorGain.gain.value=v*1.2; });
 
 // vocal-timing calibration: how much later your voice appears in the recording
-// (mic input latency). We pull the take earlier by this much to line it up.
-// Persisted across reloads (localStorage) — this used to reset to a fresh
-// browser-reported estimate on every page load/server restart, silently
-// throwing away whatever value you'd actually ear-tuned it to. That's why
-// vocal sync could feel "fine, then suddenly behind again" after nothing
-// about the actual recording changed: a reload alone was enough to quietly
-// swap your calibrated number for a rough guess.
-let vocalDelayMs=140;
-let vocalDelaySaved=false;
+// (mic input + output latency). We pull the take earlier by this much.
+//
+// AUTO BY DEFAULT. The effective value is re-measured from the LIVE audio
+// stack right when each recording starts (refreshVocalDelay) — not once at
+// page load. Both previous designs failed real use: re-estimating only at
+// mic init reads outputLatency before the output device has actually
+// engaged (Bluetooth reports ~0 until audio flows), and persisting one
+// absolute number froze the estimate for whichever device happened to be
+// connected the day it was saved — switch speakers↔AirPods and every take
+// lands 100-300ms off with no visible reason. What persists now is only
+// the user's EAR-TUNED CORRECTION on top of the live estimate (trim), so
+// device changes keep auto-adjusting underneath any manual taste tweak.
+let vocalDelayTrimMs=0;
+let vocalDelayMs=140;   // effective total; refreshed before every use
 try{
-  const saved=localStorage.getItem('kstudio.vocalDelayMs');
-  if(saved!=null){ vocalDelayMs=+saved; vocalDelaySaved=true; }
+  const t=localStorage.getItem('kstudio.vocalDelayTrimMs');
+  if(t!=null) vocalDelayTrimMs=+t||0;
+  // one-time migration off the old frozen-absolute scheme: discard it —
+  // it's the value that caused the drift-by-device bug in the first place
+  localStorage.removeItem('kstudio.vocalDelayMs');
 }catch(e){}
+// When the loopback mic-check managed a real measurement (see
+// runLoopbackCalibration), it IS the whole output+input round trip — no
+// formula needed. Otherwise fall back to browser-reported numbers.
+let measuredRoundtripMs=null;
+// MediaRecorder stamps "recording started" ~67ms before audio actually
+// begins flowing into it — measured on this machine by recording the
+// backing track through a zero-latency synthetic mic and cross-correlating
+// the saved takes (two runs: 68.2ms and 66.0ms; the same experiment also
+// proved the alignment math itself is sample-exact). No browser API
+// reports this number; it is invisible to both the loopback measurement
+// (which captures via ScriptProcessor, overhead ~106ms on the same rig —
+// hence the -39 correction on the measured path) and the formula estimate.
+// This constant is the reason "a bit of vocal lag" survived every
+// device-latency calibration.
+const MEDIA_REC_STAMP_MS=67;
+const MEASURED_PATH_CORRECTION_MS=MEDIA_REC_STAMP_MS-106;   // = -39
+function liveLatencyEstimateMs(){
+  if(measuredRoundtripMs!=null) return Math.round(measuredRoundtripMs+MEASURED_PATH_CORRECTION_MS);
+  // output side: context render quantum + device buffer. input side: the
+  // track reports its own latency on some platforms — but Chrome routinely
+  // reports a bogus near-zero value here (real takes saved with a 21ms
+  // TOTAL estimate because of it), so the report can only RAISE the 80ms
+  // default, never undercut it.
+  let inLat=0.08;
+  try{
+    const s=mediaStream&&mediaStream.getAudioTracks()[0]&&mediaStream.getAudioTracks()[0].getSettings();
+    if(s&&s.latency>0) inLat=Math.max(inLat, s.latency);
+  }catch(_){}
+  try{
+    if(audioCtx) return Math.round(((audioCtx.baseLatency||0)+(audioCtx.outputLatency||0)+inLat)*1000)+MEDIA_REC_STAMP_MS;
+  }catch(_){}
+  return 140;   // no live audio stack yet — neutral default
+}
+// One-time migration: the stamp constant above raised the formula estimate
+// by 67ms, but any trim learned BEFORE it existed was learned against the
+// old, lower base — its job was partly to cover this very constant. Shift
+// such a trim down once so the user's converged total stays identical.
+try{
+  if(vocalDelayTrimMs && !localStorage.getItem('kstudio.trimStampMigrated')){
+    vocalDelayTrimMs-=MEDIA_REC_STAMP_MS;
+    localStorage.setItem('kstudio.vocalDelayTrimMs', vocalDelayTrimMs);
+  }
+  localStorage.setItem('kstudio.trimStampMigrated','1');
+}catch(e){}
+
+// ---- automatic loopback mic-check ------------------------------------------
+// Plays 3 short ticks through the CURRENT output device and looks for them
+// arriving back through the mic. The play→heard delay is the exact total
+// latency a recorded take suffers (output buffer + acoustic path + input
+// buffer), measured rather than guessed — the browser's own numbers proved
+// off by >100ms on real hardware. Works when the mic can hear the output
+// (laptop speakers, leaky earbuds); with sealed headphones no peak is found
+// and the formula fallback stays in charge. ~1.2s, runs at mic init and on
+// audio device changes, never while recording.
+async function runLoopbackCalibration(){
+  if(!audioCtx || !micSource || recording) return;
+  try{
+    if(audioCtx.state==='suspended') await audioCtx.resume();
+    const sr=audioCtx.sampleRate;
+    // capture the mic for ~1.4s
+    const sp=audioCtx.createScriptProcessor(4096,1,1);
+    const sink=audioCtx.createGain(); sink.gain.value=0;   // keep sp pulled, silently
+    const chunks=[]; let t0=null;
+    sp.onaudioprocess=e=>{
+      if(t0==null) t0=e.playbackTime-4096/sr;
+      chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+    micSource.connect(sp); sp.connect(sink); sink.connect(audioCtx.destination);
+    // tick template: 12ms of 1850Hz with a fast fade in/out
+    const tick=new Float32Array(Math.round(0.012*sr));
+    for(let i=0;i<tick.length;i++){
+      const w=Math.min(1,i/40,(tick.length-i)/40);
+      tick[i]=Math.sin(2*Math.PI*1850*i/sr)*w;
+    }
+    const tickBuf=audioCtx.createBuffer(1,tick.length,sr);
+    tickBuf.copyToChannel(tick,0);
+    const playAt=[]; const start=audioCtx.currentTime+0.15;
+    for(let k=0;k<3;k++){
+      const s=audioCtx.createBufferSource(); s.buffer=tickBuf;
+      const g=audioCtx.createGain(); g.gain.value=0.28;
+      s.connect(g); g.connect(audioCtx.destination);
+      if(window._calTap) g.connect(window._calTap);   // test hook: lets a fake "mic" hear the ticks
+      const at=start+k*0.4; s.start(at); playAt.push(at);
+    }
+    await new Promise(r=>setTimeout(r,1450));
+    try{ micSource.disconnect(sp); sp.disconnect(); sink.disconnect(); }catch(_){}
+    if(t0==null || !chunks.length) return;
+    const cap=new Float32Array(chunks.length*4096);
+    chunks.forEach((c,i)=>cap.set(c,i*4096));
+    // band-pass the capture around the tick frequency (crude single-pole
+    // pair) so voices/room noise don't fake a peak
+    // matched filter: correlate against the tick
+    const found=[];
+    for(const at of playAt){
+      const from=Math.max(0,Math.round((at-t0)*sr));               // earliest: 0ms delay
+      const to=Math.min(cap.length-tick.length, Math.round((at-t0+0.85)*sr)); // latest: 850ms
+      if(to<=from) continue;
+      let best=0,bestI=-1,sum=0,n=0;
+      for(let i=from;i<to;i+=1){
+        let c=0;
+        for(let j=0;j<tick.length;j+=4) c+=cap[i+j]*tick[j];
+        c=Math.abs(c); sum+=c; n++;
+        if(c>best){ best=c; bestI=i; }
+      }
+      const mean=sum/Math.max(1,n);
+      if(bestI>=0 && best>mean*8){                                  // sharp, unambiguous peak
+        found.push(((t0+bestI/sr)-at)*1000);
+      }
+    }
+    // need at least 2 of 3 ticks heard, agreeing within 25ms
+    if(found.length>=2){
+      found.sort((a,b)=>a-b);
+      const med=found[Math.floor(found.length/2)];
+      if(med>=5 && med<=800 && Math.abs(found[found.length-1]-found[0])<=25){
+        measuredRoundtripMs=med;
+        refreshVocalDelay();
+        console.log('Loopback mic-check: measured round-trip '+med.toFixed(0)+'ms (from '+found.map(x=>x.toFixed(0)).join('/')+'ms)');
+        toast('🎯 Mic timing measured: '+Math.round(med)+'ms — vocals will be auto-synced with this.','ok',3500);
+        return;
+      }
+    }
+    console.log('Loopback mic-check: no reliable echo of the ticks (sealed headphones?) — using the estimated latency instead.', found);
+  }catch(e){ console.warn('Loopback mic-check failed harmlessly:', e); }
+}
+try{
+  navigator.mediaDevices.addEventListener('devicechange',()=>{
+    measuredRoundtripMs=null;             // old measurement is for old hardware
+    if(micSource && !recording) runLoopbackCalibration();
+  });
+}catch(_){}
+function refreshVocalDelay(){
+  vocalDelayMs=Math.max(-100, Math.min(400, liveLatencyEstimateMs()+vocalDelayTrimMs));
+  $('vocalDelay').value=vocalDelayMs;
+  $('vocalDelayV').textContent=vocalDelayMs+'ms';
+  return vocalDelayMs;
+}
 $('vocalDelay').value=vocalDelayMs;
 $('vocalDelayV').textContent=vocalDelayMs+'ms';
 $('vocalDelay').addEventListener('input',()=>{
   vocalDelayMs=+$('vocalDelay').value;
-  vocalDelaySaved=true;
-  try{ localStorage.setItem('kstudio.vocalDelayMs', vocalDelayMs); }catch(e){}
+  // store only the delta vs the live estimate — the auto part keeps
+  // tracking the actual device; this remembers your taste on top of it
+  vocalDelayTrimMs=vocalDelayMs-liveLatencyEstimateMs();
+  try{ localStorage.setItem('kstudio.vocalDelayTrimMs', vocalDelayTrimMs); }catch(e){}
   $('vocalDelayV').textContent=vocalDelayMs+'ms';
   $('delayHint').textContent = vocalDelayMs>0 ? 'pulls vocals '+vocalDelayMs+'ms earlier'
     : (vocalDelayMs<0 ? 'pushes vocals '+(-vocalDelayMs)+'ms later' : 'no shift');
@@ -3253,11 +3453,49 @@ $('redoBtn').addEventListener('click',()=>{
 // re-uploading inline audio — see doRender().
 let takes=[], activeTakeId=null;
 
+// A harmony is a LAYER on a lead take, never a standalone take — every
+// harmony lane is found by asking "which harmonies name THIS take as their
+// source". So a harmony can never be the active take: nothing names a
+// harmony as its source, so the editor finds zero harmonies and collapses a
+// six-part stack down to the single layer it happened to land on. That's
+// exactly what "newest take" did on load, since the newest take after a
+// harmony session IS a harmony. These two helpers are the only way the
+// active take should ever be chosen.
+function teLeadTakeId(tid){
+  const t=takes.find(x=>x.id===tid);
+  if(t && t.kind==='harmony'){
+    const src=(t.source_take_ids||[])[0];
+    if(src && takes.some(x=>x.id===src)) return src;
+  }
+  return tid;
+}
+// Newest take that can actually carry harmonies, not just the newest take.
+// Preferring one that HAS harmonies matters because harmonies are recorded
+// against whichever lead was active at the time, so a later bare lead take
+// would otherwise open the editor on a single empty lane and hide a stack
+// you spent the session building. A bare newest lead only wins when no take
+// has harmonies at all.
+function teDefaultTakeId(){
+  if(!takes.length) return null;
+  const leads=takes.filter(t=>t.kind!=='harmony');
+  const hasHarmony=id=>takes.some(t=>t.kind==='harmony' && (t.source_take_ids||[]).includes(id));
+  for(let i=leads.length-1;i>=0;i--) if(hasHarmony(leads[i].id)) return leads[i].id;
+  if(leads.length) return leads[leads.length-1].id;
+  return teLeadTakeId(takes[takes.length-1].id);
+}
+
 async function loadTakes(){
   if(!SID) return;
   let d; try{ d=await(await fetch('/takes?id='+SID)).json(); }catch(e){ return; }
+  const local={}; takes.forEach(t=>local[t.id]=t);
   takes=d.takes||[];
-  if(takes.length && !activeTakeId) activeTakeId=takes[takes.length-1].id;
+  // An align nudge whose debounced save hasn't reached the server yet must
+  // not be rolled back by this poll's (stale) copy of the take — otherwise
+  // clicks made in the ~500ms save window visibly revert under the user.
+  takes.forEach(t=>{
+    if(teAlignSaveTimers[t.id]!==undefined && local[t.id]) t.align_ms=local[t.id].align_ms;
+  });
+  if(takes.length && !activeTakeId) activeTakeId=teDefaultTakeId();
   renderTakeStrip();
 }
 
@@ -3266,8 +3504,12 @@ async function saveCurrentTakeToHistory(kind){
   const b64=await blobToB64(window._lastVocalWav);
   let r; try{
     r=await fetch('/take',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:kind||'lead', fx_snapshot:collectFx(),
-        pitch_score:window._lastPitchScore, rec_id:window._currentRecId})});
+      // snapshotFxUI(), not collectFx() — this needs to be directly
+      // re-appliable to the rack later (applyFxUI), not the server's
+      // render-shaped fx object; see teFxRestoreBtn.
+      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:kind||'lead', fx_snapshot:snapshotFxUI(),
+        pitch_score:window._lastPitchScore, rec_id:window._currentRecId,
+        latency_ms:vocalDelayMs})});
   }catch(e){ toast('Could not save that take.','error'); return; }
   const d=await r.json();
   if(!r.ok){ toast(d.error||'Could not save that take.','error'); return; }
@@ -3287,6 +3529,7 @@ async function saveCurrentTakeToHistory(kind){
 }
 
 function selectTake(tid){ activeTakeId=tid; renderTakeStrip(); }
+function takeAlignMs(tid){ const t=takes.find(x=>x.id===tid); return (t&&t.align_ms)||0; }
 
 let lastDeletedTakeId=null;
 async function deleteTakeFromHistory(tid){
@@ -3294,7 +3537,7 @@ async function deleteTakeFromHistory(tid){
   try{ await fetch('/take_delete',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:SID, take:tid})}); }catch(e){ toast('Could not delete that take.','error'); return; }
   takes=takes.filter(t=>t.id!==tid);
-  if(activeTakeId===tid) activeTakeId=takes.length? takes[takes.length-1].id : null;
+  if(activeTakeId===tid) activeTakeId=takes.length? teDefaultTakeId() : null;
   lastDeletedTakeId=tid;
   $('undoDeleteBtn').style.display='';
   renderTakeStrip();
@@ -3365,8 +3608,8 @@ function renderTakeStrip(){
     box.appendChild(row);
   });
   ensureTakeStripPoll();
-  refreshDuetUI();
   refreshTrackEditor();
+  refreshHarmonyUI();   // after refreshTrackEditor — needs activeTakeId already resolved
 }
 
 // ==== TRACK EDITOR (vocal + karaoke waveforms on one shared, zoomable
@@ -3391,9 +3634,15 @@ const TE = {
   segments: [],   // [{takeId, start, end}] — non-destructive multi-region comp
   markers: [],    // [{time, label}]
   karaokeMute: false, karaokeSolo: false, vocalMute: false, vocalSolo: false,
-  karaokeFaderDb: -3, vocalFaderDb: 0,
+  // Keyed by harmony take id, not a single scalar — there can be any number
+  // of simultaneous harmony layers now, each independently mixed, same as
+  // Karaoke/Vocal but one map entry per layer instead of one fixed slot.
+  harmonyMute: {}, harmonySolo: {}, harmonyFaderDb: {},
+  karaokeFaderDb: -4, vocalFaderDb: 2,
   eqLow: 0, eqMid: 0, eqHigh: 0,
   hovering: false,
+  fxGraph: null, fxPreviewOn: false,
+  buffersReady: false,
 };
 const teHistory=makeHistory();
 
@@ -3421,40 +3670,106 @@ function teAudioCtx(){
   if(!TE.ctx || TE.ctx.state==='closed') TE.ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
   return TE.ctx;
 }
+// FX-preview graph for auditioning the Effects tab's Pro Chain against a
+// saved take, without rendering — the ONLY way to do this used to be the
+// "Test effects" mode on the (removed) rich player. Lazy + cached per
+// TE.ctx lifetime; connected to destination once, since it stays silent
+// whenever nothing is routed into .hp (see tePlay()).
+function teEnsureFxGraph(){
+  const ctx=teAudioCtx();
+  if(TE.fxGraph && TE.fxGraph._ctx===ctx) return TE.fxGraph;
+  TE.fxGraph=buildFxNodeChain(ctx);
+  TE.fxGraph._ctx=ctx;
+  TE.fxGraph.vocalGain.connect(ctx.destination);
+  applyLiveFxToGraph(TE.fxGraph, true, ctx);
+  return TE.fxGraph;
+}
+// Both of these used to swallow every failure silently (bare `return null`,
+// no log, no toast) — if a fetch or decodeAudioData ever failed (bad
+// response, truncated file, wrong content-type), the Track Editor just
+// quietly had no karaoke or no vocal to play, with zero indication why. From
+// the outside that looks exactly like "I can't hear my vocal with the
+// karaoke, nothing makes sense" — there's no error, just silence. Now it
+// logs AND toasts (once per resource, not on every poll retry — the dedup
+// sets below are cleared on success so a real fix is picked back up).
+let _karaokeLoadFailed=false;
 async function ensureKaraokeBuffer(){
   if(TE.karaokeBuffer) return TE.karaokeBuffer;
   try{
     const ctx=teAudioCtx();
     const r=await fetch('/backing?id='+SID+'&key='+(musicKey||0));
+    if(!r.ok) throw new Error('server returned '+r.status);
     TE.karaokeBuffer=await ctx.decodeAudioData(await r.arrayBuffer());
+    _karaokeLoadFailed=false;
     return TE.karaokeBuffer;
-  }catch(e){ return null; }
+  }catch(e){
+    console.error('Karaoke track failed to load for the Track Editor:', e);
+    if(!_karaokeLoadFailed){ _karaokeLoadFailed=true; toast('Could not load the karaoke track for playback — try Change song → reload, or check the console.','error',6000); }
+    return null;
+  }
 }
+const _vocalLoadFailed=new Set();
 async function ensureVocalBuffer(takeId){
   if(TE.vocalBuffers[takeId]) return TE.vocalBuffers[takeId];
   try{
     const ctx=teAudioCtx();
     const r=await fetch('/take_audio?id='+SID+'&take='+takeId+'&t='+Date.now());
+    if(!r.ok) throw new Error('server returned '+r.status);
     TE.vocalBuffers[takeId]=await ctx.decodeAudioData(await r.arrayBuffer());
+    _vocalLoadFailed.delete(takeId);
     return TE.vocalBuffers[takeId];
-  }catch(e){ return null; }
+  }catch(e){
+    console.error('Take '+takeId+' failed to load for the Track Editor:', e);
+    if(!_vocalLoadFailed.has(takeId)){ _vocalLoadFailed.add(takeId); toast('Could not load a saved take for playback — check the console for details.','error',6000); }
+    return null;
+  }
 }
 
 async function refreshTrackEditor(){
   if(!takes.length){
     $('teEmptyState').classList.remove('hidden');
     $('teContent').classList.add('hidden');
+    teUpdateFxMappingHint();
     return;
   }
   $('teEmptyState').classList.add('hidden');
   $('teContent').classList.remove('hidden');
-  const tid=activeTakeId || takes[takes.length-1].id;
+  const tid=teLeadTakeId(activeTakeId || teDefaultTakeId());
+  activeTakeId=tid;   // keep the global in sync — teNudgeVocal/teFxRestoreBtn/etc. read it directly
+  // Resolved here (not just in refreshHarmonyUI, which runs later) because
+  // lane-building and buffer-prefetching below both need to already know
+  // whether there's a harmony to show as a THIRD simultaneous track — not
+  // just another alternate in Compare mode's audition list.
+  // Unconditional (not gated on Compare mode) — this is also the value
+  // doRender()/refreshHarmonyUI() use to decide what to export, which must
+  // stay correct regardless of which view the editor happens to be showing.
+  // Compare-mode-specific gating (should THIS view treat it as a 3rd track
+  // vs. just another alternate?) happens at each consumption site instead
+  // (teVocalLaneIds, tePlay, teLiveApplyGains, teSyncHarmonyTrackUI) — never
+  // by nulling this shared variable, which broke exactly this once already.
+  // Any number of harmonies linked to this take, not just one.
+  activeHarmonyTakeIds = takes.filter(h=>h.kind==='harmony' && (h.source_take_ids||[]).includes(tid)).map(h=>h.id);
+  teSyncHarmonyTrackUI();
+  // A real song can be several minutes of audio to fetch+decode — the Play
+  // button was clickable the ENTIRE time this was in flight, with nothing
+  // to show for it: hit Play a beat too early and whichever tracks hadn't
+  // finished loading just played as silence, no error, no indication
+  // anything was still happening. That reads exactly like "karaoke and
+  // vocal don't play together" when it was really "you clicked before the
+  // second one was ready." Disabling Play (and saying so) while this is
+  // in flight turns a silent race into a visible, temporary state instead.
+  TE.buffersReady=false;
+  $('tePlayBtn').disabled=true;
+  $('teTime').textContent='loading audio…';
   await ensureKaraokeBuffer();
   if(TE.compareMode) await Promise.all(takes.map(t=>ensureVocalBuffer(t.id)));
-  else await ensureVocalBuffer(tid);
-  const vocalDur = TE.compareMode
-    ? Math.max(0, ...takes.map(t=>(TE.vocalBuffers[t.id]&&TE.vocalBuffers[t.id].duration)||0))
-    : ((TE.vocalBuffers[tid]&&TE.vocalBuffers[tid].duration)||0);
+  else{
+    await ensureVocalBuffer(tid);
+    await Promise.all(activeHarmonyTakeIds.map(id=>ensureVocalBuffer(id)));
+  }
+  TE.buffersReady=true;
+  $('tePlayBtn').disabled=false;
+  const vocalDur = Math.max(0, ...teVocalLaneIds(tid).map(id=>(TE.vocalBuffers[id]&&TE.vocalBuffers[id].duration)||0));
   TE.duration = Math.max(TE.karaokeBuffer?TE.karaokeBuffer.duration:0, vocalDur, 1);
   if(TE.trimEnd==null || TE.trimEnd>TE.duration) TE.trimEnd=TE.duration;
   // Default to fitting the WHOLE song in view, like any real waveform
@@ -3477,18 +3792,32 @@ async function refreshTrackEditor(){
   teLayout();
   teSyncTrimInputs();
   teRefreshHistoryBtns();
+  teRefreshAlignUI();
+  teApplyVocalAlignVisual();
+  teCheckFxSnapshotBanner();
+  teUpdateFxMappingHint();
   if(!teHistory.past.length) tePushHistory();
 }
 
+function teVocalLaneIds(activeTid){
+  if(TE.compareMode) return takes.map(t=>t.id);
+  return [activeTid, ...activeHarmonyTakeIds];
+}
 function teBuildLanes(activeTid){
   const box=$('teVocalLanes'); box.innerHTML='';
-  const ids = TE.compareMode ? takes.map(t=>t.id) : [activeTid];
+  const ids = teVocalLaneIds(activeTid);
+  let harmonyN=0;
   ids.forEach(id=>{
     const t=takes.find(x=>x.id===id);
     const lane=document.createElement('div');
     lane.className='te-lane'+(TE.compareMode?' assignable':'');
     lane.dataset.takeId=id;
-    lane.innerHTML='<div class="te-lanelabel">'+(TAKE_KIND_LABEL[t&&t.kind]||'vocal')+(TE.compareMode?' — '+id.slice(0,6):'')+'</div><canvas class="te-canvas"></canvas>';
+    // Number harmony lanes (Harmony 1, Harmony 2, ...) once more than one can
+    // exist at once — a bare repeated "harmony" label for N simultaneous
+    // layers would be indistinguishable from each other.
+    let label=TAKE_KIND_LABEL[t&&t.kind]||'vocal';
+    if(!TE.compareMode && t && t.kind==='harmony') label='harmony '+(++harmonyN);
+    lane.innerHTML='<div class="te-lanelabel">'+label+(TE.compareMode?' — '+id.slice(0,6):'')+'</div><canvas class="te-canvas"></canvas>';
     box.appendChild(lane);
   });
   wireTeLaneEvents();
@@ -3505,17 +3834,18 @@ function teLayout(){
   $('teMarkerRow').style.width=widthPx+'px';
   teDrawAll();
   teRedrawOverlays();
+  teApplyVocalAlignVisual();
 }
 function teDrawAll(){
   const cols=Math.max(50, Math.round(TE.duration*TE.pxPerSec));
   const kCanvas=$('teLaneKaraoke').querySelector('.te-canvas');
   if(kCanvas && TE.karaokeBuffer){
-    drawWaveform(kCanvas, computeWavePeaks(TE.karaokeBuffer, cols), TE.duration? TE.playhead/TE.duration : null);
+    drawWaveform(kCanvas, computeWavePeaks(TE.karaokeBuffer, cols, TE.duration), TE.duration? TE.playhead/TE.duration : null);
   }
   $('teVocalLanes').querySelectorAll('.te-lane').forEach(lane=>{
     const buf=TE.vocalBuffers[lane.dataset.takeId], canvas=lane.querySelector('.te-canvas');
     if(!buf || !canvas) return;
-    drawWaveform(canvas, computeWavePeaks(buf, cols), TE.duration? TE.playhead/TE.duration : null);
+    drawWaveform(canvas, computeWavePeaks(buf, cols, TE.duration), TE.duration? TE.playhead/TE.duration : null);
   });
   teDrawSegmentOverlays();
   teDrawMarkers();
@@ -3540,7 +3870,7 @@ function teRedrawOverlays(){
   if(!TE.playing) return;
   const cols=Math.max(50, Math.round(TE.duration*TE.pxPerSec));
   const kCanvas=$('teLaneKaraoke').querySelector('.te-canvas');
-  if(kCanvas && TE.karaokeBuffer) drawWaveform(kCanvas, computeWavePeaks(TE.karaokeBuffer, cols), TE.playhead/TE.duration);
+  if(kCanvas && TE.karaokeBuffer) drawWaveform(kCanvas, computeWavePeaks(TE.karaokeBuffer, cols, TE.duration), TE.playhead/TE.duration);
 }
 function teDrawSegmentOverlays(){
   $('teVocalLanes').querySelectorAll('.te-region').forEach(el=>el.remove());
@@ -3589,37 +3919,127 @@ function teUpdateSegmentsSummary(){
 }
 
 // ---- transport --------------------------------------------------------
-function teComputeGain(db, mute, solo, otherSolo){
+// anySolo = "is ANY track (karaoke/vocal/harmony) currently soloed" — a
+// track plays if it isn't muted AND (nothing is soloed OR it's one of the
+// soloed ones). This generalizes correctly to 3+ tracks; the old signature
+// took one specific "other track's solo" bool, which only ever worked for
+// exactly two tracks and silently broke the day a third (harmony) joined.
+function teComputeGain(db, mute, solo, anySolo){
   if(mute) return 0;
-  if(otherSolo && !solo) return 0;
+  if(anySolo && !solo) return 0;
   return Math.pow(10, db/20);
+}
+// Lazily seeds a harmony take's own fader/mute/solo entry in TE's per-id
+// maps the first time it's needed, instead of every call site having to
+// know/repeat the default (-3dB, unmuted, not soloed).
+function teHarmonyParams(id){
+  if(!(id in TE.harmonyFaderDb)) TE.harmonyFaderDb[id]=-3;
+  if(!(id in TE.harmonyMute)) TE.harmonyMute[id]=false;
+  if(!(id in TE.harmonySolo)) TE.harmonySolo[id]=false;
+  return {faderDb:TE.harmonyFaderDb[id], mute:TE.harmonyMute[id], solo:TE.harmonySolo[id]};
+}
+function teAnySolo(){
+  return TE.karaokeSolo || TE.vocalSolo || activeHarmonyTakeIds.some(id=>TE.harmonySolo[id]);
 }
 function teSeekTo(t){
   TE.playhead=Math.max(0,Math.min(TE.duration,t));
   if(TE.playing){ teStopPlayback(); tePlay(); } else { teRedrawOverlays(); }
 }
-function tePlay(){
+async function tePlay(){
   if(TE.playing || TE.duration<=0) return;
+  if(!TE.buffersReady){ toast('Still loading audio — try again in a moment.','warn',3000); return; }
   const ctx=teAudioCtx();
-  if(ctx.state==='suspended') ctx.resume();
+  // Awaited — unlike a fire-and-forget resume(), scheduling sources against
+  // ctx.currentTime BEFORE a suspended context has actually resumed can
+  // schedule them against a currentTime that's about to jump when resume
+  // completes, which silently drops or mistimes playback on browsers that
+  // suspend a freshly-created AudioContext until a user gesture resumes it
+  // (this is the same reasoning startRec() already follows for `audioCtx` —
+  // this just brings the Track Editor's own separate context in line with it).
+  if(ctx.state==='suspended') await ctx.resume();
+  if(TE.playing) return;   // teStopPlayback() could have run while we were awaiting resume
   const startAt=ctx.currentTime+0.05;
   TE.playStartedAtCtx=startAt; TE.playStartedAtPlayhead=TE.playhead;
-  const kSolo=TE.karaokeSolo, vSolo=TE.vocalSolo;
+  const anySolo = teAnySolo();
   if(TE.karaokeBuffer){
     const src=ctx.createBufferSource(); src.buffer=TE.karaokeBuffer;
-    const g=ctx.createGain(); g.gain.value=teComputeGain(TE.karaokeFaderDb, TE.karaokeMute, kSolo, vSolo);
+    const g=ctx.createGain(); g.gain.value=teComputeGain(TE.karaokeFaderDb, TE.karaokeMute, TE.karaokeSolo, anySolo);
     src.connect(g); g.connect(ctx.destination);
     src.start(startAt, TE.playhead);
     TE.karaokeSrc=src; TE.karaokeGain=g;
   }
   TE.vocalSrcs={}; TE.vocalGains={};
-  const ids = TE.compareMode ? takes.map(t=>t.id) : [activeTakeId||(takes.length&&takes[takes.length-1].id)];
+  // Same id list the waveform lanes show (teVocalLaneIds) — lead vocal, plus
+  // every linked harmony as genuine simultaneous tracks when Compare mode is
+  // off. Compare mode's alternate-take lanes stay on the uniform vocal
+  // fader (auditioning takes for comping, not layering them).
+  const ids = teVocalLaneIds(teLeadTakeId(activeTakeId||teDefaultTakeId()));
+  // "Preview FX" only makes sense for one clearly-identified take at a time —
+  // in Compare mode there's no single "the vocal", so it's disabled there
+  // (see the checkbox's own change handler, which enforces the same rule).
+  const previewId = (TE.fxPreviewOn && !TE.compareMode) ? ids[0] : null;
   ids.forEach(id=>{
-    const buf=TE.vocalBuffers[id]; if(!buf) return;
+    const buf=TE.vocalBuffers[id];
+    // A lane with no decoded buffer (its fetch/decode failed — buffersReady
+    // still flips true after a failed load) used to be skipped in total
+    // silence: karaoke plays, this track just isn't there, nothing says so.
+    // That is indistinguishable from "my vocal is gone." Say it out loud.
+    if(!buf){
+      const t=takes.find(x=>x.id===id);
+      toast('One track ('+((t&&TAKE_KIND_LABEL[t.kind])||'take')+') failed to load and is missing from playback — check the console.','error',5000);
+      return;
+    }
+    const isHarmony = !TE.compareMode && activeHarmonyTakeIds.includes(id);
+    const p = isHarmony ? teHarmonyParams(id) : {faderDb:TE.vocalFaderDb, mute:TE.vocalMute, solo:TE.vocalSolo};
+    const {faderDb, mute, solo} = p;
     const src=ctx.createBufferSource(); src.buffer=buf;
-    const g=ctx.createGain(); g.gain.value=teComputeGain(TE.vocalFaderDb, TE.vocalMute, vSolo, kSolo);
-    src.connect(g); g.connect(ctx.destination);
-    src.start(startAt, TE.playhead);
+    const g=ctx.createGain(); g.gain.value=teComputeGain(faderDb, mute, solo, anySolo);
+    // THE missing link: without src→g the source is created, scheduled and
+    // started but feeds NOTHING — g outputs silence to the destination and
+    // every vocal/harmony lane is inaudible while looking perfectly
+    // scheduled (source exists, gain is 1, buffer has audio). The karaoke
+    // branch above always had its src.connect(g); this one never did.
+    //
+    // Playback leveler: the Takes tab plays the RAW take file — no
+    // compression anywhere — so a belted note blasts and soft low phrases
+    // vanish, even though the final render fixes both (smooth comp +
+    // limiter in audio_fx.py). A gentle leveler + safety limiter per vocal
+    // lane makes listening here match the render's character. Skipped when
+    // this lane routes into the FX-preview graph, which has its own
+    // compressors. Each DynamicsCompressor adds exactly 6ms of lookahead
+    // latency (measured with an impulse through OfflineAudioContext);
+    // BOTH stages are compensated sample-exactly in the scheduling below
+    // so vocal-vs-karaoke sync does not move AT ALL.
+    let laneLatencySec=0;
+    if(id!==previewId){
+      const lev=ctx.createDynamicsCompressor();
+      lev.threshold.value=-26; lev.knee.value=14; lev.ratio.value=3;
+      lev.attack.value=0.005; lev.release.value=0.16;
+      const mk=ctx.createGain(); mk.gain.value=1.6;         // ~+4dB makeup
+      const lim=ctx.createDynamicsCompressor();             // safety: no blasts
+      lim.threshold.value=-6; lim.knee.value=3; lim.ratio.value=20;
+      lim.attack.value=0.001; lim.release.value=0.09;
+      src.connect(lev); lev.connect(mk); mk.connect(lim); lim.connect(g);
+      laneLatencySec=0.012;                                  // 2 comps x 6ms, measured
+    } else {
+      src.connect(g);
+    }
+    if(id===previewId){ g.connect(teEnsureFxGraph().hp); }
+    else{ g.connect(ctx.destination); }
+    // Non-destructive timing nudge (Track Editor's ◀/▶ vocal controls) —
+    // positive alignMs means this vocal should sound LATER than the karaoke
+    // track at the same timeline position, i.e. right now it's still
+    // playing whatever was at (timeline - alignMs); if that's still
+    // negative, the source hasn't reached its start yet and gets scheduled
+    // to begin later in real time instead of reading a negative buffer
+    // offset (which would throw).
+    // laneLatencySec cancels the leveler/limiter lookahead measured above:
+    // treating it as an extra "earlier" alignment makes the graph's own
+    // delay net out to exactly zero timing shift for this lane.
+    const alignSec=(takeAlignMs(id))/1000 - laneLatencySec;
+    let bufOffset=TE.playhead-alignSec, srcStartAt=startAt;
+    if(bufOffset<0){ srcStartAt=startAt+(-bufOffset); bufOffset=0; }
+    src.start(srcStartAt, Math.min(bufOffset, buf.duration));
     TE.vocalSrcs[id]=src; TE.vocalGains[id]=g;
   });
   TE.playing=true;
@@ -3704,6 +4124,15 @@ $('teZoomOut').addEventListener('click',()=>teSetZoom(TE.pxPerSec/1.5));
 $('teCompareMode').addEventListener('change', async()=>{
   TE.compareMode=$('teCompareMode').checked;
   $('teCompBuildRow').classList.toggle('hidden', !TE.compareMode);
+  // FX Preview and Compare mode both want to claim "the vocal lane" — the
+  // former for one specific take, the latter for every take at once — so
+  // they're mutually exclusive rather than trying to define what "preview"
+  // means across N simultaneous lanes.
+  if(TE.compareMode && TE.fxPreviewOn){
+    TE.fxPreviewOn=false; $('teFxPreviewToggle').checked=false;
+    if(TE.playing){ teStopPlayback(); tePlay(); }
+  }
+  $('teFxPreviewWrap').classList.toggle('hidden', TE.compareMode);
   await refreshTrackEditor();
 });
 $('teMarkerBtn').addEventListener('click',()=>{
@@ -3722,9 +4151,13 @@ $('teEqHigh').addEventListener('input',()=>{ TE.eqHigh=+$('teEqHigh').value; $('
 // of truth for what actually gets rendered) --------------------------------
 function teLiveApplyGains(){
   if(!TE.playing) return;
-  const kSolo=TE.karaokeSolo, vSolo=TE.vocalSolo;
-  if(TE.karaokeGain) TE.karaokeGain.gain.value=teComputeGain(TE.karaokeFaderDb, TE.karaokeMute, kSolo, vSolo);
-  Object.values(TE.vocalGains).forEach(g=>{ g.gain.value=teComputeGain(TE.vocalFaderDb, TE.vocalMute, vSolo, kSolo); });
+  const anySolo = teAnySolo();
+  if(TE.karaokeGain) TE.karaokeGain.gain.value=teComputeGain(TE.karaokeFaderDb, TE.karaokeMute, TE.karaokeSolo, anySolo);
+  Object.entries(TE.vocalGains).forEach(([id,g])=>{
+    const isHarmony = !TE.compareMode && activeHarmonyTakeIds.includes(id);
+    const p = isHarmony ? teHarmonyParams(id) : {faderDb:TE.vocalFaderDb, mute:TE.vocalMute, solo:TE.vocalSolo};
+    g.gain.value = teComputeGain(p.faderDb, p.mute, p.solo, anySolo);
+  });
 }
 $('teKaraokeFader').addEventListener('input',()=>{
   TE.karaokeFaderDb=+$('teKaraokeFader').value;
@@ -3747,6 +4180,202 @@ $('teKaraokeMute').addEventListener('click',()=>teSetMS('karaoke','Mute', !TE.ka
 $('teKaraokeSolo').addEventListener('click',()=>teSetMS('karaoke','Solo', !TE.karaokeSolo));
 $('teVocalMute').addEventListener('click',()=>teSetMS('vocal','Mute', !TE.vocalMute));
 $('teVocalSolo').addEventListener('click',()=>teSetMS('vocal','Solo', !TE.vocalSolo));
+function fmtDbShort(v){ return (v>=0?'+':'')+v+'dB'; }
+// One row per harmony linked to the active take — built fresh every time
+// (cheap: at most a handful of rows) rather than trying to diff/patch,
+// since takes can be added/deleted/reordered from several places.
+function teBuildHarmonyTrackCtls(){
+  const box=$('teHarmonyTrackCtls'); box.innerHTML='';
+  activeHarmonyTakeIds.forEach((id,i)=>{
+    const p=teHarmonyParams(id);
+    const row=document.createElement('div'); row.className='te-trackctl';
+    const nameSpan=document.createElement('span'); nameSpan.className='te-tname';
+    nameSpan.textContent = activeHarmonyTakeIds.length>1 ? 'Harmony '+(i+1) : 'Harmony';
+    const muteBtn=document.createElement('button'); muteBtn.className='te-ms'+(p.mute?' on':''); muteBtn.textContent='M'; muteBtn.title='Mute this harmony';
+    const soloBtn=document.createElement('button'); soloBtn.className='te-ms'+(p.solo?' on':''); soloBtn.textContent='S'; soloBtn.title='Solo this harmony';
+    const fader=document.createElement('input');
+    Object.assign(fader,{type:'range',min:-18,max:6,step:0.5,value:p.faderDb});
+    const faderV=document.createElement('span'); faderV.className='te-fval'; faderV.textContent=fmtDbShort(p.faderDb);
+    const delBtn=document.createElement('button'); delBtn.className='btn small ghost'; delBtn.textContent='✕';
+    delBtn.title='Delete this harmony take';
+    muteBtn.addEventListener('click',()=>{
+      TE.harmonyMute[id]=!TE.harmonyMute[id];
+      muteBtn.classList.toggle('on', TE.harmonyMute[id]);
+      teLiveApplyGains();
+    });
+    soloBtn.addEventListener('click',()=>{
+      TE.harmonySolo[id]=!TE.harmonySolo[id];
+      soloBtn.classList.toggle('on', TE.harmonySolo[id]);
+      teLiveApplyGains();
+    });
+    fader.addEventListener('input',()=>{
+      TE.harmonyFaderDb[id]=+fader.value;
+      faderV.textContent=fmtDbShort(TE.harmonyFaderDb[id]);
+      teLiveApplyGains();
+    });
+    delBtn.addEventListener('click',()=>deleteTakeFromHistory(id));
+    row.append(nameSpan, muteBtn, soloBtn, fader, faderV, delBtn);
+    box.appendChild(row);
+  });
+}
+// Shows/hides + (re)builds the harmony track rows — real simultaneous
+// tracks, not just alternates in Compare mode's audition list.
+function teSyncHarmonyTrackUI(){
+  const show = activeHarmonyTakeIds.length>0 && !TE.compareMode;
+  $('teHarmonyTrackCtls').classList.toggle('hidden', !show);
+  if(show) teBuildHarmonyTrackCtls();
+}
+
+// ---- per-take vocal-vs-karaoke alignment nudge -----------------------------
+// Non-destructive and editable any time (unlike vocalDelayMs, the one-shot
+// mic-latency correction baked in right after recording) — persisted on the
+// take itself via /take_update, reflected in playback scheduling (tePlay)
+// and in the final render (mix.vocal_align_ms, see doRender).
+// Debounce timers keyed per take — the nudge now saves the lead AND its
+// harmonies in one loop, and a single shared timer would cancel every
+// pending save except the last take's.
+const teAlignSaveTimers={};
+function teRefreshAlignUI(){
+  const ms=takeAlignMs(activeTakeId);
+  if($('teVocalAlignV')) $('teVocalAlignV').textContent=(ms>0?'+':'')+ms+'ms';
+  if($('teVocalAlignReset')) $('teVocalAlignReset').style.display=ms?'':'none';
+}
+function teApplyVocalAlignVisual(){
+  $('teVocalLanes').querySelectorAll('.te-lane').forEach(lane=>{
+    const ms=takeAlignMs(lane.dataset.takeId);
+    const canvas=lane.querySelector('.te-canvas');
+    if(canvas) canvas.style.transform = ms ? ('translateX('+(ms/1000*TE.pxPerSec).toFixed(1)+'px)') : '';
+  });
+}
+function teSaveAlignMs(tid, ms){
+  clearTimeout(teAlignSaveTimers[tid]);
+  teAlignSaveTimers[tid]=setTimeout(()=>{
+    // key stays present until the save has actually reached the server —
+    // loadTakes uses it to protect this take's align_ms from stale polls
+    fetch('/take_update',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID, take:tid, align_ms:ms})})
+      .catch(()=>{}).finally(()=>{ delete teAlignSaveTimers[tid]; });
+  }, 500);
+}
+// The nudge moves the lead AND every harmony attached to it, together.
+// All of them were recorded through the same mic/output latency, so they
+// share the same timing error — and the selection UI resolves harmonies
+// back to their lead, so a per-harmony nudge is unreachable anyway. Nudging
+// only the lead would pull it away from its own harmony stack, and would
+// also disagree with the final render, which shifts the whole vocal mix by
+// the ONE mix.vocal_align_ms value taken from the lead.
+function teNudgeTargets(){
+  if(!activeTakeId) return [];
+  return [activeTakeId, ...activeHarmonyTakeIds]
+    .map(id=>takes.find(x=>x.id===id)).filter(Boolean);
+}
+// Every nudge also TEACHES the capture-time compensation: if this take had
+// to be pulled 150ms earlier to sound right, the next recording should be
+// pulled 150ms earlier automatically. Sign: clicking ◀ (deltaMs<0, vocal
+// earlier) means capture under-compensated, so future vocalDelayMs must
+// grow — trim moves by -deltaMs. This is what makes sync self-adjusting on
+// setups where the browser's latency numbers are wrong (Bluetooth mics
+// report 0): correct ONE take by ear and every take after it lands right.
+function teLearnFromNudge(deltaMs){
+  vocalDelayTrimMs=Math.max(-500, Math.min(500, vocalDelayTrimMs-deltaMs));
+  try{ localStorage.setItem('kstudio.vocalDelayTrimMs', vocalDelayTrimMs); }catch(e){}
+  refreshVocalDelay();
+}
+function teNudgeVocal(deltaMs){
+  const targets=teNudgeTargets(); if(!targets.length) return;
+  targets.forEach(t=>{
+    t.align_ms=Math.max(-2000, Math.min(2000, (t.align_ms||0)+deltaMs));
+    teSaveAlignMs(t.id, t.align_ms);
+  });
+  teLearnFromNudge(deltaMs);
+  teRefreshAlignUI();
+  teApplyVocalAlignVisual();
+  if(TE.playing){ teStopPlayback(); tePlay(); }
+}
+// Shift+click jumps 50ms — real-world mic/Bluetooth latency errors are
+// 100-300ms, which at 10ms per click is 10-30 clicks of guesswork.
+$('teVocalAlignEarlier').addEventListener('click',e=>teNudgeVocal(e.shiftKey?-50:-10));
+$('teVocalAlignLater').addEventListener('click',e=>teNudgeVocal(e.shiftKey?50:10));
+$('teVocalAlignEarlier').title='Vocal sounds earlier (Shift: 50ms steps)';
+$('teVocalAlignLater').title='Vocal sounds later (Shift: 50ms steps)';
+$('teVocalAlignReset').addEventListener('click',()=>{
+  const targets=teNudgeTargets(); if(!targets.length) return;
+  // undoing the nudge also unlearns what it taught (same rule as
+  // teLearnFromNudge: an align change of Δ moves the trim by −Δ; the
+  // lead's align is the one the learning followed)
+  const lead=targets[0];
+  if(lead.align_ms) teLearnFromNudge(-(lead.align_ms||0));
+  targets.forEach(t=>{ t.align_ms=0; teSaveAlignMs(t.id, 0); });
+  teRefreshAlignUI(); teApplyVocalAlignVisual();
+  if(TE.playing){ teStopPlayback(); tePlay(); }
+});
+
+// ---- live FX audition ("Preview FX") ---------------------------------------
+// Routes the active take's vocal playback through the same Pro Chain node
+// graph as the live recording monitor (see buildFxNodeChain/applyLiveFx) —
+// moving a slider on the Effects tab now audibly changes a SAVED take, not
+// just the mic, which was flagged as a real capability loss when the old
+// rich player's "Test effects" mode was removed.
+$('teFxPreviewToggle').addEventListener('change',()=>{
+  TE.fxPreviewOn=$('teFxPreviewToggle').checked;
+  if(TE.fxPreviewOn) teEnsureFxGraph();
+  if(TE.playing){ teStopPlayback(); tePlay(); }
+});
+
+// ---- per-take FX memory -----------------------------------------------------
+// "Keep take" already saves a full FX-rack snapshot alongside every take
+// (fx_snapshot — see saveCurrentTakeToHistory); this is the first thing that
+// ever reads it back. Never silently overwrites your current rack — always
+// asks, since loading a take you're just auditioning shouldn't reshuffle
+// sliders you were mid-way through tweaking for a DIFFERENT take.
+// Makes explicit what used to be silent and global: this rack is ONE live
+// set of controls, not a per-take store, and it maps to whichever take is
+// active in the Takes tab (render always uses THIS for that take) — a
+// harmony take is the one thing it never reaches, since it renders with its
+// own saved snapshot instead (see fxSnapshotToServerShape/harmony_fx).
+function teUpdateFxMappingHint(){
+  const el=$('fxMappingHint'); if(!el) return;
+  if(!takes.length){ el.textContent='No take yet — record one on the Record tab, then these settings apply to it.'; return; }
+  const i=takes.findIndex(t=>t.id===activeTakeId);
+  const t=takes[i];
+  if(!t){ el.textContent=''; return; }
+  let msg='Applying to: Take '+(i+1)+' ('+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+')';
+  if(t.kind==='harmony') msg+=' — harmony renders with ITS OWN saved FX (see Takes), not this live rack';
+  else{
+    const h=takes.find(x=>x.kind==='harmony' && (x.source_take_ids||[]).includes(t.id));
+    if(h) msg+=' · its harmony renders with a separately saved FX snapshot';
+  }
+  el.textContent=msg;
+}
+function teCheckFxSnapshotBanner(){
+  const t=takes.find(x=>x.id===activeTakeId);
+  const bar=$('teFxRestoreBar');
+  if(!t || !t.fx_snapshot || JSON.stringify(t.fx_snapshot)===JSON.stringify(snapshotFxUI())){
+    bar.classList.add('hidden');
+    return;
+  }
+  $('teFxRestoreMsg').textContent="This take was kept with different FX settings.";
+  bar.classList.remove('hidden');
+}
+$('teFxRestoreBtn').addEventListener('click',()=>{
+  const t=takes.find(x=>x.id===activeTakeId);
+  if(!t || !t.fx_snapshot) return;
+  applyFxUI(t.fx_snapshot);
+  pushFxHistory();
+  $('teFxRestoreBar').classList.add('hidden');
+});
+$('teFxSaveHereBtn').addEventListener('click', async()=>{
+  const t=takes.find(x=>x.id===activeTakeId);
+  if(!t) return;
+  t.fx_snapshot=snapshotFxUI();
+  $('teFxRestoreBar').classList.add('hidden');
+  try{
+    await fetch('/take_update',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:SID, take:t.id, fx_snapshot:t.fx_snapshot})});
+    toast('Current FX saved to this take.','ok',2500);
+  }catch(e){ toast('Could not reach server.','error'); }
+});
+$('teFxRestoreDismiss').addEventListener('click',()=>{ $('teFxRestoreBar').classList.add('hidden'); });
 
 // ---- click-to-seek + drag-to-trim ------------------------------------------
 $('teInner').addEventListener('pointerdown', e=>{
@@ -3807,6 +4436,22 @@ function wireTeLaneEvents(){
   });
 }
 function teAssignSegment(takeId, start, end){
+  // A take is usually shorter than the song, and the server will happily
+  // "stitch" a region that lies past its end — producing a comp of pure
+  // silence with no error. Clamp to what the take actually contains.
+  // Falls back to the take's saved duration when its buffer hasn't been
+  // decoded yet — lanes are draggable the moment they render, before
+  // ensureVocalBuffer resolves, and gating the clamp on the buffer alone
+  // let a region drawn in that window land anywhere on the timeline
+  // (which is how a 21s take ended up with a "01:03–02:08" region and a
+  // 0.06-second comp built from pure silence).
+  const buf=TE.vocalBuffers[takeId];
+  const t=takes.find(x=>x.id===takeId);
+  const known = buf ? buf.duration : (t && t.duration) || null;
+  if(known){
+    end=Math.min(end, known);
+    if(end-start<=0.05){ toast('That take has no audio there — it ends at '+fmt(known)+'.','warn',3500); return; }
+  }
   // Clip any existing segment's overlap with the new region before adding
   // it, so segments stay non-overlapping in time — last drag wins for any
   // range it covers.
@@ -3852,64 +4497,90 @@ $('trackEditor').addEventListener('mouseleave',()=>{ TE.hovering=false; });
 // only in your headphones while recording — same isolation as the metronome:
 // playback goes to audioCtx.destination / plain <audio> elements, never into
 // the MediaRecorder's mic-only stream.
-let activeHarmonyTakeId=null, harmonyRecorder=null, harmonyChunks=[], harmonyLeadAudio=null;
+let activeHarmonyTakeIds=[], harmonyRecorder=null, harmonyChunks=[], harmonyLeadAudio=null, harmonyLeadTakeId=null;
 
-function refreshDuetUI(){
-  const nonHarmony=takes.filter(t=>t.kind!=='harmony');
-  $('duetPicker').style.display = nonHarmony.length? 'flex':'none';
-  $('duetHint').style.display = nonHarmony.length? 'none':'';
-  if(nonHarmony.length){
-    $('duetLead').innerHTML=nonHarmony.map((t,i)=>
-      '<option value="'+t.id+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind)+' ('+fmt(t.duration||0)+')</option>').join('');
+// Duet used to be a whole separate tab with its own lead-take dropdown —
+// pure redundancy once the Takes tab already has a clear "the take you're
+// looking at" (activeTakeId): harmony always records against THAT take now,
+// linked via source_take_ids (the same field comps already use to record
+// take lineage). Any number of harmonies can stack on one lead — this is
+// deliberately NOT "one harmony per lead, replace on re-record" anymore;
+// "Record harmony" always adds another layer.
+function refreshHarmonyUI(){
+  const t=takes.find(x=>x.id===activeTakeId);
+  const eligible = t && t.kind!=='harmony';
+  $('harmonyRecRow').classList.toggle('hidden', !eligible);
+  activeHarmonyTakeIds = t ? takes.filter(h=>h.kind==='harmony' && (h.source_take_ids||[]).includes(t.id)).map(h=>h.id) : [];
+  $('harmonyRow').style.display = activeHarmonyTakeIds.length? 'flex':'none';
+  if(activeHarmonyTakeIds.length){
+    $('harmonySummary').textContent = activeHarmonyTakeIds.length===1
+      ? '1 harmony will be mixed in — set its level in the Takes tab.'
+      : activeHarmonyTakeIds.length+' harmonies will be mixed in — set their levels in the Takes tab.';
   }
-  const harmonies=takes.filter(t=>t.kind==='harmony');
-  if(harmonies.length && !harmonies.some(t=>t.id===activeHarmonyTakeId)){
-    activeHarmonyTakeId=harmonies[harmonies.length-1].id;
-  }
-  if(!harmonies.length) activeHarmonyTakeId=null;
-  $('harmonyRow').style.display = activeHarmonyTakeId? 'flex':'none';
 }
 
-$('duetRecBtn').addEventListener('click', async()=>{
-  const leadId=$('duetLead').value; if(!leadId) return;
+$('harmonyRecBtn').addEventListener('click', async()=>{
+  const t=takes.find(x=>x.id===activeTakeId); if(!t || t.kind==='harmony') return;
+  harmonyLeadTakeId=t.id;
   stopAllPlayback();
   if(!mediaStream){ await primeMic(); if(!mediaStream) return; }
   if(audioCtx.state==='suspended') await audioCtx.resume();
-  harmonyLeadAudio=new Audio('/take_audio?id='+SID+'&take='+leadId+'&t='+Date.now());
+  harmonyLeadAudio=new Audio('/take_audio?id='+SID+'&take='+harmonyLeadTakeId+'&t='+Date.now());
   harmonyLeadAudio.currentTime=0;
   harmonyChunks=[];
   harmonyRecorder=new MediaRecorder(mediaStream,{mimeType:pickMime(),audioBitsPerSecond:512000});
   harmonyRecorder.ondataavailable=e=>{ if(e.data.size) harmonyChunks.push(e.data); };
   harmonyRecorder.onstop=finishHarmonyRec;
   try{ backingAudio.currentTime=0; }catch(_){}
+  // backingAudio is the actual audible music regardless of whether the song
+  // came from YouTube (the YT player is always muted — see onReady — and
+  // exists only for the video picture; startRec() drives it the same way).
+  // Keep the muted video's picture in sync too, purely cosmetic but matches
+  // what the main recording flow does.
+  if(ytReady){ try{ ytPlayer.seekTo(0,true); ytPlayer.playVideo(); }catch(_){} }
   await Promise.all([backingAudio.play().catch(()=>{}), harmonyLeadAudio.play().catch(()=>{})]);
+  refreshVocalDelay();   // live device latency at THIS recording's start — see recorder.onstart
   harmonyRecorder.start();
-  $('duetRecBtn').style.display='none'; $('duetStopBtn').style.display='';
-  $('duetStatus').textContent='Recording harmony — listen for the lead take + music in your headphones…';
+  $('harmonyRecBtn').style.display='none'; $('harmonyStopBtn').style.display='';
+  $('harmonyRecNote').textContent='Recording harmony — listen for the lead take + music in your headphones…';
 });
-$('duetStopBtn').addEventListener('click',()=>{
+$('harmonyStopBtn').addEventListener('click',()=>{
   if(harmonyRecorder && harmonyRecorder.state!=='inactive') harmonyRecorder.stop();
   backingAudio.pause();
   if(harmonyLeadAudio) harmonyLeadAudio.pause();
-  $('duetRecBtn').style.display=''; $('duetStopBtn').style.display='none';
+  if(ytReady){ try{ ytPlayer.pauseVideo(); }catch(_){} }
+  $('harmonyRecBtn').style.display=''; $('harmonyStopBtn').style.display='none';
 });
 async function finishHarmonyRec(){
-  $('duetStatus').textContent='Saving harmony take…';
+  $('harmonyRecNote').textContent='Saving harmony take…';
   const blob=new Blob(harmonyChunks,{type:harmonyRecorder.mimeType||'audio/webm'});
   const arr=await blob.arrayBuffer();
   const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
-  const buf=await ctx.decodeAudioData(arr);
+  const rawBuf=await ctx.decodeAudioData(arr);
+  // Same mic-latency correction the lead take gets (applyAlignmentAndFinish)
+  // — without this, a harmony always lands vocalDelayMs LATE relative to the
+  // lead/karaoke it was just recorded against, since nothing here was
+  // compensating for capture latency at all. Harmony always starts at song
+  // position 0 (no punch-in concept for it), so there's no positionOffset
+  // term to add — just the same latency subtraction.
+  const buf=alignTake(ctx, rawBuf, -vocalDelayMs/1000);
   const wav=encodeWav(buf);
   const b64=await blobToB64(wav);
   let r; try{
     r=await fetch('/take',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:'harmony'})});
-  }catch(e){ $('duetStatus').textContent=''; toast('Could not save the harmony take.','error'); return; }
+      body:JSON.stringify({id:SID, vocal_wav_b64:b64, kind:'harmony', source_take_ids:[harmonyLeadTakeId]})});
+  }catch(e){ $('harmonyRecNote').textContent=''; toast('Could not save the harmony take.','error'); return; }
   const d=await r.json();
-  if(!r.ok){ $('duetStatus').textContent=''; toast(d.error||'Could not save the harmony take.','error'); return; }
-  takes.push(d.take); activeHarmonyTakeId=d.take.id;
+  if(!r.ok){ $('harmonyRecNote').textContent=''; toast(d.error||'Could not save the harmony take.','error'); return; }
+  // Always adds a new layer — any number of harmonies can stack on one
+  // lead, each mixed and controlled independently (see
+  // teBuildHarmonyTrackCtls / mixdown's `harmonies` list). Delete the ones
+  // you don't want from the take strip's ✕ or the mixer row's own ✕.
+  // renderTakeStrip() below recomputes activeHarmonyTakeIds from `takes`,
+  // so this one will be picked up without setting it here too.
+  takes.push(d.take);
   renderTakeStrip();
-  $('duetStatus').textContent='Harmony saved. Adjust its level in Step 5.';
+  $('harmonyRecNote').textContent='Harmony saved — adjust its level below.';
   toast('Harmony take saved.','ok');
 }
 // ==== TRANSPORT STATE =======================================================
@@ -4052,7 +4723,11 @@ async function uploadPhoneVideoFromDesktop(recId){
 // paired" prompt, so it's a constant rather than two copies that can
 // drift out of sync (the polling one used to silently clobber this one
 // with a shorter, stale string a few hundred ms after page load).
-const PHONE_PAIR_HINT='Pair your phone (it\'ll warn "not secure" once — tap Advanced/Details → Proceed, that\'s expected for the local self-signed cert):';
+// Full "not secure"/self-signed-cert explanation lives behind the card's ⓘ
+// toggle (#phoneInfoText) now — this is just the live status line above the
+// QR code, so it stays short regardless of how many times it gets reset
+// (disconnect, poll, page load all reuse this one constant).
+const PHONE_PAIR_HINT='Scan to pair your phone:';
 async function loadPhoneSyncInfo(){
   try{
     const j=await(await fetch('/phone_sync_info?id='+SID)).json();
@@ -4077,6 +4752,9 @@ async function loadPhoneSyncInfo(){
 if($('phoneCopyBtn')) $('phoneCopyBtn').addEventListener('click',()=>{
   navigator.clipboard?.writeText($('phoneUrlText').textContent).catch(()=>{});
 });
+// Same click-to-toggle ⓘ pattern as the FX rack's per-parameter info buttons.
+if($('phoneInfoBtn')) $('phoneInfoBtn').addEventListener('click',()=>$('phoneInfoText').classList.toggle('hidden'));
+if($('quickRefInfoBtn')) $('quickRefInfoBtn').addEventListener('click',()=>$('quickRefInfoText').classList.toggle('hidden'));
 if($('phoneDisconnectBtn')) $('phoneDisconnectBtn').addEventListener('click', async ()=>{
   $('phoneDisconnectBtn').disabled=true;
   try{
@@ -4216,7 +4894,16 @@ document.addEventListener('keydown',e=>{
     }
   }
   if(e.code==='Space'){ e.preventDefault(); recording?stopRec():(!$('rec').disabled&&startRec()); }
-  if(e.key==='p'||e.key==='P'){ e.preventDefault(); if(!$('play').disabled) toggleMusic(); }
+  // "P play/pause" must drive the player you're LOOKING AT. This used to
+  // call toggleMusic() unconditionally, which plays the Record tab's bare
+  // backing <audio> — karaoke with no takes, no harmonies — so pressing P
+  // on the Takes tab (exactly what the Quick Reference card next to it
+  // says to do) sounded like "my vocal is gone", when the vocal was never
+  // in that player to begin with. The Track Editor's transport is the
+  // only one that layers karaoke + take + harmonies.
+  if(e.key==='p'||e.key==='P'){ e.preventDefault();
+    if($('takesCard').classList.contains('active')){ if(TE.buffersReady) teTogglePlay(); }
+    else if(!$('play').disabled) toggleMusic(); }
   if(e.key==='Enter'){
     if($('stopChoice').style.display!=='none' && !$('keepBtn').disabled){
       e.preventDefault(); $('keepBtn').click();
@@ -4325,6 +5012,10 @@ async function startRec(){
   recorder.onstart=()=>{
     recStartCtxTime=audioCtx.currentTime;
     musicPosAtRecStart=backingAudio.currentTime||startAt;
+    // measure NOW, with the backing actually playing through the real
+    // output device — this is the moment its reported latency is honest,
+    // and it's the latency this very take is being sung against
+    refreshVocalDelay();
   };
   recorder.start();
   // A timeslice arg (periodic chunks) rather than a single final blob avoids
@@ -4377,13 +5068,44 @@ async function finishRec(){
 // quick native <audio> preview in the stop-choice box — lets you hear the
 // take you just sang before deciding to continue/keep/redo, without the
 // full rich player (mixer/test-effects/re-record), which lives in Takes.
+//
+// This used to be vocal-only — no karaoke at all — which is exactly what
+// "vocal + karaoke doesn't work on playback after recording" was describing:
+// the FIRST place anyone would naturally check how a take sounds is right
+// here, immediately after stopping, not after clicking Keep and navigating
+// to a different tab. The native <audio> element only knows how to play its
+// own one source, so karaoke is layered in as a separate Web Audio source
+// kept in sync with it (start/stop/seek) rather than replacing the native
+// player — you keep its free scrubbing UI, karaoke just rides along.
 let stopChoicePreviewWired=false;
+let scpKaraokeSrc=null;
+function scpStopKaraoke(){
+  if(scpKaraokeSrc){ try{ scpKaraokeSrc.stop(); }catch(_){} scpKaraokeSrc=null; }
+}
+async function scpSyncKaraoke(){
+  const a=$('stopChoicePreview');
+  await ensureKaraokeBuffer();
+  scpStopKaraoke();
+  if(!TE.karaokeBuffer || a.paused) return;
+  const ctx=teAudioCtx();
+  if(ctx.state==='suspended') ctx.resume();
+  const src=ctx.createBufferSource(); src.buffer=TE.karaokeBuffer;
+  const g=ctx.createGain(); g.gain.value=Math.pow(10, (TE.karaokeFaderDb||-3)/20);
+  src.connect(g); g.connect(ctx.destination);
+  // The vocal WAV's own sample 0 already IS song position 0 — alignTake
+  // pads leading silence to make that true (see applyAlignmentAndFinish) —
+  // so the native element's currentTime doubles as the karaoke offset with
+  // no extra math, the same convention the Track Editor relies on.
+  src.start(ctx.currentTime+0.03, Math.max(0, Math.min(TE.karaokeBuffer.duration, a.currentTime)));
+  scpKaraokeSrc=src;
+}
 function populateStopChoicePreview(){
   const a=$('stopChoicePreview');
   if(window._stopChoicePreviewUrl) URL.revokeObjectURL(window._stopChoicePreviewUrl);
   const url=URL.createObjectURL(window._lastVocalWav);
   window._stopChoicePreviewUrl=url;
   a.src=url;
+  ensureKaraokeBuffer();   // start decoding now, so it's ready by the time playback is likely to start
   // wired once: playing this (native, browser-controlled) preview should
   // still stop every OTHER playback source — just not itself, which
   // stopAllPlayback() would otherwise do since it's mid-'play' already.
@@ -4393,7 +5115,11 @@ function populateStopChoicePreview(){
       teStopPlayback();
       if(backingAudio && !recording){ try{ backingAudio.pause(); }catch(_){} resetMusicBtn(); }
       if(harmonyLeadAudio){ try{ harmonyLeadAudio.pause(); }catch(_){} }
+      scpSyncKaraoke();
     });
+    a.addEventListener('pause', scpStopKaraoke);
+    a.addEventListener('ended', scpStopKaraoke);
+    a.addEventListener('seeked',()=>{ if(!a.paused) scpSyncKaraoke(); });
   }
 }
 
@@ -4486,9 +5212,15 @@ function stitchBuffers(ctx,head,tail,punchSec){
 // vocal+music are AudioBufferSources kept in perfect sample-sync.
 // Min/max peaks per column, computed ONCE per buffer (scanning raw samples
 // every animation frame during playback would jank on longer takes).
-function computeWavePeaks(buffer, cols){
+// spanSec is the timeline duration `cols` covers. Every lane in the Track
+// Editor shares one time axis, so a take shorter than the song must stop
+// partway across its lane; without this each buffer was stretched to fill
+// its whole lane, drawing a 21s take as if it ran the full 4:40 — you'd
+// seek to visible "vocal" at 2:00, hear nothing, and reasonably conclude
+// the vocal wasn't playing with the karaoke at all.
+function computeWavePeaks(buffer, cols, spanSec){
   const data=buffer.getChannelData(0);
-  const perCol=data.length/cols;
+  const perCol=(spanSec?buffer.sampleRate*spanSec:data.length)/cols;
   const peaks=new Float32Array(cols*2);
   for(let x=0;x<cols;x++){
     const start=Math.floor(x*perCol), end=Math.max(start+1,Math.floor((x+1)*perCol));
@@ -4595,9 +5327,9 @@ async function decodeBackingBuffer(key){
   }catch(e){ backingBuffer=null; }
 }
 
-function makeImpulse(seconds, decay){
-  const sr=audioCtx.sampleRate, n=Math.floor(sr*seconds);
-  const buf=audioCtx.createBuffer(2,n,sr);
+function makeImpulse(ctx, seconds, decay){
+  const sr=ctx.sampleRate, n=Math.floor(sr*seconds);
+  const buf=ctx.createBuffer(2,n,sr);
   for(let c=0;c<2;c++){ const d=buf.getChannelData(c);
     for(let i=0;i<n;i++){ d[i]=(Math.random()*2-1)*Math.pow(1-i/n,decay); } }
   return buf;
@@ -4613,29 +5345,42 @@ function makeImpulse(seconds, decay){
 // teRecFromPlayhead/teStartSingAlong further down for the replacements,
 // and the Effects tab for the real, non-partial FX controls)
 
-// Same chain as the (removed) rich-player take-preview graph used to build,
-// minus the music-mix half —
-// this one sits between the LIVE mic and the headphone monitor (see
-// wireMonitorSource()), not between a stored take buffer and the speakers.
-function buildMonitorGraphNodes(){
-  const hp=audioCtx.createBiquadFilter(); hp.type='highpass';
-  const dip=audioCtx.createBiquadFilter(); dip.type='peaking';
-  const nasal=audioCtx.createBiquadFilter(); nasal.type='peaking';
-  const tone1=audioCtx.createBiquadFilter(); tone1.type='peaking';
-  const tone2=audioCtx.createBiquadFilter(); tone2.type='peaking';
-  const air=audioCtx.createBiquadFilter(); air.type='highshelf';
-  const deEss=audioCtx.createBiquadFilter(); deEss.type='highshelf';
-  const comp=audioCtx.createDynamicsCompressor();
-  const comp2=audioCtx.createDynamicsCompressor();
-  const dry=audioCtx.createGain(), wet=audioCtx.createGain();
-  const conv=audioCtx.createConvolver(); conv.buffer=makeImpulse(2.2,2.0);
-  const vocalGain=audioCtx.createGain();
+// Shared node-chain builder — same pro-chain topology whether it ends up
+// between the LIVE mic and the headphone monitor (buildMonitorGraphNodes,
+// runs in the global `audioCtx`) or between a stored take buffer and the
+// speakers for FX preview/audition in the Track Editor (teEnsureFxGraph,
+// runs in TE's own `ctx` — a node graph can't span two AudioContexts).
+function buildFxNodeChain(ctx){
+  const hp=ctx.createBiquadFilter(); hp.type='highpass';
+  const dip=ctx.createBiquadFilter(); dip.type='peaking';
+  const nasal=ctx.createBiquadFilter(); nasal.type='peaking';
+  const tone1=ctx.createBiquadFilter(); tone1.type='peaking';
+  const tone2=ctx.createBiquadFilter(); tone2.type='peaking';
+  const air=ctx.createBiquadFilter(); air.type='highshelf';
+  const deEss=ctx.createBiquadFilter(); deEss.type='highshelf';
+  const comp=ctx.createDynamicsCompressor();
+  const comp2=ctx.createDynamicsCompressor();
+  const dry=ctx.createGain(), wet=ctx.createGain();
+  const conv=ctx.createConvolver(); conv.buffer=makeImpulse(ctx, 2.2,2.0);
+  const vocalGain=ctx.createGain();
+  // brickwall-ish safety limiter, mirroring the render chain's alimiter
+  // (audio_fx.py "8.8") — a belted note should sound LOUD in the live
+  // monitor / Preview FX, the same way it will in the final render, not
+  // blast. DynamicsCompressor at 20:1 with instant attack is the closest
+  // WebAudio equivalent.
+  const limiter=ctx.createDynamicsCompressor();
+  limiter.threshold.value=-6; limiter.knee.value=3; limiter.ratio.value=20;
+  limiter.attack.value=0.001; limiter.release.value=0.09;
   hp.connect(dip); dip.connect(nasal); nasal.connect(tone1); tone1.connect(tone2);
   tone2.connect(air); air.connect(deEss); deEss.connect(comp); comp.connect(comp2);
   comp2.connect(dry); comp2.connect(conv); conv.connect(wet);
-  dry.connect(vocalGain); wet.connect(vocalGain);
-  monitorGraph={hp,dip,nasal,tone1,tone2,air,deEss,comp,comp2,dry,wet,vocalGain};
-  applyLiveFxToGraph(monitorGraph, false);
+  dry.connect(limiter); wet.connect(limiter);
+  limiter.connect(vocalGain);
+  return {hp,dip,nasal,tone1,tone2,air,deEss,comp,comp2,dry,wet,vocalGain,limiter};
+}
+function buildMonitorGraphNodes(){
+  monitorGraph=buildFxNodeChain(audioCtx);
+  applyLiveFxToGraph(monitorGraph, false, audioCtx);
   return monitorGraph;
 }
 
@@ -4665,17 +5410,26 @@ function stopAllPlayback(){
 function clampParam(param, min, max, v){ param.value = Math.max(min, Math.min(max, v)); }
 
 // Reflect the pro-chain sliders into whichever live WebAudio graph currently
-// exists: the live studio-monitor graph (mic while recording). This used to
-// also drive a take-preview graph for the (removed) rich player's "Test
-// effects" mode — that was the ONLY place FX could be auditioned before a
-// full render, so removing it is a real loss of capability, not just tidying:
-// there is currently no live FX preview anywhere in the app anymore.
+// exist: the live studio-monitor graph (mic while recording) and, if the
+// Track Editor's "Preview FX" toggle is on, the take-audition graph — so a
+// slider move is heard immediately whichever one is currently live.
+// `applyLiveFx` runs once immediately at page load too (every fxrow slider
+// calls it on setup, see bindVal below) — well before the `const TE = {...}`
+// declaration further down the script has executed, so touching TE here
+// unguarded is a real, previously-hit TDZ crash (see the top-of-file note on
+// this class of bug): it threw on every page load, before the user ever
+// touched anything, which halted the rest of this <script> block's top-level
+// execution and left `takes`/`activeTakeId`/`TE` permanently uninitialized
+// for the page's whole lifetime. try/catch is the fix, not reordering TE's
+// declaration — there's nothing to flush to a not-yet-built fxGraph anyway.
 function applyLiveFx(){
-  if(monitorGraph) applyLiveFxToGraph(monitorGraph, false);
+  if(monitorGraph) applyLiveFxToGraph(monitorGraph, false, audioCtx);
+  try{ if(TE.fxGraph) applyLiveFxToGraph(TE.fxGraph, true, TE.ctx); }catch(_){}
 }
-function applyLiveFxToGraph(g, isTakeGraph){
+function applyLiveFxToGraph(g, isTakeGraph, ctx){
+  ctx=ctx||audioCtx;
   const pv=PRO_CHAIN_VALUES, on=!!fxOn.pro;
-  const nyq=(audioCtx.sampleRate||48000)/2 - 1;
+  const nyq=(ctx.sampleRate||48000)/2 - 1;
 
   if(g.hp) clampParam(g.hp.frequency, 10, nyq, on?pv.hpf_freq:10);
   if(g.dip){ clampParam(g.dip.frequency,10,nyq,pv.dip_freq); g.dip.Q.value=pv.dip_q;
@@ -4706,7 +5460,7 @@ function applyLiveFxToGraph(g, isTakeGraph){
   if(g.conv){
     const targetDecay=on?pv.verb_decay:0.01;
     if(Math.abs((g._verbDecay||0)-targetDecay)>0.05){
-      g.conv.buffer=makeImpulse(Math.max(0.05,targetDecay),2.0);
+      g.conv.buffer=makeImpulse(ctx, Math.max(0.05,targetDecay),2.0);
       g._verbDecay=targetDecay;
     }
   }
@@ -4748,6 +5502,29 @@ function collectFx(){
     denoise: fxOn.denoise?(+$('denoise').value)/100:0,
   };
 }
+// Effects mapping for a take that ISN'T the one currently live in the rack
+// (i.e. the harmony bus) — converts that take's own saved fx_snapshot
+// (snapshotFxUI()'s directly-re-appliable shape) into collectFx()'s
+// render-shaped object, without touching the live rack at all. Returns null
+// when the take has no saved snapshot, so do_render's existing raw-mix
+// fallback for an unprocessed harmony still applies unchanged.
+function fxSnapshotToServerShape(snap){
+  if(!snap || !snap.fxOn) return null;
+  const pro={enabled:!!snap.fxOn.pro};
+  // PRO_CHAIN_IDS are DOM ids ('pc_'+key, see buildProChainRow) — the server
+  // (audio_fx.PRO_CHAIN_DEFAULTS) and collectFx() both key by the BARE
+  // field, not the DOM id. Sending pc_-prefixed keys here would silently
+  // vanish server-side (every field just falls back to its default) — this
+  // was caught by testing against the app's REAL snapshotFxUI() output
+  // rather than a hand-built one, which had (wrongly) used bare keys and
+  // made the bug invisible.
+  PRO_CHAIN_IDS.forEach(id=>{ pro[id.replace(/^pc_/,'')]=+snap[id]; });
+  return {
+    pitch: snap.fxOn.pitch ? {enabled:true, key:snap.pkey, scale:snap.pscale, strength:(+snap.pstr)/100} : {enabled:false},
+    pro,
+    denoise: snap.fxOn.denoise ? (+snap.denoise)/100 : 0,
+  };
+}
 async function doRender(){
   if(!window._lastVocalWav && !activeTakeId){ $('rendererr').textContent='Record a vocal take first.'; return; }
   const trimStart=parseMMSS($('trimStart').value), trimEnd=parseMMSS($('trimEnd').value);
@@ -4760,10 +5537,20 @@ async function doRender(){
     vocal_gain_db:+$('vgain').value, music_gain_db:+$('mgain').value,
     music_key:musicKey, format:$('ofmt').value, loudnorm:true,
     trim_start:trimStart, trim_end:trimEnd,
+    vocal_align_ms:takeAlignMs(activeTakeId),
     music_eq:{low_gain:TE.eqLow, mid_gain:TE.eqMid, high_gain:TE.eqHigh} }};
-  if(activeHarmonyTakeId){
-    body.mix.harmony_take_id=activeHarmonyTakeId;
-    body.mix.harmony_gain_db=+$('hgain').value;
+  // Any number of harmony layers, each with its own take, gain (from this
+  // take's own mixer row — teHarmonyParams), and FX (that take's own saved
+  // snapshot, same effects-mapping rule as the lead: nothing saved for it
+  // just mixes in raw).
+  if(activeHarmonyTakeIds.length){
+    body.mix.harmonies = activeHarmonyTakeIds.map(id=>{
+      const t=takes.find(x=>x.id===id);
+      const fx=t && fxSnapshotToServerShape(t.fx_snapshot);
+      const spec={take_id:id, gain_db:teHarmonyParams(id).faderDb};
+      if(fx) spec.fx=fx;
+      return spec;
+    });
   }
   // rec_id ties this render (and, if a phone video was captured, its video
   // combine) to the specific recording it came from — see startRec() —

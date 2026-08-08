@@ -479,7 +479,8 @@ def _probe_duration(path):
 # flag) so undo can just un-hide the entry — the file is never removed.
 
 def _add_take(jid, file, duration, kind="lead", fx_snapshot=None,
-              punch_sec=None, source_take_ids=None, tid=None, pitch_score=None):
+              punch_sec=None, source_take_ids=None, tid=None, pitch_score=None,
+              latency_ms=None):
     tid = tid or uuid.uuid4().hex[:8]
     meta = _read_meta(jid)
     takes = meta.get("takes") or []
@@ -488,6 +489,15 @@ def _add_take(jid, file, duration, kind="lead", fx_snapshot=None,
         "fx_snapshot": fx_snapshot, "punch_sec": punch_sec,
         "source_take_ids": source_take_ids, "deleted": False,
         "pitch_score": pitch_score,
+        # the capture-latency compensation (ms) that was baked into this
+        # take's WAV at save time — pure diagnostics, so "vocal lags" reports
+        # can be checked against what the client actually corrected for
+        "latency_ms": latency_ms,
+        # non-destructive vocal-vs-karaoke timing nudge, editable any time
+        # from the Track Editor (unlike vocalDelayMs, which is a one-shot
+        # capture-time correction baked into the WAV before this take ever
+        # existed) — 0 = no nudge, +N = vocal plays N ms later, -N = earlier.
+        "align_ms": 0,
     }
     takes.append(take)
     _write_meta(jid, takes=takes)
@@ -803,12 +813,31 @@ def do_render(jid, vocal_path, fx, mix_opts, scope_id=None):
             progress=lambda stage: progress(stage=stage),
         )
 
-        harmony_path = None
-        harmony_take_id = mix_opts.get("harmony_take_id")
-        if harmony_take_id:
-            harmony_take = _get_take(jid, harmony_take_id)
-            if harmony_take:
-                harmony_path = os.path.join(sdir, harmony_take["file"])
+        # Any number of simultaneous harmony layers now, not just one —
+        # each entry is {take_id, gain_db, fx?}, built client-side from
+        # whichever harmony takes are linked to the active lead. fx is that
+        # take's OWN saved fx_snapshot (converted client-side to this same
+        # server fx shape) — sent only when one exists, so a harmony with
+        # nothing saved still mixes in raw rather than guessing settings.
+        harmonies = []
+        for i, hspec in enumerate(mix_opts.get("harmonies") or []):
+            h_take_id = hspec.get("take_id")
+            if not h_take_id:
+                continue
+            h_take = _get_take(jid, h_take_id)
+            if not h_take:
+                continue
+            h_path = os.path.join(sdir, h_take["file"])
+            h_fx = hspec.get("fx")
+            if h_fx:
+                processed_h = os.path.join(sdir, f"harmony{i}_fx{suffix}.wav")
+                audio_fx.process_vocal(h_path, processed_h, h_fx, tmp)
+                h_path = processed_h
+            try:
+                h_gain = float(hspec.get("gain_db", -3.0))
+            except (TypeError, ValueError):
+                h_gain = -3.0
+            harmonies.append({"path": h_path, "gain_db": h_gain})
 
         progress(stage="mixing", format=out_fmt)
         final = os.path.join(sdir, f"final{suffix}.{out_fmt}")
@@ -816,18 +845,22 @@ def do_render(jid, vocal_path, fx, mix_opts, scope_id=None):
         # format chosen — if that's a lossy format (MP3), the video's audio
         # would otherwise be a lossy re-encode of an already-lossy file.
         master_wav = os.path.join(sdir, f"final_master{suffix}.wav") if out_fmt != "wav" else None
+        try:
+            vocal_align_ms = float(mix_opts.get("vocal_align_ms", 0) or 0)
+        except (TypeError, ValueError):
+            vocal_align_ms = 0.0
         audio_fx.mixdown(
             processed_vocal, backing, final,
             vocal_gain_db=float(mix_opts.get("vocal_gain_db", 0)),
             music_gain_db=float(mix_opts.get("music_gain_db", -3)),
-            harmony_path=harmony_path,
-            harmony_gain_db=float(mix_opts.get("harmony_gain_db", -3)),
+            harmonies=harmonies,
             out_format=out_fmt,
             loudnorm=bool(mix_opts.get("loudnorm", True)),
             trim_start=trim_start,
             trim_end=trim_end,
             master_wav_path=master_wav,
             music_eq=mix_opts.get("music_eq"),
+            vocal_align_ms=vocal_align_ms,
         )
     except Exception as e:
         progress(status="error", error=str(e)[:400])
@@ -1192,6 +1225,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(b)))
+            # Without this the response has NO caching headers at all, and
+            # browsers heuristically cache such responses — so after the
+            # code on disk changes, a normal reload can silently serve the
+            # OLD app from cache. That looks exactly like "the bug I just
+            # fixed is still happening", indefinitely, on the user's open
+            # browser. The app shell must always come from disk.
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(b)
             return
@@ -1205,6 +1245,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/css; charset=utf-8")
             self.send_header("Content-Length", str(len(b)))
+            self.send_header("Cache-Control", "no-store")   # same reason as index.html
             self.end_headers()
             self.wfile.write(b)
             return
@@ -1264,6 +1305,15 @@ class Handler(BaseHTTPRequestHandler):
             if not j:
                 self._json(404, {"error": "unknown job"})
                 return
+            # A whole-session render overwrites the job-level status with
+            # "done" (or "error" on a failed render) — see do_render's final
+            # progress() call — so the status field alone can't tell a
+            # client whether the SESSION is usable, only what the last
+            # render did. has_backing is the ground truth "this session can
+            # be resumed and played": the downloaded backing track exists.
+            j = dict(j)
+            j["has_backing"] = os.path.exists(
+                os.path.join(SESS_DIR, jid, "backing.wav"))
             # &take=: overlay THIS take's own render/video progress on top of
             # the session-level status, so polling for a specific take never
             # reads whatever a different (earlier or later) take's render
@@ -2007,8 +2057,10 @@ class Handler(BaseHTTPRequestHandler):
                 kind=body.get("kind", "lead"),
                 fx_snapshot=body.get("fx_snapshot"),
                 punch_sec=body.get("punch_sec"),
+                source_take_ids=body.get("source_take_ids"),
                 tid=tid,
                 pitch_score=body.get("pitch_score"),
+                latency_ms=body.get("latency_ms"),
             )
             self._json(200, {"take": take})
             return
@@ -2029,6 +2081,32 @@ class Handler(BaseHTTPRequestHandler):
             jid = body.get("id")
             tid = body.get("take")
             ok = _restore_take(jid, tid)
+            if not ok:
+                self._json(404, {"error": "unknown take"})
+                return
+            self._json(200, {"take": _get_take(jid, tid)})
+            return
+
+        if p.path == "/take_update":
+            # Generic small-field patch for a saved take — today just the
+            # alignment nudge and a re-saved FX snapshot, both editable from
+            # the Track Editor after the take already exists on disk (unlike
+            # the WAV itself, which is written once and never touched again).
+            body = self._read_body()
+            jid = body.get("id")
+            tid = body.get("take")
+            fields = {}
+            if "align_ms" in body:
+                try:
+                    fields["align_ms"] = max(-2000.0, min(2000.0, float(body.get("align_ms") or 0)))
+                except (TypeError, ValueError):
+                    fields["align_ms"] = 0.0
+            if "fx_snapshot" in body:
+                fields["fx_snapshot"] = body.get("fx_snapshot")
+            if not fields:
+                self._json(400, {"error": "nothing to update"})
+                return
+            ok = _update_take(jid, tid, **fields)
             if not ok:
                 self._json(404, {"error": "unknown take"})
                 return
@@ -2105,6 +2183,22 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     self._json(400, {"error": "segment start/end must be numbers"})
                     return
+                # Reject regions that lie past the end of the take's audio
+                # instead of "stitching" them: y[start:end] on an
+                # out-of-range slice is silently empty, and a comp built
+                # from empty slices writes a ~0-second take that then shows
+                # up in the strip looking like the feature just didn't work.
+                tdur = t.get("duration") or _probe_duration(
+                    os.path.join(sdir, t["file"])) or 0
+                if tdur and start >= tdur - 0.05:
+                    m, s2 = divmod(int(tdur), 60)
+                    self._json(400, {"error":
+                        f"A region starts past the end of that take's audio "
+                        f"(it ends at {m}:{s2:02d}). Drag regions only where "
+                        f"the take actually has a waveform."})
+                    return
+                if tdur and end is not None:
+                    end = min(end, tdur)
                 segments.append({"path": os.path.join(sdir, t["file"]), "start": start, "end": end})
                 source_ids.append(t["id"])
             tid = uuid.uuid4().hex[:8]
