@@ -258,6 +258,64 @@ def get_job(jid):
         return dict(JOBS.get(jid, {}))
 
 
+def detect_song_key(jid):
+    """Detect the song's musical key from the backing track (cached in meta).
+
+    This exists because the singing score was unanchored: it judged distance
+    to the nearest CHROMATIC note, so cleanly-sung wrong notes scored as well
+    as right ones — a score that "doesn't make sense" for karaoke. Scoring
+    against the song's actual scale needs the key, and the backing track we
+    already have is the ground truth for it.
+
+    Standard Krumhansl-Schmuckler: fold the spectrum of the first ~2 minutes
+    into a 12-bin chroma vector, correlate against the major/minor key
+    profiles at all 12 rotations, take the best. Returns
+    {"root": 0-11 (C=0), "scale": "major"|"minor", "confidence": 0..1}.
+    """
+    meta = _read_meta(jid)
+    if meta.get("song_key"):
+        return meta["song_key"]
+    path = os.path.join(SESS_DIR, jid, "backing.wav")
+    if not os.path.exists(path):
+        return None
+    try:
+        import numpy as np
+        import soundfile as sf
+        with sf.SoundFile(path) as fh:
+            sr = fh.samplerate
+            n = min(len(fh), sr * 120)
+            y = fh.read(n, dtype="float32")
+        if y.ndim > 1:
+            y = y.mean(axis=1)
+        N, hop = 8192, 8192          # coarse frames are plenty for chroma
+        win = np.hanning(N)
+        freqs = np.fft.rfftfreq(N, 1 / sr)
+        # map each FFT bin to a pitch class, ignoring rumble and hiss
+        valid = (freqs > 60) & (freqs < 4000)
+        pcs = (np.round(12 * np.log2(freqs[valid] / 440.0)) + 69).astype(int) % 12
+        chroma = np.zeros(12)
+        for i in range(0, len(y) - N, hop):
+            mag = np.abs(np.fft.rfft(y[i:i + N] * win))[valid] ** 2
+            np.add.at(chroma, pcs, mag)
+        if chroma.sum() <= 0:
+            return None
+        chroma = chroma / chroma.sum()
+        MAJ = np.array([6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88])
+        MIN = np.array([6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17])
+        best = None
+        for root in range(12):
+            for scale, prof in (("major", MAJ), ("minor", MIN)):
+                p = np.roll(prof, root)
+                r = float(np.corrcoef(chroma, p)[0, 1])
+                if best is None or r > best[0]:
+                    best = (r, root, scale)
+        key = {"root": best[1], "scale": best[2], "confidence": round(max(0.0, best[0]), 3)}
+        _write_meta(jid, song_key=key)
+        return key
+    except Exception:
+        return None
+
+
 def _read_meta(jid):
     try:
         with open(os.path.join(SESS_DIR, jid, "meta.json"), encoding="utf-8") as fh:
@@ -1331,6 +1389,15 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     j["video_status"] = None
             self._json(200, j)
+            return
+
+        if p.path == "/songkey":
+            jid = (parse_qs(p.query).get("id") or [""])[0]
+            if not job_or_disk(jid):
+                self._json(404, {"error": "unknown session"})
+                return
+            key = detect_song_key(jid)
+            self._json(200, {"key": key})
             return
 
         if p.path == "/backing":

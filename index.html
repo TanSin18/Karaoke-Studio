@@ -2741,7 +2741,10 @@ $('npChangeBtn').addEventListener('click',()=>{
   $('step1Card').scrollIntoView({behavior:'smooth', block:'start'});
 });
 
+let songKey=null;   // {root:0-11, scale:'major'|'minor'} — detected server-side from the backing
 function onReady(j){
+  songKey=null;
+  fetch('/songkey?id='+SID).then(r=>r.json()).then(d=>{ songKey=d.key||null; }).catch(()=>{});
   // Stop the PREVIOUS song's backing track before loading a new one.
   // Reassigning `backingAudio` below doesn't stop the old <audio> element —
   // it keeps playing in the background with no on-screen reference to it,
@@ -3280,8 +3283,29 @@ function updateTuner(note, freq){
   if(scorePitchHist.length>15) scorePitchHist.shift();
   if(scorePitchHist.length>=9){
     const m=[...scorePitchHist].sort((a,b)=>a-b)[Math.floor(scorePitchHist.length/2)];
-    let err=((m%100)+100)%100; err=Math.min(err,100-err);
-    const fs = err<=15 ? 1 : (err>=35 ? 0 : (35-err)/20);
+    let err, wideMax;
+    if(songKey){
+      // Score against the SONG'S OWN KEY (detected from the backing track,
+      // shifted by any transpose the singer applied). This is what finally
+      // anchors the number to the song: off-key singing sits up to 100
+      // cents from the nearest scale note and fails, while any note that
+      // fits the song's scale counts — chromatic scoring could never tell
+      // a right note from a cleanly-sung wrong one.
+      const iv = songKey.scale==='minor' ? [0,2,3,5,7,8,10] : [0,2,4,5,7,9,11];
+      const root=((songKey.root+(musicKey||0))%12+12)%12;
+      const pos=((m%1200)+1200)%1200;
+      err=1200;
+      for(const i of iv){
+        const c=((root+i)%12)*100;
+        const d=Math.abs(pos-c); err=Math.min(err, Math.min(d, 1200-d));
+      }
+      wideMax=60;   // wider taper: distances now run to 100c mid-gap
+    } else {
+      err=((m%100)+100)%100; err=Math.min(err,100-err);
+      wideMax=35;
+    }
+    const lo=wideMax===60?20:15;
+    const fs = err<=lo ? 1 : (err>=wideMax ? 0 : (wideMax-err)/(wideMax-lo));
     scoreFrames++; scoreInTune+=fs;
     const onPitch=fs>=0.75;
     if(onPitch){ scoreStreak++; if(scoreStreak>scoreBestStreak) scoreBestStreak=scoreStreak; }
