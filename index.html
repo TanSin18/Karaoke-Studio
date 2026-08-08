@@ -130,9 +130,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
       position:static;scrollbar-width:thin}
     body.inSession[data-page="home"] .stage{
       /* sized so the WHOLE Record tab fits the panel with zero internal
-         scroll: the tab's non-video content measures ~690px of chrome, so
+         scroll: the tab's non-video content measures ~495px of chrome after the console-bar consolidation, so
          the video gets exactly what's left (bounded to stay usable) */
-      max-height:clamp(160px, calc(100vh - 615px), 52vh);margin-inline:auto}
+      max-height:clamp(160px, calc(100vh - 495px), 52vh);margin-inline:auto}
     /* the no-scroll clamp must never win inside real fullscreen — it out-
        specifies .stageWrap:fullscreen .stage and was capping the "full
        screen" video at a few hundred px */
@@ -583,6 +583,39 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
   /* live monitor volumes */
   .mons{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:12px;
     background:var(--well);border:1px solid var(--edge);border-radius:10px;padding:10px 12px}
+  .hiddenLegacy{display:none}
+  .console{display:flex;align-items:center;flex-wrap:nowrap;gap:9px;margin-top:12px;
+    background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0) 55%),var(--well);
+    border:1px solid var(--edge);border-radius:999px;padding:8px 12px 8px 8px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 6px 18px rgba(0,0,0,.35);
+    overflow-x:auto;scrollbar-width:none}
+  .console::-webkit-scrollbar{display:none}
+  .console .reclamp{display:none}                /* the ● button IS the lamp now */
+  .cbtn{width:34px;height:34px;border-radius:50%;border:none;cursor:pointer;
+    background:transparent;color:var(--ink);font-size:13px;line-height:1;display:flex;
+    align-items:center;justify-content:center;transition:background .15s,color .15s,opacity .15s;flex:none}
+  .cbtn:hover:not(:disabled){background:rgba(255,255,255,.08)}
+  .cbtn:disabled{opacity:.28;cursor:default}
+  .cbtn.crec{color:var(--rec);font-size:16px}
+  .cbtn.crec:hover:not(:disabled){background:rgba(255,59,71,.12)}
+  body.isRecording .cbtn.crec{animation:recPulse 1.2s ease-in-out infinite}
+  @keyframes recPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,59,71,.5)}50%{box-shadow:0 0 0 7px rgba(255,59,71,0)}}
+  .cmic{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    color:var(--dim);flex:none;transition:color .1s}
+  .cmic .icon{width:15px;height:15px}
+  .cmic.hot{color:var(--rec)}
+  .cdiv{width:1px;height:22px;background:var(--edge);flex:none}
+  .clbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--dim);flex:none}
+  .console input[type=range]{width:64px;flex:none;-webkit-appearance:none;appearance:none;height:3px;
+    border-radius:2px;background:var(--fader);outline:none}
+  .console input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;
+    border-radius:50%;background:var(--ink);border:none;cursor:pointer;transition:transform .1s}
+  .console input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.25);background:var(--amber2)}
+  .cval{font-family:var(--mono);font-size:9.5px;color:var(--muted);min-width:26px;flex:none}
+  .console .tunertog{flex:none;white-space:nowrap}
+  .console .keybox{margin-left:auto;flex:none}
+  .console .keyhint{display:none}
   .monrow{display:flex;align-items:center;gap:8px;flex:1;min-width:180px}
   .monlbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;white-space:nowrap}
   .monrow input[type=range]{flex:1}
@@ -930,10 +963,28 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <div class="time" id="time">00:00 / 00:00</div>
         </div>
 
-        <!-- music transport (independent of recording) -->
-        <div class="transport">
-          <button id="play" class="btn" disabled title="Play / pause the soundtrack (P)">▶ Play music</button>
-          <button id="stopmusic" class="btn" disabled title="Stop and go back to the start">■ Stop music</button>
+        <!-- one console bar: record / play / stop, live mic, monitor mix,
+             toggles and key — everything you touch while singing, one row.
+             The old separate transport rows still exist hidden below it so
+             every existing handler and enable/disable path keeps working. -->
+        <div class="console">
+          <div class="reclamp" id="lamp"></div>
+          <button id="rec" class="cbtn crec" disabled title="Record (Space)">●</button>
+          <button id="play" class="cbtn" disabled title="Play / pause the music (P)">▶</button>
+          <button id="stopAll" class="cbtn" disabled
+            title="Stop — ends the take while recording, stops the music while playing">■</button>
+          <span class="cmic" id="micIcon" title="Live mic level"><svg class="icon"><use href="#i-mic"/></svg></span>
+          <span class="cdiv"></span>
+          <span class="clbl">music</span>
+          <input type="range" id="musVol" min="0" max="100" value="100">
+          <span class="cval" id="musVolV">100%</span>
+          <span class="clbl">voice</span>
+          <input type="range" id="monVol" min="0" max="100" value="0" title="Hear yourself in headphones">
+          <span class="cval" id="monVolV">off</span>
+          <span class="cdiv"></span>
+          <label class="tunertog"><input type="checkbox" id="tunerToggle" checked> pitch</label>
+          <label class="tunertog" title="Hear yourself through your FX chain while singing. What gets RECORDED is always your raw dry voice.">
+            <input type="checkbox" id="studioMonitorToggle" checked> monitor</label>
           <div class="keybox" title="Transpose the soundtrack to your key">
             <span class="klabel">KEY</span>
             <button id="keydn" class="ksmall" disabled>−</button>
@@ -941,6 +992,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
             <button id="keyup" class="ksmall" disabled>+</button>
           </div>
           <div class="keyhint" id="keyhint"></div>
+        </div>
+        <div class="hiddenLegacy">
+          <button id="stopmusic" disabled>stop music</button>
         </div>
 
         <!-- live pitch tuner: shows the note you're singing so you stay on track -->
@@ -953,27 +1007,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           <div class="tuner-msg" id="tunerMsg">sing a note…</div>
         </div>
 
-        <div class="metlabel mt">MIC INPUT</div>
-        <div class="meter"><div class="lvl" id="mic"></div></div>
-
-        <!-- live monitor volumes (in your headphones; do not change recording) —
-             kept always visible, not in the drawer below: you need to reach these
-             instantly while singing, not just as one-time pre-recording setup. -->
-        <div class="mons">
-          <div class="monrow">
-            <span class="monlbl">Music vol</span>
-            <input type="range" id="musVol" min="0" max="100" value="100">
-            <span class="monval" id="musVolV">100%</span>
-          </div>
-          <div class="monrow">
-            <span class="monlbl">My voice</span>
-            <input type="range" id="monVol" min="0" max="100" value="0" title="Hear yourself in headphones">
-            <span class="monval" id="monVolV">off</span>
-          </div>
-          <label class="tunertog"><input type="checkbox" id="tunerToggle" checked> pitch guide</label>
-          <label class="tunertog" title="Hear yourself through your FX chain (reverb/compression/EQ) while singing — like a real vocal booth cue mix. What actually gets RECORDED is always your raw dry voice; this only changes what you hear.">
-            <input type="checkbox" id="studioMonitorToggle" checked> studio monitor</label>
-        </div>
+        <div class="hiddenLegacy"><div class="meter"><div class="lvl" id="mic"></div></div></div>
 
         <!-- practice/timing settings: less urgent, one-time setup — tucked away
              so they don't compete with the always-visible controls above. -->
@@ -1007,12 +1041,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
           </div>
         </details>
 
-        <!-- record transport -->
-        <div class="transport">
-          <div class="reclamp" id="lamp"></div>
-          <button id="rec" class="btn rec" disabled title="Start recording (Space)">● Record</button>
-          <button id="stop" class="btn" disabled title="Stop recording (Space)">■ Stop</button>
-        </div>
+        <div class="hiddenLegacy"><button id="stop" disabled>stop rec</button></div>
         <!-- whether THIS take will include phone video used to live only in
              the sidebar's "phone camera sync" box, entirely outside this
              tab — meaning you could be here about to hit Record with the
@@ -2814,6 +2843,7 @@ function loadLyrics(){
       songLyrics=(d.lyrics&&d.lyrics.length)?d.lyrics:null;
       lyricsIdx=-2;
       $('lyricsBar').classList.toggle('hidden', !songLyrics);
+      fitStage();
     }).catch(()=>{});
   })(0);
 }
@@ -2857,6 +2887,7 @@ function loadMelody(){
       }
     }
     $('hwWrap').classList.remove('hidden');
+    fitStage();
   }).catch(()=>{});
 }
 function melodyAt(t){
@@ -2929,11 +2960,30 @@ function melodyAt(t){
   }, 500);
 })();
 
+// The Record tab's height varies per session now (lyrics bar? notes
+// highway? both?), so no single CSS constant can make the video fill the
+// leftover space exactly. Measure the actual overflow and shave exactly
+// that off the video, whenever the tab's content changes.
+function fitStage(){
+  if(window.innerWidth<980 || !document.body.classList.contains('inSession')) return;
+  const g=document.querySelector('.grid'), st=$('stage');
+  if(!g||!st) return;
+  st.style.maxHeight='';                       // back to the CSS clamp first
+  requestAnimationFrame(()=>{
+    const over=g.scrollHeight-g.clientHeight;
+    if(over>0){
+      const cur=st.getBoundingClientRect().height;
+      st.style.maxHeight=Math.max(140, cur-over-6)+'px';
+    }
+  });
+}
+window.addEventListener('resize',()=>{ clearTimeout(window._fitT); window._fitT=setTimeout(fitStage,150); });
 function onReady(j){
   songKey=null;
   fetch('/songkey?id='+SID).then(r=>r.json()).then(d=>{ songKey=d.key||null; }).catch(()=>{});
   loadLyrics();
   loadMelody();
+  setTimeout(fitStage, 300);
   // Stop the PREVIOUS song's backing track before loading a new one.
   // Reassigning `backingAudio` below doesn't stop the old <audio> element —
   // it keeps playing in the background with no on-screen reference to it,
@@ -3040,10 +3090,10 @@ function onVideoState(e){
   if(st===YT.PlayerState.PLAYING){
     // match audio to video and play
     syncAudioToVideo(true);
-    $('play').textContent='❚❚ Pause music'; $('play').classList.add('amber');
+    $('play').textContent='❚❚'; $('play').classList.add('amber');
   } else if(st===YT.PlayerState.PAUSED){
     backingAudio.pause();
-    if(!recording){ $('play').textContent='▶ Play music'; $('play').classList.remove('amber'); }
+    if(!recording){ $('play').textContent='▶'; $('play').classList.remove('amber'); }
   } else if(st===YT.PlayerState.ENDED){
     backingAudio.pause(); if(recording) stopRec(); resetMusicBtn();
   }
@@ -3295,6 +3345,13 @@ function startMeterAndPitch(){
     micAnalyser.getByteTimeDomainData(tbuf);
     let peak=0; for(let i=0;i<tbuf.length;i++){const v=Math.abs(tbuf[i]-128)/128; if(v>peak)peak=v;}
     $('mic').style.width=Math.min(100,peak*140)+'%';
+    const _mi=$('micIcon');
+    if(_mi){
+      const l=Math.min(1,peak*1.4);
+      _mi.style.boxShadow='0 0 '+(3+l*20)+'px rgba(30,215,96,'+(0.1+l*0.9).toFixed(2)+')';
+      _mi.style.color=l>0.04?'var(--ok)':'var(--muted)';
+      _mi.classList.toggle('hot', peak>0.85);
+    }
     // live pitch (only meaningful while singing; updates the tuner)
     if(recording && tunerOn){
       micAnalyser.getFloatTimeDomainData(pitchBuf);
@@ -3738,8 +3795,17 @@ $('vocalDelay').addEventListener('input',()=>{
 
 // ---- record UI helper + after-stop choice ---------------------------------
 let pendingContinueAt=null;   // set when user picks "continue from here"
+$('stopAll').addEventListener('click',()=>{
+  if(recording) $('stop').click(); else $('stopmusic').click();
+});
+// the visible Stop mirrors whichever hidden legacy button currently applies,
+// so every existing enable/disable code path keeps ruling the console bar
+setInterval(()=>{
+  $('stopAll').disabled = recording ? $('stop').disabled : $('stopmusic').disabled;
+}, 250);
 function showRecUI(on){
   $('lamp').classList.toggle('on',on);
+  document.body.classList.toggle('isRecording',on);
   $('rec').disabled=on; $('stop').disabled=!on; $('play').disabled=on;
   $('liveScoreBar').classList.toggle('hidden',!(on && tunerOn));
   if(on){ $('stopChoice').style.display='none'; $('scoreCard').classList.add('hidden'); updateLiveScoreBar(null);
@@ -4947,11 +5013,11 @@ async function toggleMusic(){
   // no-video fallback: audio is master
   if(!backingAudio) return;
   if(backingAudio.paused){ stopAllPlayback(); await backingAudio.play().catch(()=>{});
-    $('play').textContent='❚❚ Pause music'; $('play').classList.add('amber'); }
+    $('play').textContent='❚❚'; $('play').classList.add('amber'); }
   else { backingAudio.pause();
-    $('play').textContent='▶ Play music'; $('play').classList.remove('amber'); }
+    $('play').textContent='▶'; $('play').classList.remove('amber'); }
 }
-function resetMusicBtn(){ $('play').textContent='▶ Play music'; $('play').classList.remove('amber'); }
+function resetMusicBtn(){ $('play').textContent='▶'; $('play').classList.remove('amber'); }
 
 // ---- stop music: halt + rewind to the start (video master, audio follows) --
 $('stopmusic').addEventListener('click',stopMusic);
@@ -5371,7 +5437,7 @@ async function startRec(){
   }
   if(metro.clickOn) startMetroScheduler();
 
-  $('play').textContent='❚❚ Pause music'; $('play').classList.add('amber');
+  $('play').textContent='❚❚'; $('play').classList.add('amber');
   recording=true;
   showRecUI(true);
   if(tunerOn) showTuner(true);
