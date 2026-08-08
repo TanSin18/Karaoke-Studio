@@ -113,6 +113,27 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
     .sessionLayout{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
     .sessionRail{margin-top:0;position:sticky;top:100px;min-height:calc(100vh - 120px)}
   }
+  /* No-scroll session view (desktop): once a song is loaded, the session
+     fits the viewport like a DAW window — header/banner/nav stay put, the
+     video yields its height, and any panel taller than the window (the
+     Effects rack) scrolls INSIDE itself. The page itself never scrolls.
+     Mobile keeps normal document flow: locking a phone view to 100vh
+     would crush it. */
+  @media (min-width:980px){
+    body.inSession[data-page="home"]{height:100vh;overflow:hidden}
+    body.inSession[data-page="home"] .wrap{height:100%;display:flex;flex-direction:column}
+    body.inSession[data-page="home"] #homeSection{flex:1;display:flex;flex-direction:column;min-height:0}
+    body.inSession[data-page="home"] .sessionLayout{flex:1;min-height:0}
+    body.inSession[data-page="home"] .grid{height:100%;min-height:0;overflow:auto;
+      overscroll-behavior:contain;scrollbar-width:thin;border-radius:18px}
+    body.inSession[data-page="home"] .sessionRail{height:100%;min-height:0;overflow:auto;
+      position:static;scrollbar-width:thin}
+    body.inSession[data-page="home"] .stage{
+      /* sized so the WHOLE Record tab fits the panel with zero internal
+         scroll: the tab's non-video content measures ~690px of chrome, so
+         the video gets exactly what's left (bounded to stay usable) */
+      max-height:clamp(160px, calc(100vh - 690px), 46vh);margin-inline:auto}
+  }
   .sessionRail .selfView{width:100%;height:auto;aspect-ratio:4/3}
   .railAmbient{margin-top:auto;display:flex;align-items:center;justify-content:center;gap:10px;
     padding:18px 0 6px;color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:.16em;
@@ -2675,6 +2696,7 @@ async function checkLoad(){
 // destinations. Party mode stays a plain link to its own page (/party),
 // same as before.
 function switchAppPage(page){
+  document.body.dataset.page=page;   // the no-scroll lock only applies on home
   $('homeSection').classList.toggle('hidden', page!=='home');
   $('libraryPage').classList.toggle('hidden', page!=='library');
   $('historyPage').classList.toggle('hidden', page!=='history');
@@ -2687,6 +2709,8 @@ let VIDEO_ID=null;
 // the search UI — collapse it into a compact bar and give the recording
 // session (tab-switched, one full-width panel at a time) the whole screen. --
 function enterSessionMode(title, videoId){
+  document.body.classList.add('inSession');
+  document.body.dataset.page=document.body.dataset.page||'home';
   $('step1Card').classList.add('hidden');
   $('landingHero').classList.remove('centered');
   $('nowPlayingBar').classList.remove('hidden');
@@ -2708,6 +2732,7 @@ function switchSessionTab(stepId){
 }
 document.querySelectorAll('.sessionTab').forEach(b=>b.addEventListener('click',()=>switchSessionTab(b.dataset.step)));
 $('npChangeBtn').addEventListener('click',()=>{
+  document.body.classList.remove('inSession');
   $('step1Card').classList.remove('hidden');
   $('landingHero').classList.add('centered');
   $('nowPlayingBar').classList.add('hidden');
