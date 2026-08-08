@@ -670,6 +670,8 @@ def detect_song_key(jid):
 
 
 def _read_meta(jid):
+    if not _valid_id(jid):
+        return {}
     try:
         with open(os.path.join(SESS_DIR, jid, "meta.json"), encoding="utf-8") as fh:
             return json.load(fh)
@@ -678,6 +680,8 @@ def _read_meta(jid):
 
 
 def _write_meta(jid, **kw):
+    if not _valid_id(jid):
+        return          # never create session dirs for a traversal id
     sdir = os.path.join(SESS_DIR, jid)
     os.makedirs(sdir, exist_ok=True)
     meta = _read_meta(jid)
@@ -1673,11 +1677,60 @@ def make_qr_png(data):
     return r.stdout
 
 
+_VALID_ID = re.compile(r"[A-Za-z0-9_-]{4,64}")
+_ENV_HOSTS = {h.strip().lower() for h in os.environ.get("MICDROP_ALLOWED_HOSTS","").split(",") if h.strip()}
+
+def _valid_id(v):
+    return bool(v) and _VALID_ID.fullmatch(v) is not None
+
+def _host_allowed(host):
+    """True if the Host header names THIS machine (localhost / private LAN /
+    tailscale / .local) — the DNS-rebinding defense. A malicious website can
+    point its own domain at 127.0.0.1, but the browser still sends that
+    domain in Host, so we reject it. Legit access (desktop localhost, a
+    phone on the LAN IP, tailscale) all pass. A real reverse-tunnel is
+    handled by the X-Forwarded-* check at the call site (a rebinding attacker
+    can't set those headers without tripping a CORS preflight this server
+    never answers)."""
+    host = (host or "").rsplit(":", 1)[0].strip("[]").lower()
+    if not host:
+        return True                       # no Host (curl, health checks)
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host in _ENV_HOSTS:
+        return True
+    if host.endswith(".ts.net") or host.endswith(".local"):
+        return True
+    try:
+        import ipaddress
+        ip = ipaddress.ip_address(host)
+        return ip.is_private or ip.is_loopback
+    except ValueError:
+        return False                      # an arbitrary public domain -> blocked
+
+
 # ---- HTTP -------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
+
+    def _guard(self, p):
+        """One gate for every request: block foreign hosts (DNS-rebind) and
+        path-traversal ids before any handler builds a filesystem path."""
+        if not (_host_allowed(self.headers.get("Host"))
+                or self.headers.get("X-Forwarded-Proto")
+                or self.headers.get("X-Forwarded-For")):
+            self._json(403, {"error": "host not allowed"})
+            return False
+        try:
+            q = parse_qs(urlparse(self.path).query)
+        except Exception:
+            q = {}
+        for k in ("id", "take", "take_id", "scope", "source"):
+            for v in q.get(k, []):
+                if v and not _valid_id(v):
+                    self._json(400, {"error": "bad id"})
+                    return False
+        return True
 
     def _json(self, code, obj):
         b = json.dumps(obj).encode()
@@ -1686,6 +1739,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(b)))
         self.end_headers()
         self.wfile.write(b)
+
+    def end_headers(self):
+        # defense-in-depth on every response: no MIME sniffing, no framing of
+        # our UI by another site (clickjacking), no referrer leakage of local
+        # URLs. We EMBED youtube (outbound) which these don't affect.
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "no-referrer")
+        super().end_headers()
 
     def _base_url(self):
         """Base URL guests should actually use to reach this server — derived
@@ -1711,6 +1773,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = urlparse(self.path)
+        if not self._guard(p): return
         if p.path in ("/", "/index.html"):
             try:
                 b = _read_index()
@@ -2297,6 +2360,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = urlparse(self.path)
+        if not self._guard(p): return
 
         if p.path == "/prepare":
             body = self._read_body()
