@@ -1192,6 +1192,9 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
       </div>
       <input type="range" id="vocalDelay" min="-100" max="400" value="140" step="5" class="wide">
       <div class="railHint" id="delayHint">vocals lag → slide right</div>
+      <button class="btn small ghost" id="calibrateBtn" type="button" style="margin-top:8px"
+        title="Measure your exact recording delay by holding your headphones to the mic">🎯 Auto-measure my timing</button>
+      <div class="railHint" id="calibrateHint" style="margin-top:4px"></div>
       <div class="setRow mt" id="metroRow">
         <span class="monlbl">Metronome</span>
         <span style="display:flex;align-items:center;gap:6px">
@@ -4477,6 +4480,9 @@ function loadTrimMap(){ try{ return JSON.parse(localStorage.getItem('kstudio.voc
 function saveTrimForSig(v){
   try{ const m=loadTrimMap(); m[outputSig()]=v; localStorage.setItem('kstudio.vocalTrimMap', JSON.stringify(m)); }catch(e){}
 }
+function loadRtMap(){ try{ return JSON.parse(localStorage.getItem('kstudio.rtMap')||'{}')||{}; }catch(e){ return {}; } }
+function saveRtForSig(v){ try{ const m=loadRtMap(); m[outputSig()]=v; localStorage.setItem('kstudio.rtMap',JSON.stringify(m)); }catch(e){} }
+function loadRtForSig(){ const m=loadRtMap(), sig=outputSig(); return (sig in m)? (+m[sig]||null) : null; }
 function loadTrimForSig(){
   const m=loadTrimMap(), sig=outputSig();
   if(sig in m) return +m[sig]||0;
@@ -4605,14 +4611,16 @@ async function runLoopbackCalibration(){
       const med=found[Math.floor(found.length/2)];
       if(med>=5 && med<=800 && Math.abs(found[found.length-1]-found[0])<=25){
         measuredRoundtripMs=med;
+        saveRtForSig(med);
         refreshVocalDelay();
         console.log('Loopback mic-check: measured round-trip '+med.toFixed(0)+'ms (from '+found.map(x=>x.toFixed(0)).join('/')+'ms)');
         toast('🎯 Mic timing measured: '+Math.round(med)+'ms — vocals will be auto-synced with this.','ok',3500);
-        return;
+        return med;
       }
     }
     console.log('Loopback mic-check: no reliable echo of the ticks (sealed headphones?) — using the estimated latency instead.', found);
-  }catch(e){ console.warn('Loopback mic-check failed harmlessly:', e); }
+    return null;
+  }catch(e){ console.warn('Loopback mic-check failed harmlessly:', e); return null; }
 }
 try{
   navigator.mediaDevices.addEventListener('devicechange',()=>{
@@ -4628,7 +4636,28 @@ try{
     }, 400);
   });
 }catch(_){}
+(function(){
+  const b=document.getElementById('calibrateBtn'), hint=document.getElementById('calibrateHint');
+  if(!b) return;
+  b.addEventListener('click', async()=>{
+    if(recording) return;
+    b.disabled=true;
+    try{
+      if(!mediaStream){ hint.textContent='Allow the mic first…'; await primeMic(); }
+      if(!micSource){ hint.textContent='Mic not ready — tap Record once to enable it, then retry.'; b.disabled=false; return; }
+      hint.innerHTML='🎧 Hold your headphones <b>right against the mic</b> and keep still…';
+      await new Promise(r=>setTimeout(r,1500));   // give them a moment to position
+      hint.textContent='Measuring… (playing test clicks)';
+      measuredRoundtripMs=null;
+      const med=await runLoopbackCalibration();
+      if(med!=null){ hint.innerHTML='✅ Measured <b>'+Math.round(med)+'ms</b> — saved for this mic + headphones. Your vocals will line up now.'; }
+      else{ hint.innerHTML='Couldn\'t hear the clicks. Hold the headphones <b>touching</b> the mic, turn monitor volume up a bit, and try again.'; }
+    }catch(e){ hint.textContent='Calibration error — try again.'; }
+    b.disabled=false;
+  });
+})();
 function refreshVocalDelay(){
+  if(measuredRoundtripMs==null){ const st=loadRtForSig(); if(st!=null) measuredRoundtripMs=st; }
   vocalDelayTrimMs=loadTrimForSig();
   vocalDelayMs=Math.max(-100, Math.min(400, liveLatencyEstimateMs()+vocalDelayTrimMs));
   $('vocalDelay').value=vocalDelayMs;
