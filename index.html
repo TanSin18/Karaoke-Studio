@@ -4463,6 +4463,26 @@ $('monVol').addEventListener('input',()=>{ const v=(+$('monVol').value)/100;
 // device changes keep auto-adjusting underneath any manual taste tweak.
 let vocalDelayTrimMs=0;
 let vocalDelayMs=140;   // effective total; refreshed before every use
+// A manual timing nudge that's right for wired headphones is ~150-300ms
+// WRONG for Bluetooth (huge, unmeasurable output latency). So the trim is
+// remembered PER OUTPUT PROFILE — keyed by the live output-latency bucket,
+// which cleanly separates wired (~10-30ms) from BT (~150-300ms). Switch
+// back to a setup you've tuned and its sync is instantly restored instead
+// of drifting late again.
+function outputSig(){
+  try{ return 'ol'+Math.round(((audioCtx&&audioCtx.outputLatency)||0)*50); }
+  catch(e){ return 'ol0'; }
+}
+function loadTrimMap(){ try{ return JSON.parse(localStorage.getItem('kstudio.vocalTrimMap')||'{}')||{}; }catch(e){ return {}; } }
+function saveTrimForSig(v){
+  try{ const m=loadTrimMap(); m[outputSig()]=v; localStorage.setItem('kstudio.vocalTrimMap', JSON.stringify(m)); }catch(e){}
+}
+function loadTrimForSig(){
+  const m=loadTrimMap(), sig=outputSig();
+  if(sig in m) return +m[sig]||0;
+  try{ const legacy=localStorage.getItem('kstudio.vocalDelayTrimMs'); if(legacy!=null) return +legacy||0; }catch(e){}
+  return 0;
+}
 try{
   const t=localStorage.getItem('kstudio.vocalDelayTrimMs');
   if(t!=null) vocalDelayTrimMs=+t||0;
@@ -4598,9 +4618,18 @@ try{
   navigator.mediaDevices.addEventListener('devicechange',()=>{
     measuredRoundtripMs=null;             // old measurement is for old hardware
     if(micSource && !recording) runLoopbackCalibration();
+    // restore the timing nudge saved for whatever output is now active
+    setTimeout(()=>{
+      vocalDelayTrimMs=loadTrimForSig();
+      if(typeof refreshVocalDelay==='function') refreshVocalDelay();
+      const ol=((audioCtx&&audioCtx.outputLatency)||0)*1000;
+      if(ol>120 && typeof toast==='function')
+        toast('🎧 Bluetooth output detected — it adds delay. Wired headphones sync best; otherwise nudge the vocal earlier with ◀ (remembered for this device).','warn',6000);
+    }, 400);
   });
 }catch(_){}
 function refreshVocalDelay(){
+  vocalDelayTrimMs=loadTrimForSig();
   vocalDelayMs=Math.max(-100, Math.min(400, liveLatencyEstimateMs()+vocalDelayTrimMs));
   $('vocalDelay').value=vocalDelayMs;
   $('vocalDelayV').textContent=vocalDelayMs+'ms';
@@ -4614,6 +4643,7 @@ $('vocalDelay').addEventListener('input',()=>{
   // tracking the actual device; this remembers your taste on top of it
   vocalDelayTrimMs=vocalDelayMs-liveLatencyEstimateMs();
   try{ localStorage.setItem('kstudio.vocalDelayTrimMs', vocalDelayTrimMs); }catch(e){}
+  saveTrimForSig(vocalDelayTrimMs);
   $('vocalDelayV').textContent=vocalDelayMs+'ms';
   $('delayHint').textContent = vocalDelayMs>0 ? 'pulls vocals '+vocalDelayMs+'ms earlier'
     : (vocalDelayMs<0 ? 'pushes vocals '+(-vocalDelayMs)+'ms later' : 'no shift');
@@ -5541,6 +5571,7 @@ function teNudgeTargets(){
 // report 0): correct ONE take by ear and every take after it lands right.
 function teLearnFromNudge(deltaMs){
   vocalDelayTrimMs=Math.max(-500, Math.min(500, vocalDelayTrimMs-deltaMs));
+  saveTrimForSig(vocalDelayTrimMs);
   try{ localStorage.setItem('kstudio.vocalDelayTrimMs', vocalDelayTrimMs); }catch(e){}
   refreshVocalDelay();
 }
