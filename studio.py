@@ -3346,9 +3346,13 @@ class Handler(BaseHTTPRequestHandler):
                     pts = GUESS_POINTS[min(g["snippet_idx"], len(GUESS_POINTS) - 1)]
                     g["scores"][name] = (g["scores"].get(name, 0)) + pts
                     g["winner"] = name; g["phase"] = "reveal"; g["won_pts"] = pts
-                    broadcast_room()
-                    self._json(200, {"ok": True, "correct": True, "points": pts}); return
-                self._json(200, {"ok": True, "correct": False}); return
+            # broadcast OUTSIDE the lock — broadcast_room()->room_state()
+            # re-acquires ROOM_LOCK, so calling it while held deadlocks the
+            # whole server (this is exactly what wedged Start Party).
+            if correct:
+                broadcast_room()
+                self._json(200, {"ok": True, "correct": True, "points": pts}); return
+            self._json(200, {"ok": True, "correct": False}); return
 
         if p.path == "/party/scoring":
             # host toggle: score mode on/off for this party. When turned off
