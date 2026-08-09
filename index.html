@@ -1195,6 +1195,9 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
       <button class="btn small ghost" id="calibrateBtn" type="button" style="margin-top:8px"
         title="Measure your exact recording delay by holding your headphones to the mic">🎯 Auto-measure my timing</button>
       <div class="railHint" id="calibrateHint" style="margin-top:4px"></div>
+      <button class="btn small ghost" id="micLevelBtn" type="button" style="margin-top:8px"
+        title="Set your mic's input gain so it doesn't clip/distort">🎚 Set my mic level</button>
+      <div class="railHint" id="micLevelHint" style="margin-top:4px"></div>
       <div class="setRow mt" id="metroRow">
         <span class="monlbl">Metronome</span>
         <span style="display:flex;align-items:center;gap:6px">
@@ -3757,6 +3760,7 @@ function startMeterAndPitch(){
     // level meter
     micAnalyser.getByteTimeDomainData(tbuf);
     let peak=0; for(let i=0;i<tbuf.length;i++){const v=Math.abs(tbuf[i]-128)/128; if(v>peak)peak=v;}
+    window._micPeakHold=Math.max(peak, (window._micPeakHold||0)*0.985);  // slow-decay peak-hold
     $('mic').style.width=Math.min(100,peak*140)+'%';
     const _mi=$('micIcon');
     if(_mi){
@@ -4654,6 +4658,32 @@ try{
       else{ hint.innerHTML='Couldn\'t hear the clicks. Hold the headphones <b>touching</b> the mic, turn monitor volume up a bit, and try again.'; }
     }catch(e){ hint.textContent='Calibration error — try again.'; }
     b.disabled=false;
+  });
+})();
+(function(){
+  const b=document.getElementById('micLevelBtn'), hint=document.getElementById('micLevelHint');
+  if(!b) return;
+  b.addEventListener('click', async()=>{
+    if(!mediaStream){ hint.textContent='Allow the mic first…'; await primeMic(); }
+    if(!micSource){ hint.textContent='Tap Record once to enable the mic, then retry.'; return; }
+    b.disabled=true;
+    window._micPeakHold=0;
+    let worst=0;
+    const t0=Date.now();
+    hint.innerHTML='🎤 <b>Sing your LOUDEST note now</b> — watching level…';
+    const iv=setInterval(()=>{
+      const p=window._micPeakHold||0; if(p>worst) worst=p;
+      const el=(Date.now()-t0)/1000;
+      let verdict;
+      if(worst>=0.98) verdict='<span style="color:var(--pink)">🔴 CLIPPING — turn the FIFINE gain knob DOWN</span>';
+      else if(worst>=0.85) verdict='<span style="color:var(--amber)">🟠 a bit hot — turn the knob down slightly</span>';
+      else if(worst>=0.35) verdict='<span style="color:var(--ok)">🟢 SAFE — perfect level</span>';
+      else verdict='🔈 too quiet — turn the knob up a little';
+      hint.innerHTML='Loudest so far: '+Math.round(worst*100)+'%<br>'+verdict;
+      if(el>=8){ clearInterval(iv); b.disabled=false;
+        hint.innerHTML += '<br><span style="color:var(--dim)">Aim for green on your loudest singing. Re-run anytime.</span>';
+      }
+    }, 100);
   });
 })();
 function refreshVocalDelay(){
