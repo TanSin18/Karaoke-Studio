@@ -1512,7 +1512,7 @@ def _guess_make_clip(vid, dur, out_path):
     got = next((src + "." + e for e in ("webm", "m4a", "mp3", "opus", "ogg")
                 if os.path.exists(src + "." + e)), None)
     if not got:
-        return False
+        return None
     r = subprocess.run(["ffmpeg", "-y", "-i", got, "-t", "12", "-ac", "2", "-ar", "44100",
                         "-c:a", "libmp3lame", "-q:a", "5", out_path],
                        capture_output=True, text=True)
@@ -1520,7 +1520,7 @@ def _guess_make_clip(vid, dur, out_path):
         os.remove(got)
     except OSError:
         pass
-    return r.returncode == 0 and os.path.exists(out_path)
+    return int(start) if (r.returncode == 0 and os.path.exists(out_path)) else None
 
 def build_guess_pool(query, label, rounds):
     """Search the theme, then fetch blind clips in the background. The game
@@ -1553,8 +1553,10 @@ def build_guess_pool(query, label, rounds):
             continue
         seen.add(canon.lower()); seen_vids.add(vid)
         out = os.path.join(GUESS_DIR, vid + ".mp3")
-        if _guess_make_clip(vid, r.get("duration"), out):
-            pool.append({"vid": vid, "title": title, "canonical": canon, "clip": out})
+        clip_start = _guess_make_clip(vid, r.get("duration"), out)
+        if clip_start is not None:
+            pool.append({"vid": vid, "title": title, "canonical": canon,
+                         "clip": out, "clip_start": clip_start})
             with ROOM_LOCK:
                 g = ROOM.get("guess")
                 if g and g.get("query") == query:
@@ -1575,6 +1577,61 @@ def build_guess_pool(query, label, rounds):
                 g["phase"] = "ready"
     broadcast_room()
 
+def guess_fetch_one(query, exclude_vids, exclude_canons):
+    """Find one fresh song from the theme not already used this game.
+    Same filters as the pool builder (no compilations, sensible length)."""
+    BAD = ("jukebox", "mashup", "nonstop", "non stop", "all songs", "top 10",
+           "top 20", "playlist", "best of", "compilation", "medley", "audio jukebox",
+           "back to back", "hits", "collection", "full album")
+    results = search_youtube(query, n=25)
+    random.shuffle(results)
+    for r in results:
+        vid = r.get("id"); title = r.get("title") or ""
+        canon = guess_canonical(title); dur = r.get("duration") or 0
+        low = title.lower()
+        if not vid or vid in exclude_vids or canon.lower() in exclude_canons:
+            continue
+        if any(b in low for b in BAD) or (dur and (dur > 600 or dur < 45)):
+            continue
+        out = os.path.join(GUESS_DIR, vid + ".mp3")
+        start = _guess_make_clip(vid, dur, out)
+        if start is not None:
+            return {"vid": vid, "title": title, "canonical": canon,
+                    "clip": out, "clip_start": start}
+    return None
+
+
+def shuffle_guess_round(query, round_idx):
+    """Swap the current round's song for a fresh one from the theme —
+    when the host dislikes a repeat or too-obvious pick. Runs in the
+    background; resets the round (snippet, buzzes) on success."""
+    with ROOM_LOCK:
+        g = ROOM.get("guess")
+        if not g:
+            return
+        pool = g.get("pool") or []
+        used_vids = set(g.get("used_vids") or []) | {p["vid"] for p in pool}
+        used_canons = set(g.get("used_canons") or []) | {p["canonical"].lower() for p in pool}
+    item = guess_fetch_one(query, used_vids, used_canons)
+    with ROOM_LOCK:
+        g = ROOM.get("guess")
+        if not g or g.get("round") != round_idx:
+            g and g.pop("shuffling", None)
+        elif item:
+            pool = g.get("pool") or []
+            if round_idx < len(pool):
+                old = pool[round_idx]
+                g.setdefault("used_vids", []).append(old["vid"])
+                g.setdefault("used_canons", []).append(old["canonical"].lower())
+                pool[round_idx] = item
+            g["snippet_idx"] = 0; g["buzzes"] = []; g["buzz_seq"] = 0
+            g["winner"] = None; g["phase"] = "playing"; g["round_ts"] = time.time()
+            g.pop("shuffling", None)
+        else:
+            g["shuffle_error"] = True; g.pop("shuffling", None)
+    broadcast_room()
+
+
 def guess_public_state():
     """What clients may see — NEVER the song identity until reveal."""
     g = ROOM.get("guess")
@@ -1592,10 +1649,12 @@ def guess_public_state():
         pub["max_snippet"] = idx >= len(GUESS_SNIPPETS) - 1
         pub["points_next"] = GUESS_POINTS[min(idx + 1, len(GUESS_POINTS) - 1)]
     pub["buzzes"] = sorted(g.get("buzzes") or [], key=lambda b: b["order"])
+    pub["shuffling"] = bool(g.get("shuffling"))
     if phase == "reveal":
         cur = (g.get("pool") or [])[g.get("round", 0)] if g.get("pool") else None
         pub["answer"] = cur["canonical"] if cur else "?"
         pub["answer_vid"] = cur["vid"] if cur else None
+        pub["answer_start"] = (cur.get("clip_start") if cur else None) or 0
         pub["winner"] = g.get("winner")
     return pub
 
@@ -3360,6 +3419,19 @@ class Handler(BaseHTTPRequestHandler):
                     g["winner"] = None; g["round_ts"] = time.time()
             broadcast_room(); self._json(200, {"ok": True}); return
 
+        if p.path == "/guess/shuffle":
+            with ROOM_LOCK:
+                g = ROOM.get("guess")
+                if g and g.get("phase") in ("playing", "reveal") and not g.get("shuffling"):
+                    g["shuffling"] = True; g["phase"] = "playing"
+                    q = g.get("query"); rnd = g.get("round", 0)
+                else:
+                    q = None
+            if q is not None:
+                broadcast_room()
+                threading.Thread(target=shuffle_guess_round, args=(q, rnd), daemon=True).start()
+            self._json(200, {"ok": True}); return
+
         if p.path == "/guess/award":
             # host awards a buzzer the points from the snippet they buzzed at
             body = self._read_body()
@@ -3968,6 +4040,8 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 .ggBuzzName{font-weight:700}
 .ggBuzzText{color:var(--muted);flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ggBuzzT{font-family:var(--mono);font-size:12px;color:var(--dim)}
+.ggVideo{width:min(90%,520px);aspect-ratio:16/9;border-radius:12px;margin:6px auto;display:block;border:1px solid var(--edge)}
+.ggWatch{display:inline-block;margin:4px auto;text-decoration:none}
 @media (max-width:760px){ .gsGame{padding:14px} .ggPulse{width:110px;height:110px;font-size:48px} }
 /* full-stage announcement / celebration overlay */
 .partyOverlay{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
@@ -4219,8 +4293,21 @@ function renderGuess(){
     : '<div class="ggSec" style="color:var(--dim)">no buzzes yet…</div>';
   if(g.phase==='reveal'){
     ggStopAudio();
+    const vid=g.answer_vid, st=Math.max(0, Math.floor(g.answer_start||0));
+    const mmss=Math.floor(st/60)+':'+String(st%60).padStart(2,'0');
+    // Inline embed when the video allows it; MANY Bollywood label videos
+    // disable embedding (YouTube error 150/153), so always offer a link
+    // that opens the real video at the exact clip timestamp — that never
+    // fails. If the iframe errors, the link is right there.
+    const embed = vid
+      ? '<iframe class="ggVideo" src="https://www.youtube.com/embed/'+vid+'?start='+st+'&rel=0&origin='+encodeURIComponent(location.origin)+'" '
+        +'frameborder="0" allow="autoplay; encrypted-media" allowfullscreen title="the song"></iframe>'
+        +'<a class="btn pink ggWatch" target="_blank" rel="noopener" '
+        +'href="https://www.youtube.com/watch?v='+vid+'&t='+st+'s">▶ Watch on YouTube — from '+mmss+' (the clip spot)</a>'
+      : '';
     stage.innerHTML='<div class="ggSec">The song was</div>'+
       '<div class="ggBig" style="color:var(--amber2)">'+esc(g.answer||'?')+'</div>'+
+      embed+
       '<div class="ggSec" style="color:var(--muted);font-size:14px">tap the winner to award points, or Next</div>'+
       buzzHTML+
       '<div class="ggBtnRow"><button class="btn" id="ggNext">Nobody / Next song →</button></div>';
@@ -4229,18 +4316,28 @@ function renderGuess(){
     const nb=document.getElementById('ggNext'); if(nb) nb.onclick=()=>fetch('/guess/next',{method:'POST'});
     return;
   }
-  // phase playing — host drives it: play, hear +2s, or reveal to judge
+  // shuffling a fresh song in
+  if(g.shuffling){
+    ggStopAudio();
+    stage.innerHTML='<div class="ggPulse">🔀</div><div class="ggBig">Finding a new song…</div>'+
+      '<div class="ggSec" style="color:var(--muted)">swapping in a fresh one from this theme</div>';
+    ggPlayedRound=-1;  // force a re-play once the new clip arrives
+    return;
+  }
+  // phase playing — host drives it: play, +2s, shuffle, or reveal to judge
   const canExtend = !g.max_snippet;
   stage.innerHTML='<div class="ggPulse">🔊</div><div class="ggBig">Name that song!</div>'+
     '<div class="ggSec">'+g.snippet_sec+'s snippet · '+g.points+' pts if guessed now</div>'+
     '<div class="ggBtnRow">'+
       '<button class="btn" id="ggPlay">▶ Play '+g.snippet_sec+'s</button>'+
       (canExtend?'<button class="btn pink" id="ggExtend">➕ Hear +2s ('+g.points_next+' pts)</button>':'')+
+      '<button class="btn ghost" id="ggShuffle" title="Repeat or too obvious? Swap for a new random song">🔀 Shuffle song</button>'+
       '<button class="btn ghost" id="ggSkip">⏭ Reveal &amp; judge</button>'+
     '</div>'+
     buzzHTML;
   const rb=document.getElementById('ggPlay'); if(rb) rb.onclick=()=>ggPlaySnippet(g.snippet_sec);
   const eb=document.getElementById('ggExtend'); if(eb) eb.onclick=()=>fetch('/guess/extend',{method:'POST'});
+  const shb=document.getElementById('ggShuffle'); if(shb) shb.onclick=()=>fetch('/guess/shuffle',{method:'POST'});
   const sb=document.getElementById('ggSkip'); if(sb) sb.onclick=()=>fetch('/guess/reveal',{method:'POST'});
   // auto-play the snippet ONCE when the round or the snippet length changes
   if(ggPlayedRound!==g.round || ggPlayedIdx!==g.snippet_idx){
