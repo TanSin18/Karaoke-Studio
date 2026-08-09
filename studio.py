@@ -4040,10 +4040,20 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 .ggBuzzName{font-weight:700}
 .ggBuzzText{color:var(--muted);flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ggBuzzT{font-family:var(--mono);font-size:12px;color:var(--dim)}
-.ggThumbLink{position:relative;display:block;width:min(80%,420px);margin:8px auto;border-radius:12px;overflow:hidden;border:1px solid var(--edge)}
-.ggThumb{width:100%;display:block}
-.ggThumbPlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:52px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.7);background:rgba(0,0,0,.15)}
-.ggWatch{display:inline-block;margin:4px auto;text-decoration:none}
+.ggReveal{display:flex;flex-direction:column;align-items:center;gap:12px;width:100%}
+.ggRevealEyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.ggRevealTitle{font-family:var(--display);font-weight:800;font-size:clamp(32px,5vw,56px);color:var(--amber2);line-height:1.05;text-shadow:0 0 28px rgba(30,215,96,.35)}
+.ggThumbLink{position:relative;display:block;width:min(72%,340px);margin:2px auto;border-radius:14px;overflow:hidden;
+  box-shadow:0 10px 30px rgba(0,0,0,.5);transition:transform .15s}
+.ggThumbLink:hover{transform:scale(1.02)}
+.ggThumb{width:100%;display:block;aspect-ratio:16/9;object-fit:cover}
+.ggPlayBadge{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:58px;height:58px;border-radius:50%;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;color:#fff;
+  border:2px solid rgba(255,255,255,.85);transition:background .15s,transform .15s}
+.ggThumbLink:hover .ggPlayBadge{background:var(--amber2);color:#000;border-color:var(--amber2);transform:translate(-50%,-50%) scale(1.08)}
+.ggFromTag{position:absolute;bottom:8px;right:8px;font-family:var(--mono);font-size:11px;color:#fff;
+  background:rgba(0,0,0,.7);padding:3px 9px;border-radius:10px}
+.ggJudgeHint{font-family:var(--mono);font-size:12px;color:var(--muted)}
 @media (max-width:760px){ .gsGame{padding:14px} .ggPulse{width:110px;height:110px;font-size:48px} }
 /* full-stage announcement / celebration overlay */
 .partyOverlay{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
@@ -4306,19 +4316,21 @@ function renderGuess(){
     // hidden. A thumbnail (always loads) that opens the real video at the
     // exact clip second is reliable and clean.
     const watchUrl='https://www.youtube.com/watch?v='+vid+'&t='+st+'s';
-    const embed = vid
-      ? '<a class="ggThumbLink" target="_blank" rel="noopener" href="'+watchUrl+'">'
+    const media = vid
+      ? '<a class="ggThumbLink" target="_blank" rel="noopener" href="'+watchUrl+'" title="Watch from '+mmss+'">'
         +'<img class="ggThumb" src="https://i.ytimg.com/vi/'+vid+'/hqdefault.jpg" alt="" '
         +'onerror="this.src=\'https://i.ytimg.com/vi/'+vid+'/mqdefault.jpg\'">'
-        +'<span class="ggThumbPlay">▶</span></a>'
-        +'<a class="btn pink ggWatch" target="_blank" rel="noopener" href="'+watchUrl+'">▶ Watch on YouTube — from '+mmss+'</a>'
+        +'<span class="ggPlayBadge"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>'
+        +'<span class="ggFromTag">▶ from '+mmss+'</span></a>'
       : '';
-    stage.innerHTML='<div class="ggSec">The song was</div>'+
-      '<div class="ggBig" style="color:var(--amber2)">'+esc(g.answer||'?')+'</div>'+
-      embed+
-      '<div class="ggSec" style="color:var(--muted);font-size:14px">tap the winner to award points, or Next</div>'+
+    stage.innerHTML='<div class="ggReveal">'+
+      '<div class="ggRevealEyebrow">the song was</div>'+
+      '<div class="ggRevealTitle">'+esc(g.answer||'?')+'</div>'+
+      media+
+      '<div class="ggJudgeHint">'+(g.buzzes&&g.buzzes.length?'tap who got it to award points':'nobody buzzed this round')+'</div>'+
       buzzHTML+
-      '<div class="ggBtnRow"><button class="btn" id="ggNext">Nobody / Next song →</button></div>';
+      '<div class="ggBtnRow"><button class="btn ghost" id="ggNext">Next song →</button></div>'+
+      '</div>';
     stage.querySelectorAll('.ggAward').forEach(btn=>btn.onclick=()=>
       fetch('/guess/award',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device:btn.dataset.dev})}));
     const nb=document.getElementById('ggNext'); if(nb) nb.onclick=()=>fetch('/guess/next',{method:'POST'});
