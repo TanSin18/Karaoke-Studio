@@ -3758,9 +3758,15 @@ function startMeterAndPitch(){
     const _mi=$('micIcon');
     if(_mi){
       const l=Math.min(1,peak*1.4);
-      _mi.style.boxShadow='0 0 '+(3+l*20)+'px rgba(30,215,96,'+(0.1+l*0.9).toFixed(2)+')';
-      _mi.style.color=l>0.04?'var(--ok)':'var(--muted)';
-      _mi.classList.toggle('hot', peak>0.85);
+      const tooHot=peak>0.92;   // clipping territory — warn LOUDLY while singing
+      _mi.style.boxShadow='0 0 '+(3+l*20)+'px '+(tooHot?'rgba(240,90,120,.95)':'rgba(30,215,96,'+(0.1+l*0.9).toFixed(2)+')');
+      _mi.style.color=tooHot?'var(--pink)':(l>0.04?'var(--ok)':'var(--muted)');
+      _mi.classList.toggle('hot', tooHot);
+      _mi.title=tooHot?'⚠ Too loud — clipping! Lower your input level':'Live mic level';
+      if(recording && tooHot){ window._clipWarnFrames=(window._clipWarnFrames||0)+1;
+        if(window._clipWarnFrames===8 && typeof toast==='function')
+          toast('⚠ Mic is clipping — lower your input level or move back','warn',3500);
+      } else if(!tooHot){ window._clipWarnFrames=0; }
     }
     // live pitch (only meaningful while singing; updates the tuner)
     if(recording && tunerOn){
@@ -4635,7 +4641,12 @@ function showRecUI(on){
 }
 function offerContinueOrKeep(){
   const at=window._recEndMusicPos||0;
-  $('choiceMsg').innerHTML='Sang up to <b>'+fmt(at)+'</b> — continue from there, keep it, or redo?';
+  let msg='Sang up to <b>'+fmt(at)+'</b> — continue from there, keep it, or redo?';
+  if((window._takeClipPct||0) >= 0.5 || (window._takePeak||0) >= 1.05){
+    msg='<span style="color:var(--pink)">⚠ Your mic was too loud — the vocal is clipping/distorted ('
+      +(window._takeClipPct||0).toFixed(1)+'% of it). Lower your input level (System Settings → Sound → Input) or move back from the mic, then <b>Redo</b> for a clean take.</span><br>'+msg;
+  }
+  $('choiceMsg').innerHTML=msg;
   $('stopChoice').style.display='flex';
   renderScoreCard(window._lastPitchScore);
 }
@@ -6306,6 +6317,16 @@ async function finishRec(){
   const arr=await blob.arrayBuffer();
   const ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
   const rawTake=await ctx.decodeAudioData(arr);
+
+  // Clip check: a take that clipped AT CAPTURE (mic/OS input too hot) is
+  // distorted and can't be un-clipped later — the singer should know now,
+  // while Redo is one tap away, instead of keeping a ruined take.
+  (function(){
+    const d=rawTake.getChannelData(0); let peak=0, clipped=0;
+    for(let i=0;i<d.length;i+=3){ const a=Math.abs(d[i]); if(a>peak)peak=a; if(a>=0.99)clipped++; }
+    window._takeClipPct = 100*clipped/(d.length/3);
+    window._takePeak = peak;
+  })();
 
   // stash the RAW take + the alignment context so the vocal-timing slider can
   // re-align live without re-recording.
