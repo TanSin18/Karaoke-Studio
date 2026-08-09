@@ -1100,6 +1100,9 @@ def do_prepare(jid, url, profile=None, strip_vocals=False, owner_id=None):
 
     cmd = [
         "yt-dlp", "--no-playlist", "-f", "bestaudio/best",
+        # android player client avoids YouTube's 'confirm you're not a bot'
+        # block that the default web client now trips on many songs
+        "--extractor-args", "youtube:player_client=android",
         "--extract-audio", "--audio-format", "wav",   # decode to PCM for clean mixing
         "--newline", "-o", out, url,
     ]
@@ -1506,10 +1509,13 @@ def _guess_make_clip(vid, dur, out_path):
     src = out_path + ".src"
     dl = subprocess.run(
         ["yt-dlp", "-f", "bestaudio/best", "--no-playlist", "--no-warnings",
+         "--extractor-args", "youtube:player_client=android",   # bypasses the
+         # 'sign in to confirm you're not a bot' block that the default web
+         # client now hits (verified: android downloads where web gets 429/bot)
          "--download-sections", f"*{start:.1f}-{end:.1f}", "--force-keyframes-at-cuts",
          "-o", src + ".%(ext)s", f"https://www.youtube.com/watch?v={vid}"],
         capture_output=True, text=True, timeout=90)
-    got = next((src + "." + e for e in ("webm", "m4a", "mp3", "opus", "ogg")
+    got = next((src + "." + e for e in ("webm", "m4a", "mp4", "mp3", "opus", "ogg", "aac")
                 if os.path.exists(src + "." + e)), None)
     if not got:
         return None
