@@ -1535,7 +1535,7 @@ def build_guess_pool(query, label, rounds):
     results = search_youtube(query, n=max(rounds * 2, 12))
     random.shuffle(results)
     pool = []
-    seen = set()
+    seen = set(); seen_vids = set()
     BAD = ("jukebox", "mashup", "nonstop", "non stop", "all songs", "top 10",
            "top 20", "playlist", "best of", "compilation", "medley", "audio jukebox",
            "back to back", "hits", "collection", "full album")
@@ -1546,12 +1546,12 @@ def build_guess_pool(query, label, rounds):
         canon = guess_canonical(title)
         dur = r.get("duration") or 0
         low = title.lower()
-        # skip compilations / mixes — a single guessable song is 1-9 min
-        if not vid or canon.lower() in seen:
+        # no repeats: same video OR same song title (different upload)
+        if not vid or vid in seen_vids or canon.lower() in seen:
             continue
         if any(b in low for b in BAD) or (dur and (dur > 600 or dur < 45)):
             continue
-        seen.add(canon.lower())
+        seen.add(canon.lower()); seen_vids.add(vid)
         out = os.path.join(GUESS_DIR, vid + ".mp3")
         if _guess_make_clip(vid, r.get("duration"), out):
             pool.append({"vid": vid, "title": title, "canonical": canon, "clip": out})
@@ -1596,6 +1596,7 @@ def guess_public_state():
         pub["snippet_sec"] = GUESS_SNIPPETS[min(idx, len(GUESS_SNIPPETS) - 1)]
         pub["points"] = GUESS_POINTS[min(idx, len(GUESS_POINTS) - 1)]
         pub["max_snippet"] = idx >= len(GUESS_SNIPPETS) - 1
+        pub["points_next"] = GUESS_POINTS[min(idx + 1, len(GUESS_POINTS) - 1)]
     if phase == "reveal":
         cur = (g.get("pool") or [])[g.get("round", 0)] if g.get("pool") else None
         pub["answer"] = cur["canonical"] if cur else "?"
@@ -3940,6 +3941,7 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 .gsBoard{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
 .ggScore{background:var(--panel2);border:1px solid var(--edge);border-radius:12px;padding:8px 16px;font-family:var(--mono);font-size:15px}
 .ggScore b{color:var(--amber2)}
+.ggBtnRow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:6px}
 @media (max-width:760px){ .gsGame{padding:14px} .ggPulse{width:110px;height:110px;font-size:48px} }
 /* full-stage announcement / celebration overlay */
 .partyOverlay{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
@@ -4149,13 +4151,7 @@ function ggPlaySnippet(sec){
   ggTimer=setInterval(()=>{
     const el=(performance.now()-t0)/1000;
     const bar=document.getElementById('ggBar'); if(bar) bar.style.width=Math.max(0,100-el/sec*100)+'%';
-    if(el>=sec){ ggStopAudio();
-      // no winner yet after the snippet + a short buzz window? escalate.
-      setTimeout(()=>{ const g=state.guess;
-        if(g&&g.active&&g.phase==='playing'&&g.round===ggPlayedRound&&g.snippet_idx===ggPlayedIdx)
-          fetch('/guess/'+(g.max_snippet?'reveal':'extend'),{method:'POST'});
-      }, 3500);
-    }
+    if(el>=sec){ ggStopAudio(); const bar2=document.getElementById('ggBar'); if(bar2) bar2.style.width='0%'; }
   },80);
 }
 function renderGuess(){
@@ -4186,15 +4182,25 @@ function renderGuess(){
       '<div class="ggSec">It was</div><div class="ggBig" style="color:var(--amber2)">'+esc(g.answer||'?')+'</div>'+
       '<button class="btn pink" id="ggNext">Next song →</button>';
     const nb=document.getElementById('ggNext'); if(nb) nb.onclick=()=>fetch('/guess/next',{method:'POST'});
-    // auto-advance after a beat so the party keeps moving
-    if(ggPlayedRound===g.round){ ggPlayedRound=-1; setTimeout(()=>{ if(state.guess&&state.guess.phase==='reveal') fetch('/guess/next',{method:'POST'}); }, 6000); }
+    // host taps Next; a long fallback keeps an unattended party moving
+    if(ggPlayedRound===g.round){ ggPlayedRound=-1; setTimeout(()=>{ if(state.guess&&state.guess.phase==='reveal') fetch('/guess/next',{method:'POST'}); }, 15000); }
     return;
   }
-  // phase playing
+  // phase playing — host drives it: replay, hear +2s, or skip to the answer
+  const canExtend = !g.max_snippet;
   stage.innerHTML='<div class="ggPulse">🔊</div><div class="ggBig">Name that song!</div>'+
-    '<div class="ggSec">'+g.snippet_sec+'s snippet · '+g.points+' pts</div>'+
+    '<div class="ggSec">'+g.snippet_sec+'s snippet · '+g.points+' pts if guessed now</div>'+
     '<div class="ggBarWrap"><div class="ggBar" id="ggBar"></div></div>'+
-    '<div class="ggSec" style="color:var(--muted);font-size:14px">type your guess on your phone</div>';
+    '<div class="ggBtnRow">'+
+      '<button class="btn" id="ggReplay">🔁 Replay '+g.snippet_sec+'s</button>'+
+      (canExtend?'<button class="btn pink" id="ggExtend">➕ Hear +2s ('+g.points_next+' pts)</button>':'')+
+      '<button class="btn ghost" id="ggSkip">⏭ Skip · reveal</button>'+
+    '</div>'+
+    '<div class="ggSec" style="color:var(--muted);font-size:14px">players type their guess on their phones</div>';
+  const rb=document.getElementById('ggReplay'); if(rb) rb.onclick=()=>ggPlaySnippet(g.snippet_sec);
+  const eb=document.getElementById('ggExtend'); if(eb) eb.onclick=()=>fetch('/guess/extend',{method:'POST'});
+  const sb=document.getElementById('ggSkip'); if(sb) sb.onclick=()=>fetch('/guess/reveal',{method:'POST'});
+  // auto-play the snippet ONCE when the round or the snippet length changes
   if(ggPlayedRound!==g.round || ggPlayedIdx!==g.snippet_idx){
     ggPlayedRound=g.round; ggPlayedIdx=g.snippet_idx; ggPlaySnippet(g.snippet_sec);
   }
