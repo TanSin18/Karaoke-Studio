@@ -1561,12 +1561,7 @@ def build_guess_pool(query, label, rounds):
                     g["pool"] = pool
                     g["ready"] = len(pool)
                     if g["phase"] == "building" and len(pool) >= min(3, rounds):
-                        g["phase"] = "playing"
-                        g["round"] = 0
-                        g["snippet_idx"] = 0
-                        g["answered"] = {}
-                        g["winner"] = None
-                        g["round_ts"] = time.time()
+                        g["phase"] = "ready"     # armed — host taps Start
             broadcast_room()
     with ROOM_LOCK:
         g = ROOM.get("guess")
@@ -1577,8 +1572,7 @@ def build_guess_pool(query, label, rounds):
             if not pool:
                 g["phase"] = "error"; g["error"] = "Couldn't fetch songs for that theme."
             elif g["phase"] == "building":
-                g["phase"] = "playing"; g["round"] = 0; g["snippet_idx"] = 0
-                g["answered"] = {}; g["winner"] = None; g["round_ts"] = time.time()
+                g["phase"] = "ready"
     broadcast_room()
 
 def guess_public_state():
@@ -1597,6 +1591,7 @@ def guess_public_state():
         pub["points"] = GUESS_POINTS[min(idx, len(GUESS_POINTS) - 1)]
         pub["max_snippet"] = idx >= len(GUESS_SNIPPETS) - 1
         pub["points_next"] = GUESS_POINTS[min(idx + 1, len(GUESS_POINTS) - 1)]
+    pub["buzzes"] = sorted(g.get("buzzes") or [], key=lambda b: b["order"])
     if phase == "reveal":
         cur = (g.get("pool") or [])[g.get("round", 0)] if g.get("pool") else None
         pub["answer"] = cur["canonical"] if cur else "?"
@@ -3322,6 +3317,7 @@ class Handler(BaseHTTPRequestHandler):
                         g["phase"] = "done"
                     else:
                         g["round"] = nxt; g["snippet_idx"] = 0; g["answered"] = {}
+                        g["buzzes"] = []; g["buzz_seq"] = 0
                         g["winner"] = None; g["phase"] = "playing"; g["round_ts"] = time.time()
             broadcast_room(); self._json(200, {"ok": True}); return
 
@@ -3342,18 +3338,42 @@ class Handler(BaseHTTPRequestHandler):
                 pool = g.get("pool") or []; rnd = g.get("round", 0)
                 if rnd >= len(pool):
                     self._json(409, {"ok": False}); return
-                correct = guess_accept(text, pool[rnd]["title"])
-                if correct:
-                    pts = GUESS_POINTS[min(g["snippet_idx"], len(GUESS_POINTS) - 1)]
-                    g["scores"][name] = (g["scores"].get(name, 0)) + pts
-                    g["winner"] = name; g["phase"] = "reveal"; g["won_pts"] = pts
-            # broadcast OUTSIDE the lock — broadcast_room()->room_state()
-            # re-acquires ROOM_LOCK, so calling it while held deadlocks the
-            # whole server (this is exactly what wedged Start Party).
-            if correct:
-                broadcast_room()
-                self._json(200, {"ok": True, "correct": True, "points": pts}); return
-            self._json(200, {"ok": True, "correct": False}); return
+                buzzes = g.setdefault("buzzes", [])
+                existing = next((b for b in buzzes if b["device"] == dev), None)
+                if existing:
+                    existing["text"] = text          # refine wording; keep first-buzz order+points
+                else:
+                    g["buzz_seq"] = g.get("buzz_seq", 0) + 1
+                    buzzes.append({"name": name, "device": dev, "text": text,
+                                   "order": g["buzz_seq"],
+                                   "t": round(time.time() - g.get("round_ts", time.time()), 2),
+                                   "points": GUESS_POINTS[min(g["snippet_idx"], len(GUESS_POINTS) - 1)]})
+            broadcast_room()
+            self._json(200, {"ok": True, "recorded": True}); return
+
+        if p.path == "/guess/begin":
+            with ROOM_LOCK:
+                g = ROOM.get("guess")
+                if g and g["phase"] in ("ready", "building"):
+                    g["phase"] = "playing"; g["round"] = 0; g["snippet_idx"] = 0
+                    g["answered"] = {}; g["buzzes"] = []; g["buzz_seq"] = 0
+                    g["winner"] = None; g["round_ts"] = time.time()
+            broadcast_room(); self._json(200, {"ok": True}); return
+
+        if p.path == "/guess/award":
+            # host awards a buzzer the points from the snippet they buzzed at
+            body = self._read_body()
+            dev = (body.get("device") or "").strip()[:64]
+            with ROOM_LOCK:
+                g = ROOM.get("guess")
+                if g:
+                    b = next((x for x in (g.get("buzzes") or []) if x["device"] == dev), None)
+                    if b:
+                        g["scores"][b["name"]] = g["scores"].get(b["name"], 0) + b["points"]
+                        g["winner"] = b["name"]; g["won_pts"] = b["points"]
+                    g["phase"] = "reveal"
+            broadcast_room()
+            self._json(200, {"ok": True}); return
 
         if p.path == "/party/scoring":
             # host toggle: score mode on/off for this party. When turned off
@@ -3942,6 +3962,12 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 .ggScore{background:var(--panel2);border:1px solid var(--edge);border-radius:12px;padding:8px 16px;font-family:var(--mono);font-size:15px}
 .ggScore b{color:var(--amber2)}
 .ggBtnRow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:6px}
+.ggBuzzes{display:flex;flex-direction:column;gap:6px;margin-top:12px;width:min(92%,560px)}
+.ggBuzz{display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--edge);border-radius:10px;padding:8px 12px}
+.ggBuzzRank{font-family:var(--mono);color:var(--amber2);min-width:22px}
+.ggBuzzName{font-weight:700}
+.ggBuzzText{color:var(--muted);flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ggBuzzT{font-family:var(--mono);font-size:12px;color:var(--dim)}
 @media (max-width:760px){ .gsGame{padding:14px} .ggPulse{width:110px;height:110px;font-size:48px} }
 /* full-stage announcement / celebration overlay */
 .partyOverlay{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
@@ -4147,12 +4173,7 @@ function ggPlaySnippet(sec){
   ggAudio.src='/guess/clip?t='+Date.now();
   ggAudio.currentTime=0;
   ggAudio.play().catch(()=>{});
-  const t0=performance.now();
-  ggTimer=setInterval(()=>{
-    const el=(performance.now()-t0)/1000;
-    const bar=document.getElementById('ggBar'); if(bar) bar.style.width=Math.max(0,100-el/sec*100)+'%';
-    if(el>=sec){ ggStopAudio(); const bar2=document.getElementById('ggBar'); if(bar2) bar2.style.width='0%'; }
-  },80);
+  ggTimer=setTimeout(()=>{ ggStopAudio(); }, sec*1000);   // play only the first `sec` seconds
 }
 function renderGuess(){
   const g=state.guess, setup=document.getElementById('guessSetup'), game=document.getElementById('guessGame');
@@ -4168,6 +4189,15 @@ function renderGuess(){
     stage.innerHTML='<div class="ggPulse">🎧</div><div class="ggBig">Loading blind clips…</div><div class="ggSec">'+(g.ready||0)+' / '+g.rounds+' ready</div>';
     ggStopAudio(); return;
   }
+  if(g.phase==='ready'){
+    // songs are loaded — the host decides when to kick off
+    ggStopAudio();
+    stage.innerHTML='<div class="ggPulse">🎧</div><div class="ggBig">'+(g.ready||g.total)+' songs ready</div>'+
+      '<div class="ggSec" style="color:var(--muted)">Get everyone on their phones, then start</div>'+
+      '<button class="btn pink" id="ggBegin" style="font-size:20px;padding:14px 28px">▶ Start round 1</button>';
+    const bb=document.getElementById('ggBegin'); if(bb) bb.onclick=()=>fetch('/guess/begin',{method:'POST'});
+    return;
+  }
   if(g.phase==='error'){ stage.innerHTML='<div class="ggBig">😕 '+esc(g.error||'No songs found')+'</div>'; return; }
   if(g.phase==='done'){
     ggStopAudio();
@@ -4176,28 +4206,40 @@ function renderGuess(){
       '<button class="btn pink" onclick="fetch(\'/guess/stop\',{method:\'POST\'})">Done</button>';
     return;
   }
+  // buzz list (fastest first) — the host judges from this
+  const buzzHTML=(g.buzzes&&g.buzzes.length)
+    ? '<div class="ggBuzzes">'+g.buzzes.map((b,i)=>
+        '<div class="ggBuzz'+(g.phase==='reveal'?' clickable':'')+'" data-dev="'+esc(b.device)+'">'
+        +'<span class="ggBuzzRank">'+(i===0?'⚡':(i+1))+'</span>'
+        +'<span class="ggBuzzName">'+esc(b.name)+'</span>'
+        +'<span class="ggBuzzText">"'+esc(b.text)+'"</span>'
+        +'<span class="ggBuzzT">'+(b.t!=null?b.t.toFixed(1)+'s':'')+'</span>'
+        +(g.phase==='reveal'?'<button class="btn small pink ggAward" data-dev="'+esc(b.device)+'">✓ +'+b.points+'</button>':'')
+        +'</div>').join('')+'</div>'
+    : '<div class="ggSec" style="color:var(--dim)">no buzzes yet…</div>';
   if(g.phase==='reveal'){
     ggStopAudio();
-    stage.innerHTML='<div class="ggBig">'+(g.winner?'✅ '+esc(g.winner)+' got it!':'⏱ Time!')+'</div>'+
-      '<div class="ggSec">It was</div><div class="ggBig" style="color:var(--amber2)">'+esc(g.answer||'?')+'</div>'+
-      '<button class="btn pink" id="ggNext">Next song →</button>';
+    stage.innerHTML='<div class="ggSec">The song was</div>'+
+      '<div class="ggBig" style="color:var(--amber2)">'+esc(g.answer||'?')+'</div>'+
+      '<div class="ggSec" style="color:var(--muted);font-size:14px">tap the winner to award points, or Next</div>'+
+      buzzHTML+
+      '<div class="ggBtnRow"><button class="btn" id="ggNext">Nobody / Next song →</button></div>';
+    stage.querySelectorAll('.ggAward').forEach(btn=>btn.onclick=()=>
+      fetch('/guess/award',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device:btn.dataset.dev})}));
     const nb=document.getElementById('ggNext'); if(nb) nb.onclick=()=>fetch('/guess/next',{method:'POST'});
-    // host taps Next; a long fallback keeps an unattended party moving
-    if(ggPlayedRound===g.round){ ggPlayedRound=-1; setTimeout(()=>{ if(state.guess&&state.guess.phase==='reveal') fetch('/guess/next',{method:'POST'}); }, 15000); }
     return;
   }
-  // phase playing — host drives it: replay, hear +2s, or skip to the answer
+  // phase playing — host drives it: play, hear +2s, or reveal to judge
   const canExtend = !g.max_snippet;
   stage.innerHTML='<div class="ggPulse">🔊</div><div class="ggBig">Name that song!</div>'+
     '<div class="ggSec">'+g.snippet_sec+'s snippet · '+g.points+' pts if guessed now</div>'+
-    '<div class="ggBarWrap"><div class="ggBar" id="ggBar"></div></div>'+
     '<div class="ggBtnRow">'+
-      '<button class="btn" id="ggReplay">🔁 Replay '+g.snippet_sec+'s</button>'+
+      '<button class="btn" id="ggPlay">▶ Play '+g.snippet_sec+'s</button>'+
       (canExtend?'<button class="btn pink" id="ggExtend">➕ Hear +2s ('+g.points_next+' pts)</button>':'')+
-      '<button class="btn ghost" id="ggSkip">⏭ Skip · reveal</button>'+
+      '<button class="btn ghost" id="ggSkip">⏭ Reveal &amp; judge</button>'+
     '</div>'+
-    '<div class="ggSec" style="color:var(--muted);font-size:14px">players type their guess on their phones</div>';
-  const rb=document.getElementById('ggReplay'); if(rb) rb.onclick=()=>ggPlaySnippet(g.snippet_sec);
+    buzzHTML;
+  const rb=document.getElementById('ggPlay'); if(rb) rb.onclick=()=>ggPlaySnippet(g.snippet_sec);
   const eb=document.getElementById('ggExtend'); if(eb) eb.onclick=()=>fetch('/guess/extend',{method:'POST'});
   const sb=document.getElementById('ggSkip'); if(sb) sb.onclick=()=>fetch('/guess/reveal',{method:'POST'});
   // auto-play the snippet ONCE when the round or the snippet length changes
@@ -5376,11 +5418,18 @@ function renderGuestGuess(){
   board.innerHTML=scores.map(([n,p],i)=>`<span>${i===0?'👑':''}${esc(n)} ${p}</span>`).join('');
   const play=document.getElementById('gggPlay'), rev=document.getElementById('gggReveal');
   const rnd=document.getElementById('gggRound');
-  if(g.phase==='playing'){
+  if(g.phase==='ready'){
+    play.classList.add('hidden'); rev.classList.remove('hidden');
+    rev.innerHTML='🎧 Get ready!<b>Waiting for the host to start…</b>';
+    rnd.textContent=(g.ready||g.total)+' songs loaded';
+  } else if(g.phase==='playing'){
     play.classList.remove('hidden'); rev.classList.add('hidden');
     rnd.textContent='Round '+((g.round||0)+1)+' · '+g.snippet_sec+'s · '+g.points+' pts if you nail it now';
+    // did the host already award someone this round? show it on my phone
+    const mine=(g.buzzes||[]).find(b=>b.device===DEVICE_ID);
     if(gggRoundSeen!==g.round){ gggRoundSeen=g.round; document.getElementById('gggInput').value='';
       document.getElementById('gggMsg').textContent=''; document.getElementById('gggMsg').className='gggMsg'; }
+    if(mine){ document.getElementById('gggMsg').textContent='✅ Buzzed: "'+mine.text+'" — you can update it'; document.getElementById('gggMsg').className='gggMsg ok'; }
   } else if(g.phase==='reveal'){
     play.classList.add('hidden'); rev.classList.remove('hidden');
     rev.innerHTML=(g.winner?('✅ '+esc(g.winner)+' got it'):'⏱ Nobody got it')+'<b>'+esc(g.answer||'?')+'</b>';
@@ -5398,9 +5447,9 @@ async function sendGuess(){
     const r=await fetch('/guess/answer',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name:myName||'Someone', device_id:DEVICE_ID, text})});
     const d=await r.json();
-    if(d.correct){ msg.textContent='✅ +'+d.points+'!'; msg.className='gggMsg ok'; if(navigator.vibrate)navigator.vibrate(80); }
-    else if(d.state==='closed'){ msg.textContent='Round over'; msg.className='gggMsg'; }
-    else { msg.textContent='❌ not it — keep trying'; msg.className='gggMsg no'; inp.select(); }
+    if(d.recorded){ msg.textContent='✅ Buzzed! The host judges the answers.'; msg.className='gggMsg ok'; if(navigator.vibrate)navigator.vibrate(60); }
+    else if(d.state==='closed'){ msg.textContent='Round not open yet'; msg.className='gggMsg'; }
+    else { msg.textContent='Try again'; msg.className='gggMsg no'; }
   }catch(e){ msg.textContent='Connection issue'; }
 }
 document.getElementById('gggSend').addEventListener('click', sendGuess);
