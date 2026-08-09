@@ -4040,7 +4040,9 @@ try{ const t=localStorage.getItem('kstudio.theme'); if(t) document.documentEleme
 .ggBuzzName{font-weight:700}
 .ggBuzzText{color:var(--muted);flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ggBuzzT{font-family:var(--mono);font-size:12px;color:var(--dim)}
-.ggVideo{width:min(90%,520px);aspect-ratio:16/9;border-radius:12px;margin:6px auto;display:block;border:1px solid var(--edge)}
+.ggThumbLink{position:relative;display:block;width:min(80%,420px);margin:8px auto;border-radius:12px;overflow:hidden;border:1px solid var(--edge)}
+.ggThumb{width:100%;display:block}
+.ggThumbPlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:52px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.7);background:rgba(0,0,0,.15)}
 .ggWatch{display:inline-block;margin:4px auto;text-decoration:none}
 @media (max-width:760px){ .gsGame{padding:14px} .ggPulse{width:110px;height:110px;font-size:48px} }
 /* full-stage announcement / celebration overlay */
@@ -4299,11 +4301,17 @@ function renderGuess(){
     // disable embedding (YouTube error 150/153), so always offer a link
     // that opens the real video at the exact clip timestamp — that never
     // fails. If the iframe errors, the link is right there.
+    // No inline iframe — most music-label videos disable embedding (YT
+    // error 153), and that error renders INSIDE the iframe so it can't be
+    // hidden. A thumbnail (always loads) that opens the real video at the
+    // exact clip second is reliable and clean.
+    const watchUrl='https://www.youtube.com/watch?v='+vid+'&t='+st+'s';
     const embed = vid
-      ? '<iframe class="ggVideo" src="https://www.youtube.com/embed/'+vid+'?start='+st+'&rel=0&origin='+encodeURIComponent(location.origin)+'" '
-        +'frameborder="0" allow="autoplay; encrypted-media" allowfullscreen title="the song"></iframe>'
-        +'<a class="btn pink ggWatch" target="_blank" rel="noopener" '
-        +'href="https://www.youtube.com/watch?v='+vid+'&t='+st+'s">▶ Watch on YouTube — from '+mmss+' (the clip spot)</a>'
+      ? '<a class="ggThumbLink" target="_blank" rel="noopener" href="'+watchUrl+'">'
+        +'<img class="ggThumb" src="https://i.ytimg.com/vi/'+vid+'/hqdefault.jpg" alt="" '
+        +'onerror="this.src=\'https://i.ytimg.com/vi/'+vid+'/mqdefault.jpg\'">'
+        +'<span class="ggThumbPlay">▶</span></a>'
+        +'<a class="btn pink ggWatch" target="_blank" rel="noopener" href="'+watchUrl+'">▶ Watch on YouTube — from '+mmss+'</a>'
       : '';
     stage.innerHTML='<div class="ggSec">The song was</div>'+
       '<div class="ggBig" style="color:var(--amber2)">'+esc(g.answer||'?')+'</div>'+
