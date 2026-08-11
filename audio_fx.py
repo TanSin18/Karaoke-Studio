@@ -883,16 +883,34 @@ def stitch_multi(segments, out_wav, crossfade_ms=40):
     slicing the same [start,end) out of each take's file lines them up with
     no per-segment offset math needed. Adjacent segments are joined with a
     short equal-power crossfade applied at every boundary.
+
+    A segment with no "path" (or path=None) is rendered as literal silence
+    for its [start, end) duration instead of being read from a file — used
+    to silence a region of the lead vocal without a replacement take. Unlike
+    take-sourced segments, a silence segment's "end" is required (there's no
+    "to this take's own end" concept for silence).
     """
     if not segments:
         raise ValueError("no segments to comp")
 
+    # Establish the working sample rate from the first real (non-silent)
+    # segment — sf.info() is a cheap header read, no full decode needed.
     sr = None
+    for seg in segments:
+        if seg.get("path"):
+            sr = sf.info(seg["path"]).samplerate
+            break
+    if sr is None:
+        raise ValueError("stitch_multi needs at least one non-silent segment to establish a sample rate")
+
     parts = []
     for seg in segments:
+        if not seg.get("path"):
+            start_samp = max(0, int(round(float(seg["start"]) * sr)))
+            end_samp = max(start_samp, int(round(float(seg["end"]) * sr)))
+            parts.append(np.zeros(end_samp - start_samp, dtype=np.float32))
+            continue
         y, this_sr = librosa.load(seg["path"], sr=sr, mono=True)
-        if sr is None:
-            sr = this_sr
         start = max(0, int(float(seg["start"]) * sr))
         end = len(y) if seg.get("end") is None else int(float(seg["end"]) * sr)
         end = min(max(end, start), len(y))
