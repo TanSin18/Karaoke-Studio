@@ -4984,6 +4984,8 @@ const TE = {
   trimStart: 0, trimEnd: null,
   compareMode: false,
   segments: [],   // [{takeId, start, end}] — non-destructive multi-region comp
+  baseTakeId: null,   // the take considered "the default" for any stretch
+                       // the user hasn't explicitly edited this session
   markers: [],    // [{time, label}]
   karaokeMute: false, karaokeSolo: false, vocalMute: false, vocalSolo: false,
   // Keyed by harmony take id, not a single scalar — there can be any number
@@ -5473,20 +5475,27 @@ function teSetZoom(px){
 }
 $('teZoomIn').addEventListener('click',()=>teSetZoom(TE.pxPerSec*1.5));
 $('teZoomOut').addEventListener('click',()=>teSetZoom(TE.pxPerSec/1.5));
-$('teCompareMode').addEventListener('change', async()=>{
-  TE.compareMode=$('teCompareMode').checked;
-  $('teCompBuildRow').classList.toggle('hidden', !TE.compareMode);
+// Single entry point for turning Compare mode on/off — used by the
+// checkbox below AND by "Edit this comp's regions" (see teEditCompBtn),
+// so both paths get the same baseTakeId/FX-preview/build-row side effects.
+async function teSetCompareMode(on){
+  TE.compareMode=on;
+  $('teCompareMode').checked=on;
+  if(on && !TE.baseTakeId) TE.baseTakeId=activeTakeId;
+  if(!on) TE.baseTakeId=null;
+  $('teCompBuildRow').classList.toggle('hidden', !on);
   // FX Preview and Compare mode both want to claim "the vocal lane" — the
   // former for one specific take, the latter for every take at once — so
   // they're mutually exclusive rather than trying to define what "preview"
   // means across N simultaneous lanes.
-  if(TE.compareMode && TE.fxPreviewOn){
+  if(on && TE.fxPreviewOn){
     TE.fxPreviewOn=false; $('teFxPreviewToggle').checked=false;
     if(TE.playing){ teStopPlayback(); tePlay(); }
   }
-  $('teFxPreviewWrap').classList.toggle('hidden', TE.compareMode);
+  $('teFxPreviewWrap').classList.toggle('hidden', on);
   await refreshTrackEditor();
-});
+}
+$('teCompareMode').addEventListener('change', ()=>teSetCompareMode($('teCompareMode').checked));
 $('teMarkerBtn').addEventListener('click',()=>{
   TE.markers.push({time:TE.playhead, label:fmt(TE.playhead)});
   TE.markers.sort((a,b)=>a.time-b.time);
@@ -5824,12 +5833,34 @@ function teAssignSegment(takeId, start, end){
 $('teClearSegments').addEventListener('click',()=>{
   TE.segments=[]; tePushHistory(); teDrawSegmentOverlays(); teUpdateSegmentsSummary();
 });
+// Anything the user hasn't explicitly dragged a region onto defaults to
+// TE.baseTakeId (the take that was active when Compare mode was turned on)
+// — so fixing one region never requires manually covering the rest of the
+// song too.
+function teSegmentsWithGapsFilled(){
+  const sorted=[...TE.segments].sort((a,b)=>a.start-b.start);
+  const filled=[]; let cursor=0;
+  sorted.forEach(seg=>{
+    if(seg.start>cursor+0.01 && TE.baseTakeId){
+      filled.push({takeId:TE.baseTakeId, start:cursor, end:seg.start});
+    }
+    filled.push(seg);
+    cursor=Math.max(cursor, seg.end);
+  });
+  if(cursor<TE.duration-0.01 && TE.baseTakeId){
+    filled.push({takeId:TE.baseTakeId, start:cursor, end:TE.duration});
+  }
+  return filled;
+}
 $('teBuildCompBtn').addEventListener('click', async()=>{
   if(!TE.segments.length){ toast('Drag at least one region on a lane first.','warn'); return; }
   $('teBuildCompBtn').disabled=true;
   try{
+    const full=teSegmentsWithGapsFilled();
     const r=await fetch('/comp_multi',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:SID, segments:TE.segments.map(s=>({take_id:s.takeId,start:s.start,end:s.end}))})});
+      body:JSON.stringify({id:SID, segments:full.map(s=>
+        s.silence ? {silence:true, start:s.start, end:s.end}
+                   : {take_id:s.takeId, start:s.start, end:s.end})})});
     const d=await r.json();
     if(!r.ok){ toast(d.error||'Could not build that comp.','error'); return; }
     takes.push(d.take); activeTakeId=d.take.id;
