@@ -27,3 +27,4 @@ scratch/
 dist/
 owner_key.txt
 sessions/_guess/
+.superpowers/
