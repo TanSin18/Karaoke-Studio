@@ -3593,12 +3593,25 @@ document.addEventListener('fullscreenchange',()=>{
 let micSource=null, monitorGain=null, micAnalyser=null;
 let musicMonitorVol=1.0;   // 0..1 applied to backingAudio.volume while singing
 
-// ---- studio monitor: hear yourself through reverb/compression/EQ WHILE
-// singing, like a real vocal booth's cue mix — the engineer hears a
-// processed monitor feed, but the DAW records the dry signal. Recording
-// here always comes from `mediaStream` (see startRec()'s MediaRecorder),
-// never from this WebAudio graph, so nothing added here can ever leak into
-// the actual take no matter what's routed through it.
+// ---- studio monitor: hear yourself through compression/EQ WHILE singing,
+// like a real vocal booth's cue mix — the engineer hears a processed
+// monitor feed, but the DAW records the dry signal. Recording here always
+// comes from `mediaStream` (see startRec()'s MediaRecorder), never from
+// this WebAudio graph, so nothing added here can ever leak into the actual
+// take no matter what's routed through it.
+//
+// Deliberately NO reverb on this live path (see applyLiveFxToGraph's
+// isTakeGraph check) even though the export/render and the Track Editor's
+// "Preview FX" both include it — a singer reported the live monitor
+// sounding "swishy/smeared", which traces to hearing the pro chain's own
+// reverb tail (1.8-2.2s decay) on top of their voice while actively
+// singing. That's exactly what a produced reverb tail is FOR on playback,
+// but it's the opposite of what a performer needs from their own cue mix:
+// a clear, immediate signal to track pitch/timing against. Muddying that
+// with a wash of reverb doesn't just sound off, it's actively harder to
+// sing accurately against. The rendered take and take-preview auditioning
+// both still get the full chain, reverb included — this only strips it
+// from the one path that's live while you're performing.
 let studioMonitorOn=true;
 try{ studioMonitorOn = localStorage.getItem('kstudio.studioMonitor')!=='0'; }catch(e){}
 if($('studioMonitorToggle')) $('studioMonitorToggle').checked=studioMonitorOn;
@@ -6827,7 +6840,11 @@ function applyLiveFxToGraph(g, isTakeGraph, ctx){
       g._verbDecay=targetDecay;
     }
   }
-  const wetGain = on ? Math.pow(10, pv.verb_send_db/20) : 0;
+  // Reverb only on the take-preview graph (auditioning a recorded take) —
+  // never on the live monitor (isTakeGraph===false), where its long tail
+  // smears the direct signal you need to sing accurately against. See the
+  // "studio monitor" comment above primeMic() for the full rationale.
+  const wetGain = (on && isTakeGraph) ? Math.pow(10, pv.verb_send_db/20) : 0;
   if(g.wet) g.wet.gain.value=wetGain;
   if(g.dry) g.dry.gain.value=1;
   // the take-preview graph's own output should match the export vocal-gain
