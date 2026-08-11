@@ -8,7 +8,9 @@ Chain (all offline, best quality):
 Uses ffmpeg for the DSP filter chain and librosa for musical pitch correction.
 """
 
+import json
 import os
+import re
 import subprocess
 import tempfile
 
@@ -631,6 +633,41 @@ def process_vocal(in_wav, out_wav, fx, tmpdir, progress=None):
 
 # ---- Mixdown ----------------------------------------------------------------
 
+def _measure_loudnorm(inputs, filter_complex, map_label,
+                       target_i=-14, target_tp=-1.5, target_lra=11):
+    """
+    First pass of a proper two-pass loudnorm: run the SAME filter graph the
+    real mix will use, tap the pre-loudnorm bus (`map_label`), and measure it
+    with loudnorm's own analyzer (print_format=json, output discarded).
+
+    Single-pass loudnorm (no measured_* stats) runs in ffmpeg's "dynamic"
+    mode — it rides gain in real time to hit the target, which is audible as
+    pumping/breathing on already-compressed material. Feeding the real
+    measured stats back in with linear=true collapses that to one static
+    gain (the way mastering engineers actually use this filter). Returns the
+    parsed stats dict, or None if the measurement pass failed to parse
+    (caller should fall back to single-pass rather than skip loudness).
+    """
+    analyze_fc = filter_complex + (
+        f";[{map_label}]loudnorm=I={target_i}:TP={target_tp}:LRA={target_lra}:"
+        f"print_format=json[loudanalyze]"
+    )
+    cmd = [
+        "ffmpeg", "-y", *inputs,
+        "-filter_complex", analyze_fc,
+        "-map", "[loudanalyze]",
+        "-f", "null", "-",
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    m = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", r.stderr, re.S)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except ValueError:
+        return None
+
+
 def mixdown(vocal_path, music_path, out_path,
             vocal_gain_db=0.0, music_gain_db=0.0,
             harmonies=None,
@@ -696,12 +733,16 @@ def mixdown(vocal_path, music_path, out_path,
     if abs(m_high) > 0.01:
         m_filter += f",treble=f=6000:g={m_high:.2f}"
 
-    # Glue bus compressor + loudness normalise for a cohesive, "produced" master.
+    # Glue bus compressor: a gentle always-on 2:1 for a cohesive, "produced"
+    # master. Loudness normalisation is a separate, two-pass step below (see
+    # _measure_loudnorm) so it doesn't add its own dynamic gain-riding on
+    # top of this.
     glue = "acompressor=threshold=0.1:ratio=2:knee=6:attack=15:release=250:makeup=1"
-    post = (glue + ",loudnorm=I=-14:TP=-1.5:LRA=11") if loudnorm else glue
 
-    # Optional trim, applied last (after mixing/mastering) so it's sample-
-    # accurate against the final mix rather than each input separately.
+    # Optional trim, applied right after the glue stage (before loudness
+    # measurement/normalisation) so both the loudness target and the export
+    # only ever see the audio that actually ships — measuring material that
+    # gets cut off anyway would skew the loudness target for what's left.
     # asetpts resets the timestamp base to 0 after cutting the front off —
     # without it the trimmed file would still carry the original start
     # offset and downstream tools (players, the video mux step) would see
@@ -734,11 +775,28 @@ def mixdown(vocal_path, music_path, out_path,
         mix_labels.append(f"[{label}]")
     mix_labels.append("[m]")
     n_inputs = len(mix_labels)
-    filter_complex = (
+    premaster_fc = (
         ";".join(parts) + ";" +
         "".join(mix_labels) + f"amix=inputs={n_inputs}:duration=longest:normalize=0[mix];"
-        f"[mix]{post}{trim}[out]"
+        f"[mix]{glue}{trim}[premaster]"
     )
+
+    out_label = "premaster"
+    filter_complex = premaster_fc
+    if loudnorm:
+        stats = _measure_loudnorm(inputs, premaster_fc, "premaster")
+        if stats:
+            filter_complex = (
+                f"{premaster_fc};[premaster]loudnorm=I=-14:TP=-1.5:LRA=11:"
+                f"measured_I={stats['input_i']}:measured_TP={stats['input_tp']}:"
+                f"measured_LRA={stats['input_lra']}:measured_thresh={stats['input_thresh']}:"
+                f"linear=true[out]"
+            )
+        else:
+            # measurement pass failed to parse — fall back to single-pass
+            # dynamic loudnorm rather than skip loudness targeting entirely
+            filter_complex = f"{premaster_fc};[premaster]loudnorm=I=-14:TP=-1.5:LRA=11[out]"
+        out_label = "out"
 
     codec = {
         "wav":  ["-c:a", "pcm_s24le"],
@@ -746,16 +804,26 @@ def mixdown(vocal_path, music_path, out_path,
         "mp3":  ["-c:a", "libmp3lame", "-q:a", "0"],
     }.get(out_format, ["-c:a", "pcm_s24le"])
 
+    need_master = bool(master_wav_path and out_format != "wav")
+    if need_master:
+        # ffmpeg refuses to -map the same filtergraph output pad to two
+        # different output files ("already used elsewhere") — split it into
+        # two identical pads first, one per destination file.
+        filter_complex += f";[{out_label}]asplit=2[fout][mout]"
+        main_label, master_label = "fout", "mout"
+    else:
+        main_label = out_label
+
     cmd = [
         "ffmpeg", "-y",
         *inputs,
         "-filter_complex", filter_complex,
-        "-map", "[out]",
+        "-map", f"[{main_label}]",
         "-ar", "48000", "-ac", "2",
     ] + codec + [out_path]
 
-    if master_wav_path and out_format != "wav":
-        cmd += ["-map", "[out]", "-ar", "48000", "-ac", "2",
+    if need_master:
+        cmd += ["-map", f"[{master_label}]", "-ar", "48000", "-ac", "2",
                 "-c:a", "pcm_s24le", master_wav_path]
 
     r = subprocess.run(cmd, capture_output=True, text=True)
