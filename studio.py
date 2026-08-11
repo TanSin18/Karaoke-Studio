@@ -923,7 +923,14 @@ def _add_take(jid, file, duration, kind="lead", fx_snapshot=None,
         "fx_snapshot": fx_snapshot, "punch_sec": punch_sec,
         "source_take_ids": source_take_ids, "deleted": False,
         "pitch_score": pitch_score,
+        # the capture-latency compensation (ms) that was baked into this
+        # take's WAV at save time — pure diagnostics, so "vocal lags" reports
+        # can be checked against what the client actually corrected for
         "latency_ms": latency_ms,
+        # non-destructive vocal-vs-karaoke timing nudge, editable any time
+        # from the Track Editor (unlike vocalDelayMs, which is a one-shot
+        # capture-time correction baked into the WAV before this take ever
+        # existed) — 0 = no nudge, +N = vocal plays N ms later, -N = earlier.
         "align_ms": 0,
         # the exact ordered region recipe that built this take (comp takes
         # only) — [{"take_id"|"silence": ..., "start", "end"}, ...] — lets
