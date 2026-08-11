@@ -485,6 +485,7 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
   .te-canvas{display:block;width:100%;height:64px}
   .te-region{position:absolute;top:0;bottom:0;background:rgba(255,180,84,.22);
     border-left:1px solid var(--amber2);border-right:1px solid var(--amber2);pointer-events:none}
+  .te-region.silence{background:repeating-linear-gradient(45deg,rgba(120,120,120,.35) 0 4px,rgba(80,80,80,.35) 4px 8px)}
   .te-markerrow{position:relative;height:16px}
   .te-marker{position:absolute;top:0;width:0;height:0;border-left:5px solid transparent;
     border-right:5px solid transparent;border-top:8px solid var(--pink2);cursor:pointer;transform:translateX(-5px)}
@@ -1445,6 +1446,18 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
             <span id="teSegmentsSummary" class="klabel">Drag on a lane below to assign that take to a region</span>
             <button class="btn small" id="teClearSegments">Clear regions</button>
             <button class="btn" id="teBuildCompBtn">↳ Build comp from regions</button>
+          </div>
+          <div class="railCard hidden" id="teRegionPanel" style="margin-top:10px">
+            <h3>Selected region</h3>
+            <div class="klabel" id="teRegionBounds">0:00 – 0:00</div>
+            <div class="klabel" id="teRegionFiller" style="margin-bottom:8px">currently: —</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+              <button class="btn small" id="teRegionRerecordBtn">🎤 Re-record</button>
+              <button class="btn small" id="teRegionSilenceBtn">🔇 Silence</button>
+              <button class="btn small ghost" id="teRegionCloseBtn">✕ Close</button>
+            </div>
+            <div class="klabel">or assign an existing take</div>
+            <select id="teRegionTakeSelect" class="wide"></select>
           </div>
           <!-- re-record/sing-along used to live in a separate "rich player"
                block above this whole editor, punching in from ITS OWN
@@ -4986,6 +4999,7 @@ const TE = {
   segments: [],   // [{takeId, start, end}] — non-destructive multi-region comp
   baseTakeId: null,   // the take considered "the default" for any stretch
                        // the user hasn't explicitly edited this session
+  selectedRegion: null,   // {start, end}|null — region panel's current target
   markers: [],    // [{time, label}]
   karaokeMute: false, karaokeSolo: false, vocalMute: false, vocalSolo: false,
   // Keyed by harmony take id, not a single scalar — there can be any number
@@ -5228,8 +5242,17 @@ function teRedrawOverlays(){
 }
 function teDrawSegmentOverlays(){
   $('teVocalLanes').querySelectorAll('.te-region').forEach(el=>el.remove());
+  $('teLaneKaraoke').querySelectorAll('.te-region').forEach(el=>el.remove());
   if(!TE.compareMode) return;
   TE.segments.forEach(seg=>{
+    if(seg.silence){
+      const r=document.createElement('div');
+      r.className='te-region silence';
+      r.style.left=teTimeToPx(seg.start)+'px';
+      r.style.width=Math.max(2, teTimeToPx(seg.end)-teTimeToPx(seg.start))+'px';
+      $('teLaneKaraoke').appendChild(r);
+      return;
+    }
     const lane=$('teVocalLanes').querySelector('.te-lane[data-take-id="'+seg.takeId+'"]');
     if(!lane) return;
     const r=document.createElement('div');
@@ -5268,7 +5291,7 @@ function teSyncTrimInputs(){
 function teUpdateSegmentsSummary(){
   if(!$('teSegmentsSummary')) return;
   $('teSegmentsSummary').textContent = TE.segments.length
-    ? TE.segments.map(s=>fmt(s.start)+'–'+fmt(s.end)+' → '+s.takeId.slice(0,6)).join('  ·  ')
+    ? TE.segments.map(s=>fmt(s.start)+'–'+fmt(s.end)+' → '+(s.silence?'silence':s.takeId.slice(0,6))).join('  ·  ')
     : 'Drag on a lane below to assign that take to a region';
 }
 
@@ -5790,12 +5813,32 @@ function wireTeLaneEvents(){
         lane.removeEventListener('pointerup', up);
         preview.remove();
         const a=Math.min(startT,curT), b=Math.max(startT,curT);
-        if(b-a>0.05) teAssignSegment(takeId, a, b);
+        if(b-a>0.05){ teAssignSegment(takeId, a, b); teOpenRegionPanel(a, b); }
       };
       lane.addEventListener('pointermove', move);
       lane.addEventListener('pointerup', up);
     });
   });
+}
+// Shared overlap-clip-and-insert logic for anything that can fill a region:
+// an existing take (entry.takeId) or silence (entry.silence===true).
+function teAssignRegionEntry(entry){
+  const {start, end}=entry;
+  // Clip any existing segment's overlap with the new region before adding
+  // it, so segments stay non-overlapping in time — last drag wins for any
+  // range it covers.
+  const clipped=[];
+  TE.segments.forEach(seg=>{
+    if(seg.end<=start || seg.start>=end){ clipped.push(seg); return; }
+    if(seg.start<start) clipped.push({...seg, end:start});
+    if(seg.end>end) clipped.push({...seg, start:end});
+  });
+  clipped.push(entry);
+  clipped.sort((a,b)=>a.start-b.start);
+  TE.segments=clipped;
+  tePushHistory();
+  teDrawSegmentOverlays();
+  teUpdateSegmentsSummary();
 }
 function teAssignSegment(takeId, start, end){
   // A take is usually shorter than the song, and the server will happily
@@ -5814,22 +5857,45 @@ function teAssignSegment(takeId, start, end){
     end=Math.min(end, known);
     if(end-start<=0.05){ toast('That take has no audio there — it ends at '+fmt(known)+'.','warn',3500); return; }
   }
-  // Clip any existing segment's overlap with the new region before adding
-  // it, so segments stay non-overlapping in time — last drag wins for any
-  // range it covers.
-  const clipped=[];
-  TE.segments.forEach(seg=>{
-    if(seg.end<=start || seg.start>=end){ clipped.push(seg); return; }
-    if(seg.start<start) clipped.push({takeId:seg.takeId, start:seg.start, end:start});
-    if(seg.end>end) clipped.push({takeId:seg.takeId, start:end, end:seg.end});
-  });
-  clipped.push({takeId, start, end});
-  clipped.sort((a,b)=>a.start-b.start);
-  TE.segments=clipped;
-  tePushHistory();
-  teDrawSegmentOverlays();
-  teUpdateSegmentsSummary();
+  teAssignRegionEntry({takeId, start, end});
 }
+function teAssignSilence(start, end){
+  teAssignRegionEntry({silence:true, start, end});
+}
+function teCurrentFillerLabel(){
+  const mid=(TE.selectedRegion.start+TE.selectedRegion.end)/2;
+  const seg=TE.segments.find(s=>s.start<=mid && s.end>mid);
+  if(seg && seg.silence) return 'silence';
+  const tid = seg ? seg.takeId : TE.baseTakeId;
+  if(!tid) return '—';
+  const take=takes.find(x=>x.id===tid);
+  return take ? (TAKE_KIND_LABEL[take.kind]||take.kind||'take')+' ('+tid.slice(0,6)+')' : tid.slice(0,6);
+}
+function teOpenRegionPanel(start, end){
+  TE.selectedRegion={start, end};
+  $('teRegionBounds').textContent=fmt(start)+' – '+fmt(end);
+  $('teRegionFiller').textContent='currently: '+teCurrentFillerLabel();
+  const sel=$('teRegionTakeSelect');
+  sel.innerHTML='<option value="">— pick a take —</option>'+
+    takes.filter(t=>t.kind!=='harmony').map(t=>
+      '<option value="'+t.id+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind)+' ('+t.id.slice(0,6)+')</option>').join('');
+  $('teRegionPanel').classList.remove('hidden');
+}
+function teCloseRegionPanel(){
+  TE.selectedRegion=null;
+  $('teRegionPanel').classList.add('hidden');
+}
+$('teRegionCloseBtn').addEventListener('click', teCloseRegionPanel);
+$('teRegionSilenceBtn').addEventListener('click', ()=>{
+  if(!TE.selectedRegion) return;
+  teAssignSilence(TE.selectedRegion.start, TE.selectedRegion.end);
+  $('teRegionFiller').textContent='currently: '+teCurrentFillerLabel();
+});
+$('teRegionTakeSelect').addEventListener('change', e=>{
+  if(!TE.selectedRegion || !e.target.value) return;
+  teAssignSegment(e.target.value, TE.selectedRegion.start, TE.selectedRegion.end);
+  $('teRegionFiller').textContent='currently: '+teCurrentFillerLabel();
+});
 $('teClearSegments').addEventListener('click',()=>{
   TE.segments=[]; tePushHistory(); teDrawSegmentOverlays(); teUpdateSegmentsSummary();
 });
