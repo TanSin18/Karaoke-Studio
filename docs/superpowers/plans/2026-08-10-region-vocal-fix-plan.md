@@ -451,7 +451,7 @@ EOF
 
 **Interfaces:**
 - Consumes: nothing new from earlier tasks (pure frontend state).
-- Produces: `TE.baseTakeId` (string|null) — the take considered "unedited default" for the current editing session. `teSegmentsWithGapsFilled()` — returns `TE.segments` plus synthetic entries covering any stretch of `[0, TE.duration]` not explicitly assigned, using `TE.baseTakeId`. Task 4 and Task 5 both add entries to `TE.segments` that this function must handle unchanged.
+- Produces: `TE.baseTakeId` (string|null) — the take considered "unedited default" for the current editing session. `teSegmentsWithGapsFilled()` — returns `TE.segments` plus synthetic entries covering any stretch of `[0, TE.duration]` not explicitly assigned, using `TE.baseTakeId`. `async teSetCompareMode(on)` — the single entry point for turning Compare mode on/off (sets `TE.compareMode`, the checkbox, `baseTakeId`, FX-preview mutual exclusion, and calls `refreshTrackEditor`); Task 5 and Task 6 both call this directly instead of re-implementing any of it. Task 4 and Task 5 both add entries to `TE.segments` that `teSegmentsWithGapsFilled` must handle unchanged.
 
 - [ ] **Step 1: Add `baseTakeId` to the `TE` object**
 
@@ -464,7 +464,7 @@ In `index.html`, in the `TE` object literal (starts at line 4977), add a field n
   markers: [],    // [{time, label}]
 ```
 
-- [ ] **Step 2: Set `baseTakeId` when Compare mode is turned on**
+- [ ] **Step 2: Extract Compare-mode entry into a shared function, and set `baseTakeId` there**
 
 Find the `teCompareMode` change handler (`index.html:5476`):
 
@@ -472,19 +472,44 @@ Find the `teCompareMode` change handler (`index.html:5476`):
 $('teCompareMode').addEventListener('change', async()=>{
   TE.compareMode=$('teCompareMode').checked;
   $('teCompBuildRow').classList.toggle('hidden', !TE.compareMode);
+  // FX Preview and Compare mode both want to claim "the vocal lane" — the
+  // former for one specific take, the latter for every take at once — so
+  // they're mutually exclusive rather than trying to define what "preview"
+  // means across N simultaneous lanes.
+  if(TE.compareMode && TE.fxPreviewOn){
+    TE.fxPreviewOn=false; $('teFxPreviewToggle').checked=false;
+    if(TE.playing){ teStopPlayback(); tePlay(); }
+  }
+  $('teFxPreviewWrap').classList.toggle('hidden', TE.compareMode);
+  await refreshTrackEditor();
+});
 ```
 
-Change it to also set `baseTakeId` the moment Compare mode turns on (only if not already set by Task 6's "reopen a comp" flow, which sets it explicitly before flipping this checkbox):
+Replace the whole block with a named function plus a thin listener, so Task 6's "reopen a comp" flow can enter Compare mode the exact same way instead of re-implementing a subset of it:
 
 ```javascript
-$('teCompareMode').addEventListener('change', async()=>{
-  TE.compareMode=$('teCompareMode').checked;
-  if(TE.compareMode && !TE.baseTakeId) TE.baseTakeId=activeTakeId;
-  if(!TE.compareMode) TE.baseTakeId=null;
-  $('teCompBuildRow').classList.toggle('hidden', !TE.compareMode);
+// Single entry point for turning Compare mode on/off — used by the
+// checkbox below AND by "Edit this comp's regions" (see teEditCompBtn),
+// so both paths get the same baseTakeId/FX-preview/build-row side effects.
+async function teSetCompareMode(on){
+  TE.compareMode=on;
+  $('teCompareMode').checked=on;
+  if(on && !TE.baseTakeId) TE.baseTakeId=activeTakeId;
+  if(!on) TE.baseTakeId=null;
+  $('teCompBuildRow').classList.toggle('hidden', !on);
+  // FX Preview and Compare mode both want to claim "the vocal lane" — the
+  // former for one specific take, the latter for every take at once — so
+  // they're mutually exclusive rather than trying to define what "preview"
+  // means across N simultaneous lanes.
+  if(on && TE.fxPreviewOn){
+    TE.fxPreviewOn=false; $('teFxPreviewToggle').checked=false;
+    if(TE.playing){ teStopPlayback(); tePlay(); }
+  }
+  $('teFxPreviewWrap').classList.toggle('hidden', on);
+  await refreshTrackEditor();
+}
+$('teCompareMode').addEventListener('change', ()=>teSetCompareMode($('teCompareMode').checked));
 ```
-
-(Leave the rest of the handler body unchanged.)
 
 - [ ] **Step 3: Add the gap-filling function**
 
@@ -994,17 +1019,14 @@ $('keepBtn').addEventListener('click', async()=>{
   if(region && activeTakeId){
     teAssignSegment(activeTakeId, region.start, region.end);
     window._recBoundedPunchRegion=null;
-    $('teCompareMode').checked=true;
-    TE.compareMode=true; TE.baseTakeId=TE.baseTakeId||activeTakeId;
-    $('teCompBuildRow').classList.remove('hidden');
-    await refreshTrackEditor();
+    await teSetCompareMode(true);
     teOpenRegionPanel(region.start, region.end);
     toast('Region re-recorded — build the comp when you\'re happy with it.','ok',4000);
   }
 });
 ```
 
-(`saveCurrentTakeToHistory` already sets `activeTakeId=d.take.id` before returning, per its existing implementation — so `activeTakeId` here is the just-created take, which is exactly what `teAssignSegment` needs.)
+(`saveCurrentTakeToHistory` already sets `activeTakeId=d.take.id` before returning, per its existing implementation — so `activeTakeId` here is the just-created take, which is exactly what `teAssignSegment` needs. `teSetCompareMode` — added in Task 3 Step 2 — only fills `TE.baseTakeId` when it's still `null`, so if Compare mode was already active with a different base take before this punch-in, that base take is preserved rather than being reset to the fix.)
 
 - [ ] **Step 7: Add a `punch` take-kind label**
 
@@ -1092,14 +1114,13 @@ Add near the other region-panel JS from Task 4 (anywhere after `teAssignRegionEn
 $('teEditCompBtn').addEventListener('click', async()=>{
   const t=takes.find(x=>x.id===activeTakeId);
   if(!t || !t.comp_segments) return;
-  TE.baseTakeId=t.id;
+  TE.baseTakeId=t.id;   // set BEFORE entering Compare mode — teSetCompareMode
+                         // only fills baseTakeId when it's still null, so this
+                         // takes precedence over that fallback
   TE.segments=t.comp_segments.map(s=>
     s.silence ? {silence:true, start:s.start, end:s.end}
               : {takeId:s.take_id, start:s.start, end:s.end});
-  $('teCompareMode').checked=true;
-  TE.compareMode=true;
-  $('teCompBuildRow').classList.remove('hidden');
-  await refreshTrackEditor();
+  await teSetCompareMode(true);
   teDrawSegmentOverlays();
   teUpdateSegmentsSummary();
   toast('Loaded this comp\'s regions — drag to change any of them, then rebuild.','ok',3500);
