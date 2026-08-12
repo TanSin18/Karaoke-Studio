@@ -6418,7 +6418,18 @@ let recStartCtxTime=0, musicPosAtRecStart=0;
 
 async function startRec(){
   stopAllPlayback();
-  if(!mediaStream){ await primeMic(); if(!mediaStream) return; }
+  if(!mediaStream){ await primeMic(); if(!mediaStream){
+    // The Re-record button arms boundedPunchActive/pendingPunchOutAt/
+    // boundedPunchRegion BEFORE calling startRec() — if mic priming fails
+    // here (permission denied, no mic, etc.), no recording ever starts, so
+    // nothing else would ever clear them. Left armed, the next unrelated
+    // recording would arm the auto-stop watcher against this stale
+    // pendingPunchOutAt (cutting it off early) and, on its stop, stash this
+    // stale region for the Keep handler to auto-assign against the wrong
+    // take — the same class of bug fixed in stopRec's stash gating.
+    boundedPunchActive=false; pendingPunchOutAt=null; boundedPunchRegion=null;
+    return;
+  } }
   if(audioCtx.state==='suspended') await audioCtx.resume();
 
   const punch = pendingContinueAt!=null && keptBuffer;
