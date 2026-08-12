@@ -6654,7 +6654,16 @@ function applyAlignmentAndFinish(ctx){
   // Then subtract mic input latency (vocalDelayMs) to pull the voice earlier.
   const positionOffset = meta.musicPosAtRecStart - meta.intendedStart;
   const latency = vocalDelayMs/1000;
-  const effOffset = positionOffset - latency;
+  // A bounded punch skips the stitch-onto-kept-buffer step below, so unlike
+  // the open-ended punch path, nothing else pushes this take's content out
+  // to absolute song position 0 — pad for that here instead of just the
+  // small positionOffset/latency drift correction every other take uses.
+  // (Algebraically: intendedStart + (positionOffset - latency), since
+  // positionOffset = musicPosAtRecStart - intendedStart, simplifies to
+  // musicPosAtRecStart - latency — same fine correction, plus the padding.)
+  const effOffset = meta.boundedPunch
+    ? (meta.musicPosAtRecStart - latency)
+    : (positionOffset - latency);
   let aligned=alignTake(ctx, raw, effOffset);
 
   let finalBuffer=aligned;
