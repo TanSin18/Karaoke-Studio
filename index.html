@@ -4798,6 +4798,10 @@ function renderScoreCard(score){
   })(t0);
 }
 $('continueBtn').addEventListener('click',()=>{
+  // This take is being extended, not Kept as the punch fix it may have
+  // been — clear the stash so a LATER unrelated Keep doesn't replay a
+  // stale bounded-punch auto-assign against the wrong take/region.
+  window._recBoundedPunchRegion=null; window._recWasBoundedPunch=false;
   pendingContinueAt=window._recEndMusicPos||0;   // next take begins where this ended
   $('stopChoice').style.display='none';
   startRec();
@@ -4815,6 +4819,10 @@ $('keepBtn').addEventListener('click', async()=>{
   }
 });
 $('redoBtn').addEventListener('click',()=>{
+  // This take is being discarded — clear the stash so a LATER unrelated
+  // Keep doesn't replay a stale bounded-punch auto-assign against the
+  // wrong take/region.
+  window._recBoundedPunchRegion=null; window._recWasBoundedPunch=false;
   keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
   pendingContinueAt=null; $('stopChoice').style.display='none';
   $('renderstatus').textContent='Cleared. Record again from the start.';
@@ -6532,8 +6540,14 @@ function stopRec(){ if(!recording)return;
   // finishRec (recorder.onstop) runs asynchronously after recorder.stop(),
   // by which point boundedPunchActive has already been reset below — stash
   // what THIS recording actually was before clearing the live flag.
+  // The region is gated on boundedPunchActive (not just copied unconditionally):
+  // `boundedPunchRegion` itself is never reset to null once a bounded punch-in
+  // has happened, so an unconditional copy here would re-stash the OLD region
+  // on every later, unrelated recording's stop (e.g. a "Continue"/"Redo" take
+  // recorded after a bounded punch-in) and silently corrupt the Keep handler's
+  // auto-assign — this makes the stash self-correcting on every single stop.
   window._recWasBoundedPunch = boundedPunchActive;
-  window._recBoundedPunchRegion = boundedPunchRegion;
+  window._recBoundedPunchRegion = boundedPunchActive ? boundedPunchRegion : null;
   boundedPunchActive=false; pendingPunchOutAt=null;
   recorder.stop(); backingAudio.pause();
   if(phoneVideoRecorder && phoneVideoRecorder.state!=='inactive') phoneVideoRecorder.stop();
