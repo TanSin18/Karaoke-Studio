@@ -1447,6 +1447,7 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
             <button class="btn small" id="teClearSegments">Clear regions</button>
             <button class="btn" id="teBuildCompBtn">↳ Build comp from regions</button>
           </div>
+          <button class="btn small ghost hidden" id="teEditCompBtn" style="margin-top:8px">✎ Edit this comp's regions</button>
           <div class="railCard hidden" id="teRegionPanel" style="margin-top:10px">
             <h3>Selected region</h3>
             <div class="klabel" id="teRegionBounds">0:00 – 0:00</div>
@@ -5126,6 +5127,7 @@ async function refreshTrackEditor(){
   $('teContent').classList.remove('hidden');
   const tid=teLeadTakeId(activeTakeId || teDefaultTakeId());
   activeTakeId=tid;   // keep the global in sync — teNudgeVocal/teFxRestoreBtn/etc. read it directly
+  teUpdateEditCompBtnVisibility();
   // Resolved here (not just in refreshHarmonyUI, which runs later) because
   // lane-building and buffer-prefetching below both need to already know
   // whether there's a harmony to show as a THIRD simultaneous track — not
@@ -5906,6 +5908,24 @@ function teOpenRegionPanel(start, end){
 function teCloseRegionPanel(){
   TE.selectedRegion=null;
   $('teRegionPanel').classList.add('hidden');
+}
+$('teEditCompBtn').addEventListener('click', async()=>{
+  const t=takes.find(x=>x.id===activeTakeId);
+  if(!t || !t.comp_segments) return;
+  TE.baseTakeId=t.id;   // set BEFORE entering Compare mode — teSetCompareMode
+                         // only fills baseTakeId when it's still null, so this
+                         // takes precedence over that fallback
+  TE.segments=t.comp_segments.map(s=>
+    s.silence ? {silence:true, start:s.start, end:s.end}
+              : {takeId:s.take_id, start:s.start, end:s.end});
+  await teSetCompareMode(true);
+  teDrawSegmentOverlays();
+  teUpdateSegmentsSummary();
+  toast('Loaded this comp\'s regions — drag to change any of them, then rebuild.','ok',3500);
+});
+function teUpdateEditCompBtnVisibility(){
+  const t=takes.find(x=>x.id===activeTakeId);
+  $('teEditCompBtn').classList.toggle('hidden', !(t && t.kind==='comp' && t.comp_segments && t.comp_segments.length));
 }
 $('teRegionCloseBtn').addEventListener('click', teCloseRegionPanel);
 $('teRegionSilenceBtn').addEventListener('click', ()=>{
