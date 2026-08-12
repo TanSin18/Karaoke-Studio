@@ -4725,6 +4725,9 @@ $('vocalDelay').addEventListener('input',()=>{
 
 // ---- record UI helper + after-stop choice ---------------------------------
 let pendingContinueAt=null;   // set when user picks "continue from here"
+let pendingPunchOutAt=null;   // set for a BOUNDED punch-in — auto-stops recording here
+let boundedPunchActive=false; // true while a bounded punch-in's auto-stop watcher is armed
+let boundedPunchRegion=null;  // {start,end} the bounded punch-in is fixing, for post-Keep auto-assign
 $('stopAll').addEventListener('click',()=>{
   if(recording) $('stop').click(); else $('stopmusic').click();
 });
@@ -4799,7 +4802,18 @@ $('continueBtn').addEventListener('click',()=>{
   $('stopChoice').style.display='none';
   startRec();
 });
-$('keepBtn').addEventListener('click',()=>{ $('stopChoice').style.display='none'; saveCurrentTakeToHistory(); });
+$('keepBtn').addEventListener('click', async()=>{
+  $('stopChoice').style.display='none';
+  const region=window._recBoundedPunchRegion;
+  await saveCurrentTakeToHistory(region ? 'punch' : undefined);
+  if(region && activeTakeId){
+    teAssignSegment(activeTakeId, region.start, region.end);
+    window._recBoundedPunchRegion=null;
+    await teSetCompareMode(true);
+    teOpenRegionPanel(region.start, region.end);
+    toast('Region re-recorded — build the comp when you\'re happy with it.','ok',4000);
+  }
+});
 $('redoBtn').addEventListener('click',()=>{
   keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
   pendingContinueAt=null; $('stopChoice').style.display='none';
@@ -4920,7 +4934,7 @@ $('undoDeleteBtn').addEventListener('click', async()=>{
   toast('Take restored.','ok',2000);
 });
 
-const TAKE_KIND_LABEL={lead:'take',comp:'comp',harmony:'harmony'};
+const TAKE_KIND_LABEL={lead:'take',comp:'comp',harmony:'harmony',punch:'fix'};
 // Render/video progress live on the take itself now (server-scoped by take
 // id — see /render, /combine_video), so each card shows its OWN status
 // instead of one global "is something rendering?" indicator that couldn't
@@ -5896,6 +5910,19 @@ $('teRegionTakeSelect').addEventListener('change', e=>{
   teAssignSegment(e.target.value, TE.selectedRegion.start, TE.selectedRegion.end);
   $('teRegionFiller').textContent='currently: '+teCurrentFillerLabel();
 });
+$('teRegionRerecordBtn').addEventListener('click', ()=>{
+  if(!TE.selectedRegion) return;
+  const {start, end}=TE.selectedRegion;
+  const preRoll=Math.min(2.5, start);   // seconds of lead-in before the region, clamped so it never goes negative
+  boundedPunchRegion={start, end};
+  pendingContinueAt=Math.max(0, start-preRoll);
+  pendingPunchOutAt=end+0.15;   // small safety margin — /comp_multi slices to the exact region later regardless
+  boundedPunchActive=true;
+  teCloseRegionPanel();
+  teStopPlayback();
+  switchSessionTab('stageCard');
+  startRec();
+});
 $('teClearSegments').addEventListener('click',()=>{
   TE.segments=[]; tePushHistory(); teDrawSegmentOverlays(); teUpdateSegmentsSummary();
 });
@@ -6483,6 +6510,18 @@ async function startRec(){
 
   $('play').textContent='❚❚'; $('play').classList.add('amber');
   recording=true;
+  // Armed here (after `recording=true`), not immediately after
+  // recorder.start() above — this whole function runs synchronously with no
+  // await between recorder.start() and this line, so an IIFE placed earlier
+  // would run its first synchronous check while `recording` was still
+  // false and return immediately, never arming the rAF loop at all.
+  if(boundedPunchActive){
+    (function watchPunchOut(){
+      if(!recording) return;   // stopped some other way (manual Stop, etc.)
+      if(backingAudio.currentTime>=pendingPunchOutAt){ stopRec(); return; }
+      requestAnimationFrame(watchPunchOut);
+    })();
+  }
   showRecUI(true);
   if(tunerOn) showTuner(true);
 }
@@ -6490,6 +6529,12 @@ async function startRec(){
 function stopRec(){ if(!recording)return;
   // remember how long we actually sang (song time) so we can trim precisely
   window._recEndMusicPos = backingAudio.currentTime || 0;
+  // finishRec (recorder.onstop) runs asynchronously after recorder.stop(),
+  // by which point boundedPunchActive has already been reset below — stash
+  // what THIS recording actually was before clearing the live flag.
+  window._recWasBoundedPunch = boundedPunchActive;
+  window._recBoundedPunchRegion = boundedPunchRegion;
+  boundedPunchActive=false; pendingPunchOutAt=null;
   recorder.stop(); backingAudio.pause();
   if(phoneVideoRecorder && phoneVideoRecorder.state!=='inactive') phoneVideoRecorder.stop();
   stopMetroScheduler();
@@ -6518,7 +6563,8 @@ async function finishRec(){
   // stash the RAW take + the alignment context so the vocal-timing slider can
   // re-align live without re-recording.
   window._rawTakeBuffer=rawTake;
-  window._rawTakeMeta={ intendedStart:punchAt, musicPosAtRecStart, keptAtRecord:keptBuffer };
+  window._rawTakeMeta={ intendedStart:punchAt, musicPosAtRecStart, keptAtRecord:keptBuffer,
+    boundedPunch: window._recWasBoundedPunch||false };
 
   applyAlignmentAndFinish(ctx);
   offerContinueOrKeep();
@@ -6598,9 +6644,17 @@ function applyAlignmentAndFinish(ctx){
   let aligned=alignTake(ctx, raw, effOffset);
 
   let finalBuffer=aligned;
-  if(meta.intendedStart>0 && meta.keptAtRecord){
+  // A bounded punch-in's recording (pre-roll + the fixed region + a small
+  // safety margin) must NOT be stitched onto the previously-kept take like
+  // an open-ended punch-in — it needs to stand alone as its own take so it
+  // can be assigned to just the fixed region in TE.segments (see the Keep
+  // handler). /comp_multi slices to the exact region later regardless of
+  // whatever extra pre-roll/margin audio is in this file.
+  if(meta.intendedStart>0 && meta.keptAtRecord && !meta.boundedPunch){
     finalBuffer=stitchBuffers(ctx, meta.keptAtRecord, aligned, meta.intendedStart);
     $('renderstatus').textContent='Continued from '+fmt(meta.intendedStart)+'. Vocal timing '+vocalDelayMs+'ms.';
+  } else if(meta.boundedPunch){
+    $('renderstatus').textContent='Region re-recorded. Vocal timing '+vocalDelayMs+'ms.';
   } else {
     $('renderstatus').textContent='Take captured ('+fmt(aligned.duration)+'). Vocal timing '+vocalDelayMs+'ms — tweak if it drifts.';
   }
