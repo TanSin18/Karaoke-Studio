@@ -450,6 +450,9 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
     color:var(--dim);background:var(--well2);border-radius:4px;padding:2px 5px;flex:none}
   .takebadge.comp{color:var(--ok)}
   .takebadge.harmony{color:var(--amber)}
+  .takeSegBar{display:flex;height:6px;border-radius:3px;overflow:hidden;flex:none;width:60px}
+  .takeSegBar .seg{height:100%}
+  .takeSegBar .seg.silence{background:repeating-linear-gradient(45deg,#666 0 3px,#444 3px 6px)}
   .takerow-dur{font-family:var(--mono);font-size:11px;color:var(--muted);flex:none}
   .takestatus{font-size:10px;font-family:var(--mono);text-decoration:none;display:inline-block}
   .takestatus.busy{color:var(--amber2);animation:takepulse 1.4s ease-in-out infinite}
@@ -4971,6 +4974,15 @@ function ensureTakeStripPoll(){
   if(pending && !takeStripPoll){ takeStripPoll=setInterval(loadTakes,1200); }
   else if(!pending && takeStripPoll){ clearInterval(takeStripPoll); takeStripPoll=null; }
 }
+// Stable, deterministic color per take id, so the same source always shows
+// the same color across a comp's segment bar and across renders.
+const _segColorCache={};
+function segColorFor(takeId){
+  if(_segColorCache[takeId]) return _segColorCache[takeId];
+  let h=0; for(let i=0;i<takeId.length;i++) h=(h*31+takeId.charCodeAt(i))>>>0;
+  const hue=h%360;
+  return _segColorCache[takeId]='hsl('+hue+',55%,45%)';
+}
 function renderTakeStrip(){
   $('takeHistory').style.display = takes.length? 'block':'none';
   $('noTakesHint').style.display = (takes.length||window._lastVocalBuffer) ? 'none':'';
@@ -4979,8 +4991,21 @@ function renderTakeStrip(){
     const row=document.createElement('div');
     row.className='takerow'+(t.id===activeTakeId?' active':'');
     const scoreBadge=t.pitch_score? '<span class="takeScoreBadge" title="Pitch steadiness — % of this take spent landing cleanly on a note, not a check against the song\'s actual melody">'+t.pitch_score.accuracy+'% in tune</span>' : '';
+    // A comp with more than one region gets a proportional segment bar so
+    // you can see at a glance where it's patched, vs. a plain single-take
+    // recording which shows no bar at all.
+    let segBar='';
+    if(t.kind==='comp' && t.comp_segments && t.comp_segments.length>1 && t.duration){
+      const bits=t.comp_segments.map(s=>{
+        const pct=Math.max(1, 100*(s.end-s.start)/t.duration);
+        return '<span class="seg'+(s.silence?' silence':'')+'" style="width:'+pct.toFixed(2)+'%;background:'+
+          (s.silence?'transparent':segColorFor(s.take_id))+'"></span>';
+      }).join('');
+      segBar='<span class="takeSegBar" title="'+t.comp_segments.length+' regions">'+bits+'</span>';
+    }
     row.innerHTML=
       '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+'</span>'+
+      segBar+
       '<span class="takerow-dur">'+fmt(t.duration||0)+'</span>'+
       scoreBadge+
       '<span class="takerow-spacer"></span>'+
