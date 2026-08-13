@@ -4998,8 +4998,7 @@ function renderTakeStrip(){
     if(t.kind==='comp' && t.comp_segments && t.comp_segments.length>1 && t.duration){
       const bits=t.comp_segments.map(s=>{
         const pct=Math.max(1, 100*(s.end-s.start)/t.duration);
-        return '<span class="seg'+(s.silence?' silence':'')+'" style="width:'+pct.toFixed(2)+'%;background:'+
-          (s.silence?'transparent':segColorFor(s.take_id))+'"></span>';
+        return '<span class="seg'+(s.silence?' silence':'')+'" style="width:'+pct.toFixed(2)+'%'+(s.silence?'':';background:'+segColorFor(s.take_id))+'"></span>';
       }).join('');
       segBar='<span class="takeSegBar" title="'+t.comp_segments.length+' regions">'+bits+'</span>';
     }
