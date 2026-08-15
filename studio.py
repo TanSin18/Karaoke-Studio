@@ -1028,12 +1028,14 @@ def extract_video_id(url):
     return m.group(1) if m else None
 
 
-def search_youtube(query, n=12):
-    """Search YouTube via yt-dlp (no API key). Returns a list of result dicts:
-    {id, title, duration, thumb, channel}."""
+def _search_youtube_raw(query, n=12):
+    """Search YouTube via yt-dlp (no API key). Returns (results, error):
+    results is a list of {id, title, duration, thumb, channel} dicts;
+    error is None on success, or a human-readable message if yt-dlp
+    exited non-zero and produced no results (e.g. DNS/network failure)."""
     query = (query or "").strip()
     if not query:
-        return []
+        return [], None
     # ytsearchN: runs a search and returns up to N flat results (fast, no per-video fetch)
     cmd = [
         "yt-dlp", f"ytsearch{int(n)}:{query}",
@@ -1041,8 +1043,10 @@ def search_youtube(query, n=12):
     ]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return []
+    except FileNotFoundError:
+        return [], "yt-dlp is not installed or not on PATH."
+    except subprocess.TimeoutExpired:
+        return [], "Search timed out — try again."
     results = []
     for line in r.stdout.splitlines():
         try:
@@ -1062,6 +1066,20 @@ def search_youtube(query, n=12):
             "thumb": thumb,
             "channel": d.get("channel") or d.get("uploader") or "",
         })
+    if not results and r.returncode != 0:
+        stderr = (r.stderr or "").strip()
+        msg = stderr.splitlines()[-1] if stderr else "yt-dlp search failed."
+        if "Failed to resolve" in stderr or "Name or service not known" in stderr:
+            msg = "Can't reach YouTube — check your internet/DNS connection."
+        return [], msg
+    return results, None
+
+
+def search_youtube(query, n=12):
+    """Backward-compatible wrapper: same as _search_youtube_raw but only
+    returns the results list, silently empty on failure (used by callers
+    that already treat an empty list as "nothing found")."""
+    results, _ = _search_youtube_raw(query, n)
     return results
 
 
@@ -2209,9 +2227,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "Type something to search for."})
                 return
             try:
-                results = search_youtube(q, n=12)
-            except Exception:
-                results = []
+                results, err = _search_youtube_raw(q, n=12)
+            except Exception as e:
+                results, err = [], str(e)
+            if not results and err:
+                self._json(502, {"error": err})
+                return
             self._json(200, {"results": results})
             return
 
