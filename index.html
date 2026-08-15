@@ -6002,6 +6002,7 @@ $('teBuildCompBtn').addEventListener('click', async()=>{
   $('teBuildCompBtn').disabled=true;
   try{
     const full=teSegmentsWithGapsFilled();
+    if(!full.some(s=>!s.silence)){ toast('A comp needs at least some audio — it can\'t be entirely silence.','warn'); return; }
     const r=await fetch('/comp_multi',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({id:SID, segments:full.map(s=>
         s.silence ? {silence:true, start:s.start, end:s.end}
