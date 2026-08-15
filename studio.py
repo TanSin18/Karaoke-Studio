@@ -914,7 +914,7 @@ def _probe_duration(path):
 
 def _add_take(jid, file, duration, kind="lead", fx_snapshot=None,
               punch_sec=None, source_take_ids=None, tid=None, pitch_score=None,
-              latency_ms=None):
+              latency_ms=None, comp_segments=None):
     tid = tid or uuid.uuid4().hex[:8]
     meta = _read_meta(jid)
     takes = meta.get("takes") or []
@@ -932,6 +932,11 @@ def _add_take(jid, file, duration, kind="lead", fx_snapshot=None,
         # capture-time correction baked into the WAV before this take ever
         # existed) — 0 = no nudge, +N = vocal plays N ms later, -N = earlier.
         "align_ms": 0,
+        # the exact ordered region recipe that built this take (comp takes
+        # only) — [{"take_id"|"silence": ..., "start", "end"}, ...] — lets
+        # the Track Editor reload and re-edit a comp later instead of only
+        # seeing the flattened source_take_ids set.
+        "comp_segments": comp_segments,
     }
     takes.append(take)
     _write_meta(jid, takes=takes)
@@ -3227,7 +3232,8 @@ class Handler(BaseHTTPRequestHandler):
             # Generalizes /comp from exactly 2 takes at 1 punch point to an
             # arbitrary ordered list of (take, region) segments — pick a
             # different take for each stretch of the song instead of one
-            # head + one tail take.
+            # head + one tail take. A segment may also be {"silence": true}
+            # instead of a take_id, to mute a region without a replacement.
             body = self._read_body()
             jid = body.get("id")
             raw_segments = body.get("segments") or []
@@ -3237,13 +3243,32 @@ class Handler(BaseHTTPRequestHandler):
             sdir = os.path.join(SESS_DIR, jid)
             segments = []
             source_ids = []
+            recipe = []
             for s in raw_segments:
+                try:
+                    start = float(s.get("start", 0))
+                except (TypeError, ValueError):
+                    self._json(400, {"error": "segment start/end must be numbers"})
+                    return
+
+                if s.get("silence"):
+                    if s.get("end") is None:
+                        self._json(400, {"error": "a silence segment needs an explicit end"})
+                        return
+                    try:
+                        end = float(s["end"])
+                    except (TypeError, ValueError):
+                        self._json(400, {"error": "segment start/end must be numbers"})
+                        return
+                    segments.append({"path": None, "start": start, "end": end})
+                    recipe.append({"silence": True, "start": start, "end": end})
+                    continue
+
                 t = _get_take(jid, s.get("take_id"))
                 if not t:
                     self._json(404, {"error": f"unknown take {s.get('take_id')}"})
                     return
                 try:
-                    start = float(s.get("start", 0))
                     end = float(s["end"]) if s.get("end") is not None else None
                 except (TypeError, ValueError):
                     self._json(400, {"error": "segment start/end must be numbers"})
@@ -3266,6 +3291,7 @@ class Handler(BaseHTTPRequestHandler):
                     end = min(end, tdur)
                 segments.append({"path": os.path.join(sdir, t["file"]), "start": start, "end": end})
                 source_ids.append(t["id"])
+                recipe.append({"take_id": t["id"], "start": start, "end": end})
             tid = uuid.uuid4().hex[:8]
             fname = f"take_{tid}.wav"
             out_path = os.path.join(sdir, fname)
@@ -3277,7 +3303,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             take = _add_take(
                 jid, file=fname, duration=_probe_duration(out_path), kind="comp",
-                source_take_ids=source_ids, tid=tid,
+                source_take_ids=source_ids, tid=tid, comp_segments=recipe,
             )
             self._json(200, {"take": take})
             return

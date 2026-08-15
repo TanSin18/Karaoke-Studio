@@ -450,6 +450,9 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
     color:var(--dim);background:var(--well2);border-radius:4px;padding:2px 5px;flex:none}
   .takebadge.comp{color:var(--ok)}
   .takebadge.harmony{color:var(--amber)}
+  .takeSegBar{display:flex;height:6px;border-radius:3px;overflow:hidden;flex:none;width:60px}
+  .takeSegBar .seg{height:100%}
+  .takeSegBar .seg.silence{background:repeating-linear-gradient(45deg,#666 0 3px,#444 3px 6px)}
   .takerow-dur{font-family:var(--mono);font-size:11px;color:var(--muted);flex:none}
   .takestatus{font-size:10px;font-family:var(--mono);text-decoration:none;display:inline-block}
   .takestatus.busy{color:var(--amber2);animation:takepulse 1.4s ease-in-out infinite}
@@ -485,6 +488,7 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
   .te-canvas{display:block;width:100%;height:64px}
   .te-region{position:absolute;top:0;bottom:0;background:rgba(255,180,84,.22);
     border-left:1px solid var(--amber2);border-right:1px solid var(--amber2);pointer-events:none}
+  .te-region.silence{background:repeating-linear-gradient(45deg,rgba(120,120,120,.35) 0 4px,rgba(80,80,80,.35) 4px 8px)}
   .te-markerrow{position:relative;height:16px}
   .te-marker{position:absolute;top:0;width:0;height:0;border-left:5px solid transparent;
     border-right:5px solid transparent;border-top:8px solid var(--pink2);cursor:pointer;transform:translateX(-5px)}
@@ -1445,6 +1449,19 @@ try{ document.documentElement.dataset.theme = localStorage.getItem('kstudio.them
             <span id="teSegmentsSummary" class="klabel">Drag on a lane below to assign that take to a region</span>
             <button class="btn small" id="teClearSegments">Clear regions</button>
             <button class="btn" id="teBuildCompBtn">↳ Build comp from regions</button>
+          </div>
+          <button class="btn small ghost hidden" id="teEditCompBtn" style="margin-top:8px">✎ Edit this comp's regions</button>
+          <div class="railCard hidden" id="teRegionPanel" style="margin-top:10px">
+            <h3>Selected region</h3>
+            <div class="klabel" id="teRegionBounds">0:00 – 0:00</div>
+            <div class="klabel" id="teRegionFiller" style="margin-bottom:8px">currently: —</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+              <button class="btn small" id="teRegionRerecordBtn">🎤 Re-record</button>
+              <button class="btn small" id="teRegionSilenceBtn">🔇 Silence</button>
+              <button class="btn small ghost" id="teRegionCloseBtn">✕ Close</button>
+            </div>
+            <div class="klabel">or assign an existing take</div>
+            <select id="teRegionTakeSelect" class="wide"></select>
           </div>
           <!-- re-record/sing-along used to live in a separate "rich player"
                block above this whole editor, punching in from ITS OWN
@@ -4725,6 +4742,9 @@ $('vocalDelay').addEventListener('input',()=>{
 
 // ---- record UI helper + after-stop choice ---------------------------------
 let pendingContinueAt=null;   // set when user picks "continue from here"
+let pendingPunchOutAt=null;   // set for a BOUNDED punch-in — auto-stops recording here
+let boundedPunchActive=false; // true while a bounded punch-in's auto-stop watcher is armed
+let boundedPunchRegion=null;  // {start,end} the bounded punch-in is fixing, for post-Keep auto-assign
 $('stopAll').addEventListener('click',()=>{
   if(recording) $('stop').click(); else $('stopmusic').click();
 });
@@ -4795,12 +4815,31 @@ function renderScoreCard(score){
   })(t0);
 }
 $('continueBtn').addEventListener('click',()=>{
+  // This take is being extended, not Kept as the punch fix it may have
+  // been — clear the stash so a LATER unrelated Keep doesn't replay a
+  // stale bounded-punch auto-assign against the wrong take/region.
+  window._recBoundedPunchRegion=null; window._recWasBoundedPunch=false;
   pendingContinueAt=window._recEndMusicPos||0;   // next take begins where this ended
   $('stopChoice').style.display='none';
   startRec();
 });
-$('keepBtn').addEventListener('click',()=>{ $('stopChoice').style.display='none'; saveCurrentTakeToHistory(); });
+$('keepBtn').addEventListener('click', async()=>{
+  $('stopChoice').style.display='none';
+  const region=window._recBoundedPunchRegion;
+  await saveCurrentTakeToHistory(region ? 'punch' : undefined);
+  if(region && activeTakeId){
+    teAssignSegment(activeTakeId, region.start, region.end);
+    window._recBoundedPunchRegion=null;
+    await teSetCompareMode(true);
+    teOpenRegionPanel(region.start, region.end);
+    toast('Region re-recorded — build the comp when you\'re happy with it.','ok',4000);
+  }
+});
 $('redoBtn').addEventListener('click',()=>{
+  // This take is being discarded — clear the stash so a LATER unrelated
+  // Keep doesn't replay a stale bounded-punch auto-assign against the
+  // wrong take/region.
+  window._recBoundedPunchRegion=null; window._recWasBoundedPunch=false;
   keptBuffer=null; window._lastVocalBuffer=null; window._lastVocalWav=null; window._rawTakeBuffer=null;
   pendingContinueAt=null; $('stopChoice').style.display='none';
   $('renderstatus').textContent='Cleared. Record again from the start.';
@@ -4920,7 +4959,7 @@ $('undoDeleteBtn').addEventListener('click', async()=>{
   toast('Take restored.','ok',2000);
 });
 
-const TAKE_KIND_LABEL={lead:'take',comp:'comp',harmony:'harmony'};
+const TAKE_KIND_LABEL={lead:'take',comp:'comp',harmony:'harmony',punch:'fix'};
 // Render/video progress live on the take itself now (server-scoped by take
 // id — see /render, /combine_video), so each card shows its OWN status
 // instead of one global "is something rendering?" indicator that couldn't
@@ -4948,6 +4987,15 @@ function ensureTakeStripPoll(){
   if(pending && !takeStripPoll){ takeStripPoll=setInterval(loadTakes,1200); }
   else if(!pending && takeStripPoll){ clearInterval(takeStripPoll); takeStripPoll=null; }
 }
+// Stable, deterministic color per take id, so the same source always shows
+// the same color across a comp's segment bar and across renders.
+const _segColorCache={};
+function segColorFor(takeId){
+  if(_segColorCache[takeId]) return _segColorCache[takeId];
+  let h=0; for(let i=0;i<takeId.length;i++) h=(h*31+takeId.charCodeAt(i))>>>0;
+  const hue=h%360;
+  return _segColorCache[takeId]='hsl('+hue+',55%,45%)';
+}
 function renderTakeStrip(){
   $('takeHistory').style.display = takes.length? 'block':'none';
   $('noTakesHint').style.display = (takes.length||window._lastVocalBuffer) ? 'none':'';
@@ -4956,8 +5004,20 @@ function renderTakeStrip(){
     const row=document.createElement('div');
     row.className='takerow'+(t.id===activeTakeId?' active':'');
     const scoreBadge=t.pitch_score? '<span class="takeScoreBadge" title="Pitch steadiness — % of this take spent landing cleanly on a note, not a check against the song\'s actual melody">'+t.pitch_score.accuracy+'% in tune</span>' : '';
+    // A comp with more than one region gets a proportional segment bar so
+    // you can see at a glance where it's patched, vs. a plain single-take
+    // recording which shows no bar at all.
+    let segBar='';
+    if(t.kind==='comp' && t.comp_segments && t.comp_segments.length>1 && t.duration){
+      const bits=t.comp_segments.map(s=>{
+        const pct=Math.max(1, 100*(s.end-s.start)/t.duration);
+        return '<span class="seg'+(s.silence?' silence':'')+'" style="width:'+pct.toFixed(2)+'%'+(s.silence?'':';background:'+segColorFor(s.take_id))+'"></span>';
+      }).join('');
+      segBar='<span class="takeSegBar" title="'+t.comp_segments.length+' regions">'+bits+'</span>';
+    }
     row.innerHTML=
       '<span class="takebadge '+(t.kind||'lead')+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind||'take')+' '+(i+1)+'</span>'+
+      segBar+
       '<span class="takerow-dur">'+fmt(t.duration||0)+'</span>'+
       scoreBadge+
       '<span class="takerow-spacer"></span>'+
@@ -4997,6 +5057,9 @@ const TE = {
   trimStart: 0, trimEnd: null,
   compareMode: false,
   segments: [],   // [{takeId, start, end}] — non-destructive multi-region comp
+  baseTakeId: null,   // the take considered "the default" for any stretch
+                       // the user hasn't explicitly edited this session
+  selectedRegion: null,   // {start, end}|null — region panel's current target
   markers: [],    // [{time, label}]
   karaokeMute: false, karaokeSolo: false, vocalMute: false, vocalSolo: false,
   // Keyed by harmony take id, not a single scalar — there can be any number
@@ -5101,6 +5164,7 @@ async function refreshTrackEditor(){
   $('teContent').classList.remove('hidden');
   const tid=teLeadTakeId(activeTakeId || teDefaultTakeId());
   activeTakeId=tid;   // keep the global in sync — teNudgeVocal/teFxRestoreBtn/etc. read it directly
+  teUpdateEditCompBtnVisibility();
   // Resolved here (not just in refreshHarmonyUI, which runs later) because
   // lane-building and buffer-prefetching below both need to already know
   // whether there's a harmony to show as a THIRD simultaneous track — not
@@ -5239,8 +5303,17 @@ function teRedrawOverlays(){
 }
 function teDrawSegmentOverlays(){
   $('teVocalLanes').querySelectorAll('.te-region').forEach(el=>el.remove());
+  $('teLaneKaraoke').querySelectorAll('.te-region').forEach(el=>el.remove());
   if(!TE.compareMode) return;
   TE.segments.forEach(seg=>{
+    if(seg.silence){
+      const r=document.createElement('div');
+      r.className='te-region silence';
+      r.style.left=teTimeToPx(seg.start)+'px';
+      r.style.width=Math.max(2, teTimeToPx(seg.end)-teTimeToPx(seg.start))+'px';
+      $('teLaneKaraoke').appendChild(r);
+      return;
+    }
     const lane=$('teVocalLanes').querySelector('.te-lane[data-take-id="'+seg.takeId+'"]');
     if(!lane) return;
     const r=document.createElement('div');
@@ -5279,7 +5352,7 @@ function teSyncTrimInputs(){
 function teUpdateSegmentsSummary(){
   if(!$('teSegmentsSummary')) return;
   $('teSegmentsSummary').textContent = TE.segments.length
-    ? TE.segments.map(s=>fmt(s.start)+'–'+fmt(s.end)+' → '+s.takeId.slice(0,6)).join('  ·  ')
+    ? TE.segments.map(s=>fmt(s.start)+'–'+fmt(s.end)+' → '+(s.silence?'silence':s.takeId.slice(0,6))).join('  ·  ')
     : 'Drag on a lane below to assign that take to a region';
 }
 
@@ -5486,20 +5559,27 @@ function teSetZoom(px){
 }
 $('teZoomIn').addEventListener('click',()=>teSetZoom(TE.pxPerSec*1.5));
 $('teZoomOut').addEventListener('click',()=>teSetZoom(TE.pxPerSec/1.5));
-$('teCompareMode').addEventListener('change', async()=>{
-  TE.compareMode=$('teCompareMode').checked;
-  $('teCompBuildRow').classList.toggle('hidden', !TE.compareMode);
+// Single entry point for turning Compare mode on/off — used by the
+// checkbox below AND by "Edit this comp's regions" (see teEditCompBtn),
+// so both paths get the same baseTakeId/FX-preview/build-row side effects.
+async function teSetCompareMode(on){
+  TE.compareMode=on;
+  $('teCompareMode').checked=on;
+  if(on && !TE.baseTakeId) TE.baseTakeId=activeTakeId;
+  if(!on) TE.baseTakeId=null;
+  $('teCompBuildRow').classList.toggle('hidden', !on);
   // FX Preview and Compare mode both want to claim "the vocal lane" — the
   // former for one specific take, the latter for every take at once — so
   // they're mutually exclusive rather than trying to define what "preview"
   // means across N simultaneous lanes.
-  if(TE.compareMode && TE.fxPreviewOn){
+  if(on && TE.fxPreviewOn){
     TE.fxPreviewOn=false; $('teFxPreviewToggle').checked=false;
     if(TE.playing){ teStopPlayback(); tePlay(); }
   }
-  $('teFxPreviewWrap').classList.toggle('hidden', TE.compareMode);
+  $('teFxPreviewWrap').classList.toggle('hidden', on);
   await refreshTrackEditor();
-});
+}
+$('teCompareMode').addEventListener('change', ()=>teSetCompareMode($('teCompareMode').checked));
 $('teMarkerBtn').addEventListener('click',()=>{
   TE.markers.push({time:TE.playhead, label:fmt(TE.playhead)});
   TE.markers.sort((a,b)=>a.time-b.time);
@@ -5794,12 +5874,32 @@ function wireTeLaneEvents(){
         lane.removeEventListener('pointerup', up);
         preview.remove();
         const a=Math.min(startT,curT), b=Math.max(startT,curT);
-        if(b-a>0.05) teAssignSegment(takeId, a, b);
+        if(b-a>0.05){ teAssignSegment(takeId, a, b); teOpenRegionPanel(a, b); }
       };
       lane.addEventListener('pointermove', move);
       lane.addEventListener('pointerup', up);
     });
   });
+}
+// Shared overlap-clip-and-insert logic for anything that can fill a region:
+// an existing take (entry.takeId) or silence (entry.silence===true).
+function teAssignRegionEntry(entry){
+  const {start, end}=entry;
+  // Clip any existing segment's overlap with the new region before adding
+  // it, so segments stay non-overlapping in time — last drag wins for any
+  // range it covers.
+  const clipped=[];
+  TE.segments.forEach(seg=>{
+    if(seg.end<=start || seg.start>=end){ clipped.push(seg); return; }
+    if(seg.start<start) clipped.push({...seg, end:start});
+    if(seg.end>end) clipped.push({...seg, start:end});
+  });
+  clipped.push(entry);
+  clipped.sort((a,b)=>a.start-b.start);
+  TE.segments=clipped;
+  tePushHistory();
+  teDrawSegmentOverlays();
+  teUpdateSegmentsSummary();
 }
 function teAssignSegment(takeId, start, end){
   // A take is usually shorter than the song, and the server will happily
@@ -5818,31 +5918,108 @@ function teAssignSegment(takeId, start, end){
     end=Math.min(end, known);
     if(end-start<=0.05){ toast('That take has no audio there — it ends at '+fmt(known)+'.','warn',3500); return; }
   }
-  // Clip any existing segment's overlap with the new region before adding
-  // it, so segments stay non-overlapping in time — last drag wins for any
-  // range it covers.
-  const clipped=[];
-  TE.segments.forEach(seg=>{
-    if(seg.end<=start || seg.start>=end){ clipped.push(seg); return; }
-    if(seg.start<start) clipped.push({takeId:seg.takeId, start:seg.start, end:start});
-    if(seg.end>end) clipped.push({takeId:seg.takeId, start:end, end:seg.end});
-  });
-  clipped.push({takeId, start, end});
-  clipped.sort((a,b)=>a.start-b.start);
-  TE.segments=clipped;
-  tePushHistory();
+  teAssignRegionEntry({takeId, start, end});
+}
+function teAssignSilence(start, end){
+  teAssignRegionEntry({silence:true, start, end});
+}
+function teCurrentFillerLabel(){
+  const mid=(TE.selectedRegion.start+TE.selectedRegion.end)/2;
+  const seg=TE.segments.find(s=>s.start<=mid && s.end>mid);
+  if(seg && seg.silence) return 'silence';
+  const tid = seg ? seg.takeId : TE.baseTakeId;
+  if(!tid) return '—';
+  const take=takes.find(x=>x.id===tid);
+  return take ? (TAKE_KIND_LABEL[take.kind]||take.kind||'take')+' ('+tid.slice(0,6)+')' : tid.slice(0,6);
+}
+function teOpenRegionPanel(start, end){
+  TE.selectedRegion={start, end};
+  $('teRegionBounds').textContent=fmt(start)+' – '+fmt(end);
+  $('teRegionFiller').textContent='currently: '+teCurrentFillerLabel();
+  const sel=$('teRegionTakeSelect');
+  sel.innerHTML='<option value="">— pick a take —</option>'+
+    takes.filter(t=>t.kind!=='harmony').map(t=>
+      '<option value="'+t.id+'">'+(TAKE_KIND_LABEL[t.kind]||t.kind)+' ('+t.id.slice(0,6)+')</option>').join('');
+  $('teRegionPanel').classList.remove('hidden');
+}
+function teCloseRegionPanel(){
+  TE.selectedRegion=null;
+  $('teRegionPanel').classList.add('hidden');
+}
+$('teEditCompBtn').addEventListener('click', async()=>{
+  const t=takes.find(x=>x.id===activeTakeId);
+  if(!t || !t.comp_segments) return;
+  TE.baseTakeId=t.id;   // set BEFORE entering Compare mode — teSetCompareMode
+                         // only fills baseTakeId when it's still null, so this
+                         // takes precedence over that fallback
+  TE.segments=t.comp_segments.map(s=>
+    s.silence ? {silence:true, start:s.start, end:s.end}
+              : {takeId:s.take_id, start:s.start, end:s.end});
+  await teSetCompareMode(true);
   teDrawSegmentOverlays();
   teUpdateSegmentsSummary();
+  toast('Loaded this comp\'s regions — drag to change any of them, then rebuild.','ok',3500);
+});
+function teUpdateEditCompBtnVisibility(){
+  const t=takes.find(x=>x.id===activeTakeId);
+  $('teEditCompBtn').classList.toggle('hidden', !(t && t.kind==='comp' && t.comp_segments && t.comp_segments.length));
 }
+$('teRegionCloseBtn').addEventListener('click', teCloseRegionPanel);
+$('teRegionSilenceBtn').addEventListener('click', ()=>{
+  if(!TE.selectedRegion) return;
+  teAssignSilence(TE.selectedRegion.start, TE.selectedRegion.end);
+  $('teRegionFiller').textContent='currently: '+teCurrentFillerLabel();
+});
+$('teRegionTakeSelect').addEventListener('change', e=>{
+  if(!TE.selectedRegion || !e.target.value) return;
+  teAssignSegment(e.target.value, TE.selectedRegion.start, TE.selectedRegion.end);
+  $('teRegionFiller').textContent='currently: '+teCurrentFillerLabel();
+});
+$('teRegionRerecordBtn').addEventListener('click', ()=>{
+  if(!TE.selectedRegion) return;
+  const {start, end}=TE.selectedRegion;
+  const preRoll=Math.min(2.5, start);   // seconds of lead-in before the region, clamped so it never goes negative
+  boundedPunchRegion={start, end};
+  pendingContinueAt=Math.max(0, start-preRoll);
+  pendingPunchOutAt=end+0.15;   // small safety margin — /comp_multi slices to the exact region later regardless
+  boundedPunchActive=true;
+  teCloseRegionPanel();
+  teStopPlayback();
+  switchSessionTab('stageCard');
+  startRec();
+});
 $('teClearSegments').addEventListener('click',()=>{
   TE.segments=[]; tePushHistory(); teDrawSegmentOverlays(); teUpdateSegmentsSummary();
 });
+// Anything the user hasn't explicitly dragged a region onto defaults to
+// TE.baseTakeId (the take that was active when Compare mode was turned on)
+// — so fixing one region never requires manually covering the rest of the
+// song too.
+function teSegmentsWithGapsFilled(){
+  const sorted=[...TE.segments].sort((a,b)=>a.start-b.start);
+  const filled=[]; let cursor=0;
+  sorted.forEach(seg=>{
+    if(seg.start>cursor+0.01 && TE.baseTakeId){
+      filled.push({takeId:TE.baseTakeId, start:cursor, end:seg.start});
+    }
+    filled.push(seg);
+    cursor=Math.max(cursor, seg.end);
+  });
+  if(cursor<TE.duration-0.01 && TE.baseTakeId){
+    filled.push({takeId:TE.baseTakeId, start:cursor, end:TE.duration});
+  }
+  return filled;
+}
 $('teBuildCompBtn').addEventListener('click', async()=>{
   if(!TE.segments.length){ toast('Drag at least one region on a lane first.','warn'); return; }
   $('teBuildCompBtn').disabled=true;
   try{
+    const full=teSegmentsWithGapsFilled();
+    if(!full.some(s=>!s.silence)){ toast('A comp needs at least some audio — it can\'t be entirely silence.','warn'); return; }
     const r=await fetch('/comp_multi',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:SID, segments:TE.segments.map(s=>({take_id:s.takeId,start:s.start,end:s.end}))})});
+      body:JSON.stringify({id:SID, segments:full.map(s=>
+        s.silence ? {silence:true, start:s.start, end:s.end}
+                   : {take_id:s.takeId, start:s.start, end:s.end})})});
     const d=await r.json();
     if(!r.ok){ toast(d.error||'Could not build that comp.','error'); return; }
     takes.push(d.take); activeTakeId=d.take.id;
@@ -6299,7 +6476,18 @@ let recStartCtxTime=0, musicPosAtRecStart=0;
 
 async function startRec(){
   stopAllPlayback();
-  if(!mediaStream){ await primeMic(); if(!mediaStream) return; }
+  if(!mediaStream){ await primeMic(); if(!mediaStream){
+    // The Re-record button arms boundedPunchActive/pendingPunchOutAt/
+    // boundedPunchRegion BEFORE calling startRec() — if mic priming fails
+    // here (permission denied, no mic, etc.), no recording ever starts, so
+    // nothing else would ever clear them. Left armed, the next unrelated
+    // recording would arm the auto-stop watcher against this stale
+    // pendingPunchOutAt (cutting it off early) and, on its stop, stash this
+    // stale region for the Keep handler to auto-assign against the wrong
+    // take — the same class of bug fixed in stopRec's stash gating.
+    boundedPunchActive=false; pendingPunchOutAt=null; boundedPunchRegion=null;
+    return;
+  } }
   if(audioCtx.state==='suspended') await audioCtx.resume();
 
   const punch = pendingContinueAt!=null && keptBuffer;
@@ -6399,6 +6587,18 @@ async function startRec(){
 
   $('play').textContent='❚❚'; $('play').classList.add('amber');
   recording=true;
+  // Armed here (after `recording=true`), not immediately after
+  // recorder.start() above — this whole function runs synchronously with no
+  // await between recorder.start() and this line, so an IIFE placed earlier
+  // would run its first synchronous check while `recording` was still
+  // false and return immediately, never arming the rAF loop at all.
+  if(boundedPunchActive){
+    (function watchPunchOut(){
+      if(!recording) return;   // stopped some other way (manual Stop, etc.)
+      if(backingAudio.currentTime>=pendingPunchOutAt){ stopRec(); return; }
+      requestAnimationFrame(watchPunchOut);
+    })();
+  }
   showRecUI(true);
   if(tunerOn) showTuner(true);
 }
@@ -6406,6 +6606,18 @@ async function startRec(){
 function stopRec(){ if(!recording)return;
   // remember how long we actually sang (song time) so we can trim precisely
   window._recEndMusicPos = backingAudio.currentTime || 0;
+  // finishRec (recorder.onstop) runs asynchronously after recorder.stop(),
+  // by which point boundedPunchActive has already been reset below — stash
+  // what THIS recording actually was before clearing the live flag.
+  // The region is gated on boundedPunchActive (not just copied unconditionally):
+  // `boundedPunchRegion` itself is never reset to null once a bounded punch-in
+  // has happened, so an unconditional copy here would re-stash the OLD region
+  // on every later, unrelated recording's stop (e.g. a "Continue"/"Redo" take
+  // recorded after a bounded punch-in) and silently corrupt the Keep handler's
+  // auto-assign — this makes the stash self-correcting on every single stop.
+  window._recWasBoundedPunch = boundedPunchActive;
+  window._recBoundedPunchRegion = boundedPunchActive ? boundedPunchRegion : null;
+  boundedPunchActive=false; pendingPunchOutAt=null;
   recorder.stop(); backingAudio.pause();
   if(phoneVideoRecorder && phoneVideoRecorder.state!=='inactive') phoneVideoRecorder.stop();
   stopMetroScheduler();
@@ -6434,7 +6646,8 @@ async function finishRec(){
   // stash the RAW take + the alignment context so the vocal-timing slider can
   // re-align live without re-recording.
   window._rawTakeBuffer=rawTake;
-  window._rawTakeMeta={ intendedStart:punchAt, musicPosAtRecStart, keptAtRecord:keptBuffer };
+  window._rawTakeMeta={ intendedStart:punchAt, musicPosAtRecStart, keptAtRecord:keptBuffer,
+    boundedPunch: window._recWasBoundedPunch||false };
 
   applyAlignmentAndFinish(ctx);
   offerContinueOrKeep();
@@ -6510,13 +6723,30 @@ function applyAlignmentAndFinish(ctx){
   // Then subtract mic input latency (vocalDelayMs) to pull the voice earlier.
   const positionOffset = meta.musicPosAtRecStart - meta.intendedStart;
   const latency = vocalDelayMs/1000;
-  const effOffset = positionOffset - latency;
+  // A bounded punch skips the stitch-onto-kept-buffer step below, so unlike
+  // the open-ended punch path, nothing else pushes this take's content out
+  // to absolute song position 0 — pad for that here instead of just the
+  // small positionOffset/latency drift correction every other take uses.
+  // (Algebraically: intendedStart + (positionOffset - latency), since
+  // positionOffset = musicPosAtRecStart - intendedStart, simplifies to
+  // musicPosAtRecStart - latency — same fine correction, plus the padding.)
+  const effOffset = meta.boundedPunch
+    ? (meta.musicPosAtRecStart - latency)
+    : (positionOffset - latency);
   let aligned=alignTake(ctx, raw, effOffset);
 
   let finalBuffer=aligned;
-  if(meta.intendedStart>0 && meta.keptAtRecord){
+  // A bounded punch-in's recording (pre-roll + the fixed region + a small
+  // safety margin) must NOT be stitched onto the previously-kept take like
+  // an open-ended punch-in — it needs to stand alone as its own take so it
+  // can be assigned to just the fixed region in TE.segments (see the Keep
+  // handler). /comp_multi slices to the exact region later regardless of
+  // whatever extra pre-roll/margin audio is in this file.
+  if(meta.intendedStart>0 && meta.keptAtRecord && !meta.boundedPunch){
     finalBuffer=stitchBuffers(ctx, meta.keptAtRecord, aligned, meta.intendedStart);
     $('renderstatus').textContent='Continued from '+fmt(meta.intendedStart)+'. Vocal timing '+vocalDelayMs+'ms.';
+  } else if(meta.boundedPunch){
+    $('renderstatus').textContent='Region re-recorded. Vocal timing '+vocalDelayMs+'ms.';
   } else {
     $('renderstatus').textContent='Take captured ('+fmt(aligned.duration)+'). Vocal timing '+vocalDelayMs+'ms — tweak if it drifts.';
   }
